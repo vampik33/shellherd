@@ -24,7 +24,9 @@ class HerdrClient {
   /// Prefix of request ids, so herdr logs show which client sent what.
   final String idPrefix;
 
-  /// Default time to wait for a reply, counted after the channel is open.
+  /// Default time to wait for the channel to open, and then again for the
+  /// reply. A dialer over a stalled network can hang, so the dial is bounded
+  /// too.
   final Duration timeout;
 
   var _seq = 0;
@@ -144,7 +146,7 @@ class HerdrClient {
   ) async {
     final id = _nextId();
     final wait = timeout ?? this.timeout;
-    final channel = await _open(method);
+    final channel = await _open(method, wait);
     final lines = StreamIterator(decodeNdjson(channel.input));
     try {
       channel.write(
@@ -158,9 +160,14 @@ class HerdrClient {
     }
   }
 
-  Future<HerdrChannel> _open(String method) async {
+  Future<HerdrChannel> _open(String method, Duration wait) async {
     try {
-      return await _dial();
+      return await openWithin(
+        _dial(),
+        wait,
+        (c) => unawaited(c.close()),
+        method,
+      );
     } on HerdrException {
       rethrow;
     } catch (e) {
@@ -285,5 +292,22 @@ class HerdrSubscription {
     _closed = true;
     await _lines.cancel();
     await _channel.close();
+  }
+}
+
+/// Waits up to [timeout] for [open], else throws [HerdrTimeoutException]
+/// with [method]. `Future.timeout` does not cancel the open, so a result
+/// that arrives late goes to [discard] to release it.
+Future<T> openWithin<T>(
+  Future<T> open,
+  Duration timeout,
+  void Function(T late) discard,
+  String method,
+) async {
+  try {
+    return await open.timeout(timeout);
+  } on TimeoutException {
+    unawaited(open.then<void>(discard, onError: (Object _) {}));
+    throw HerdrTimeoutException(method, timeout);
   }
 }

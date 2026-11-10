@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -361,5 +362,74 @@ void main() {
     expect(AgentStatus.fromWire('dreaming'), AgentStatus.unknown);
     expect(AgentStatus.fromWire(null), AgentStatus.unknown);
     expect(AgentStatus.fromWire('blocked'), AgentStatus.blocked);
+  });
+
+  test(
+    'a dial that never completes times out; a late channel is closed',
+    () async {
+      final late = Completer<HerdrChannel>();
+      final stalled = HerdrClient(
+        () => late.future,
+        timeout: const Duration(milliseconds: 50),
+      );
+      await expectLater(
+        stalled.ping(),
+        throwsA(
+          isA<HerdrTimeoutException>().having(
+            (e) => e.method,
+            'method',
+            'ping',
+          ),
+        ),
+      );
+      final channel = FakeChannel();
+      late.complete(channel);
+      await Future<void>.delayed(Duration.zero);
+      expect(channel.closed, isTrue);
+      expect(channel.sent, isEmpty);
+    },
+  );
+
+  group('openWithin', () {
+    const short = Duration(milliseconds: 50);
+
+    test('returns a result that comes in time', () async {
+      final discarded = <int>[];
+      expect(await openWithin(Future.value(7), short, discarded.add, 'x'), 7);
+      expect(discarded, isEmpty);
+    });
+
+    test('an open that never completes throws HerdrTimeoutException', () {
+      expect(
+        openWithin(Completer<int>().future, short, (_) {}, 'ssh channel open'),
+        throwsA(
+          isA<HerdrTimeoutException>()
+              .having((e) => e.method, 'method', 'ssh channel open')
+              .having((e) => e.timeout, 'timeout', short),
+        ),
+      );
+    });
+
+    test('a result that comes after the timeout is discarded', () async {
+      final late = Completer<int>();
+      final discarded = Completer<int>();
+      await expectLater(
+        openWithin(late.future, short, discarded.complete, 'x'),
+        throwsA(isA<HerdrTimeoutException>()),
+      );
+      late.complete(9);
+      expect(await discarded.future.timeout(const Duration(seconds: 1)), 9);
+    });
+
+    test('an error that comes after the timeout is not uncaught', () async {
+      final late = Completer<int>();
+      await expectLater(
+        openWithin(late.future, short, (_) => fail('discarded'), 'x'),
+        throwsA(isA<HerdrTimeoutException>()),
+      );
+      late.completeError(StateError('connection closed'));
+      // An uncaught error would fail this test in the test zone.
+      await Future<void>.delayed(short);
+    });
   });
 }
