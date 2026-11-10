@@ -2,3 +2,6 @@ tags:
   # Tests that start a real herdr server (see test/support/herdr_test_session.dart).
   herdr:
     timeout: 2x
+  # Tests that start a throwaway sshd (see test/support/test_sshd.dart).
+  sshd:
+    timeout: 2x

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:dartssh2/dartssh2.dart';
+import 'package:shellherd/ssh/known_hosts.dart';
 
 /// A throwaway OpenSSH server for the current user on 127.0.0.1.
 ///
@@ -20,13 +21,18 @@ class TestSshd {
   /// SHA256 fingerprint of the host key, as `ssh-keygen -l` prints it.
   final String _hostFp;
 
+  /// The host key as the app stores it: type and fingerprint text.
+  HostKey get hostKey => HostKey('ssh-ed25519', _hostFp);
+
   static const _candidates = ['/usr/bin/sshd', '/usr/sbin/sshd'];
 
   /// The sshd binary, or null. sshd must be started with an absolute path.
   static String? get binary =>
       _candidates.where((p) => File(p).existsSync()).firstOrNull;
 
-  static Future<TestSshd> start() async {
+  /// Starts on [port], or on a free port. A restart on the same port with
+  /// a new host key looks to a client like a changed server key.
+  static Future<TestSshd> start({int? port}) async {
     final sshd = binary ?? (throw StateError('no sshd binary'));
     final dir = await Directory.systemTemp.createTemp('shellherd-sshd-');
     TestSshd? server;
@@ -39,7 +45,7 @@ class TestSshd {
           .copy('${dir.path}/authorized_keys');
       final hostFp = await _fingerprint('${dir.path}/host_key.pub');
 
-      final port = await _freePort();
+      port ??= await _freePort();
       await File('${dir.path}/sshd_config').writeAsString('''
 Port $port
 ListenAddress 127.0.0.1
@@ -104,6 +110,11 @@ AllowStreamLocalForwarding yes
   }
 
   String get log => _log.toString();
+
+  /// Lets [publicLine] (an `authorized_keys` line) log in.
+  Future<void> authorize(String publicLine) =>
+      File('${_dir.path}/authorized_keys')
+          .writeAsString('$publicLine\n', mode: FileMode.append);
 
   /// Sends [signal] to the per-connection sshd processes (all processes
   /// under the listener). SIGSTOP stalls every open connection without
