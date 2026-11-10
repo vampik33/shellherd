@@ -9,10 +9,20 @@ import 'package:xterm/xterm.dart';
 /// was lost, a signal ended the shell, or the app closed it.
 typedef ShellEnd = ({int? exitCode, bool lost});
 
+/// A shell on the PC joined to a [Terminal]: over SSH or mosh.
+abstract interface class ShellSession {
+  /// Completes once, when the shell ends, the connection drops or [close]
+  /// runs.
+  Future<ShellEnd> get done;
+
+  /// Ends the shell and closes the connection.
+  void close();
+}
+
 /// A login shell on the PC in a PTY, joined to an xterm.dart [Terminal].
 ///
 /// The session owns its [SSHClient] and closes it when the shell ends.
-class SshShellSession {
+class SshShellSession implements ShellSession {
   SshShellSession._(this._client, this._shell, this.terminal);
 
   final SSHClient _client;
@@ -32,7 +42,7 @@ class SshShellSession {
     Terminal terminal, {
     Duration timeout = const Duration(seconds: 15),
   }) async {
-    _resetModes(terminal);
+    resetTerminalModes(terminal);
     final SSHSession shell;
     final width = terminal.viewWidth;
     final height = terminal.viewHeight;
@@ -56,8 +66,7 @@ class SshShellSession {
     return session;
   }
 
-  /// Completes once, when the shell exits, the connection drops or
-  /// [close] runs.
+  @override
   Future<ShellEnd> get done => _ended.future;
 
   void _attach() {
@@ -101,7 +110,7 @@ class SshShellSession {
     _ended.complete(end);
   }
 
-  /// Ends the shell and closes the connection.
+  @override
   void close() {
     for (final s in _subs) {
       s.cancel();
@@ -114,7 +123,7 @@ class SshShellSession {
 /// lost its connection (vim, less) never left the alternate screen or
 /// turned off mouse reports or a hidden cursor. xterm.dart has no full
 /// reset (RIS), so this sets each mode that it supports.
-void _resetModes(Terminal t) => t
+void resetTerminalModes(Terminal t) => t
   ..useMainBuffer()
   ..resetCursorStyle()
   ..setMargins(0)

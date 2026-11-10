@@ -1,4 +1,7 @@
+import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:dartssh2/dartssh2.dart';
 
@@ -82,19 +85,15 @@ class SshConnector {
     List<SSHKeyPair> identities,
     HostKey? expected,
   ) async {
-    final SSHSocket socket;
+    final Socket socket;
     try {
-      socket = await SSHSocket.connect(
-        host.address,
-        host.port,
-        timeout: timeout,
-      );
+      socket = await Socket.connect(host.address, host.port, timeout: timeout);
     } catch (e) {
       throw SshNetworkException(host, e);
     }
     HostKey? seen;
     final client = SSHClient(
-      socket,
+      _NativeSocket(socket),
       username: host.user,
       identities: identities,
       // dartssh2 gives the fingerprint as the text "SHA256:<base64>".
@@ -105,6 +104,7 @@ class SshConnector {
       handshakeTimeout: timeout,
       authTimeout: timeout,
     );
+    _peers[client] = socket.remoteAddress;
     try {
       await client.authenticated;
       return client;
@@ -121,6 +121,38 @@ class SshConnector {
       throw SshNetworkException(host, e);
     }
   }
+}
+
+/// The address that the connection of [client] went to, when an
+/// [SshConnector] made it. A name can resolve to more than one address;
+/// this is the one that answered.
+InternetAddress? sshPeerAddress(SSHClient client) => _peers[client];
+
+final _peers = Expando<InternetAddress>();
+
+/// dartssh2's own socket, which does not tell its peer address.
+class _NativeSocket implements SSHSocket {
+  _NativeSocket(this._socket);
+
+  final Socket _socket;
+
+  @override
+  Stream<Uint8List> get stream => _socket;
+
+  @override
+  StreamSink<List<int>> get sink => _socket;
+
+  @override
+  Future<void> get done => _socket.done;
+
+  @override
+  Future<void> close() => _socket.close();
+
+  @override
+  void destroy() => _socket.destroy();
+
+  @override
+  Future<void> flush() => _socket.flush();
 }
 
 /// The first-use read got the host key; [SshConnector.open] asks about it.

@@ -13,7 +13,7 @@ class Host {
     this.herdrSession,
     this.herdrSocket,
     this.mosh = false,
-    this.moshServer = 'mosh-server',
+    this.moshServer = defaultMoshServer,
     this.notify = false,
   }) {
     if (label.isEmpty || address.isEmpty || user.isEmpty) {
@@ -58,6 +58,8 @@ class Host {
   /// Show the mosh button for the plain terminal.
   final bool mosh;
   final String moshServer;
+
+  static const defaultMoshServer = 'mosh-server';
 
   /// Watch the agents of this host in the background and notify when one
   /// needs the user or is done.

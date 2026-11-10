@@ -29,6 +29,10 @@ class _HostFormScreenState extends State<HostFormScreen> {
   late final _port = TextEditingController(text: '${widget.host?.port ?? 22}');
   late final _user = TextEditingController(text: widget.host?.user);
   late bool _notify = widget.host?.notify ?? false;
+  late bool _mosh = widget.host?.mosh ?? false;
+  late final _moshServer = TextEditingController(
+    text: widget.host?.moshServer ?? Host.defaultMoshServer,
+  );
 
   ({String id, String line})? _key;
 
@@ -88,6 +92,7 @@ class _HostFormScreenState extends State<HostFormScreen> {
     _address.dispose();
     _port.dispose();
     _user.dispose();
+    _moshServer.dispose();
     super.dispose();
   }
 
@@ -166,6 +171,7 @@ class _HostFormScreenState extends State<HostFormScreen> {
     if (!valid || keyId == null) return;
     await _run('Cannot save the host', () async {
       final old = widget.host;
+      final moshServer = _moshServer.text.trim();
       await _services.hosts.save(
         Host(
           id: old?.id ?? randomId(),
@@ -176,8 +182,8 @@ class _HostFormScreenState extends State<HostFormScreen> {
           keyId: keyId,
           herdrSession: old?.herdrSession,
           herdrSocket: old?.herdrSocket,
-          mosh: old?.mosh ?? false,
-          moshServer: old?.moshServer ?? 'mosh-server',
+          mosh: _mosh,
+          moshServer: moshServer.isEmpty ? Host.defaultMoshServer : moshServer,
           notify: _notify,
         ),
       );
@@ -311,6 +317,26 @@ class _HostFormScreenState extends State<HostFormScreen> {
                       ? null
                       : (v) => setState(() => _notify = v),
                 ),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Mosh'),
+                  subtitle: const Text(
+                    'A terminal that lives through sleep and network changes. '
+                    'The PC needs mosh-server and open UDP ports.',
+                  ),
+                  value: _mosh,
+                  onChanged: _locked ? null : (v) => setState(() => _mosh = v),
+                ),
+                if (_mosh)
+                  TextFormField(
+                    controller: _moshServer,
+                    autocorrect: false,
+                    enableSuggestions: false,
+                    decoration: const InputDecoration(
+                      labelText: 'mosh-server command',
+                      helperText: 'A path if it is not on the PATH of the PC.',
+                    ),
+                  ),
                 const SizedBox(height: 24),
                 Text('SSH key', style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 8),

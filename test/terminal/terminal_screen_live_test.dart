@@ -21,6 +21,7 @@ import 'package:xterm/xterm.dart';
 
 import '../support/live_widgets.dart';
 import '../support/memory_secret_store.dart';
+import '../support/mosh_servers.dart';
 import '../support/test_sshd.dart';
 
 void main() {
@@ -86,10 +87,14 @@ void main() {
     await showsText(tester, '${mark}k');
   }
 
-  Future<void> pumpScreen(WidgetTester tester) => tester.pumpWidget(
+  Future<void> pumpScreen(
+    WidgetTester tester, {
+    bool mosh = false,
+    Host? on,
+  }) => tester.pumpWidget(
     MaterialApp(
       navigatorKey: navigator,
-      home: TerminalScreen(host: host, connector: connector),
+      home: TerminalScreen(host: on ?? host, connector: connector, mosh: mosh),
     ),
   );
 
@@ -224,4 +229,86 @@ void main() {
       await closeScreen(tester);
     });
   });
+
+  group(
+    'TerminalScreen over mosh',
+    skip:
+        skip ??
+        (Process.runSync('sh', ['-c', 'command -v mosh-server']).exitCode != 0
+            ? 'mosh-server is not installed'
+            : false),
+    () {
+      late Set<int> before;
+      setUp(() => before = moshServers());
+      tearDown(() => killMoshServersSince(before));
+
+      Finder chipStarting(String prefix) => find.byWidgetPredicate(
+        (w) =>
+            w is Chip && w.label is Text && (w.label as Text).data!.startsWith(prefix),
+      );
+
+      testWidgets('runs a shell, shows the round trip, and leaving ends '
+          'mosh-server', (tester) async {
+        await knownHosts.trust('127.0.0.1', sshd.port, sshd.hostKey);
+        await pumpScreen(tester, mosh: true);
+        await untilFound(tester, chipStarting('mosh'));
+        await runsCommands(tester, 'm');
+        await untilFound(tester, chipStarting('mosh · '));
+        expect(moshServers().difference(before), hasLength(1));
+        await closeScreen(tester);
+        await until(
+          tester,
+          () => moshServers().difference(before).isEmpty,
+          'mosh-server to end',
+        );
+      });
+
+      testWidgets('exit ends the session; reconnect starts a new one', (
+        tester,
+      ) async {
+        await knownHosts.trust('127.0.0.1', sshd.port, sshd.hostKey);
+        await pumpScreen(tester, mosh: true);
+        await untilFound(tester, chipStarting('mosh'));
+        await runsCommands(tester, 'n');
+        terminal(tester).textInput('exit\r');
+        await untilFound(tester, find.text('Session ended.'));
+        expect(chip('closed'), findsOneWidget);
+        await tester.tap(find.text('Reconnect'));
+        await untilFound(tester, chipStarting('mosh'));
+        await runsCommands(tester, 'o');
+        await closeScreen(tester);
+        await until(
+          tester,
+          () => moshServers().difference(before).isEmpty,
+          'mosh-server to end',
+        );
+      });
+
+      testWidgets('a missing mosh-server says so', (tester) async {
+        await knownHosts.trust('127.0.0.1', sshd.port, sshd.hostKey);
+        await pumpScreen(
+          tester,
+          mosh: true,
+          on: Host(
+            id: host.id,
+            label: host.label,
+            address: host.address,
+            port: host.port,
+            user: host.user,
+            keyId: host.keyId,
+            moshServer: '/nonexistent/mosh-server',
+          ),
+        );
+        await untilFound(
+          tester,
+          find.text(
+            'mosh-server is not installed on testbox, or not at '
+            '"/nonexistent/mosh-server".',
+          ),
+        );
+        expect(find.text('Retry'), findsOneWidget);
+        await closeScreen(tester);
+      });
+    },
+  );
 }

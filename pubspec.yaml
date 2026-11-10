@@ -7,6 +7,7 @@ environment:
   sdk: ^3.13.7
 
 dependencies:
+  dart_mosh: 0.0.4
   dartssh2: ^4.1.0
   flutter:
     sdk: flutter

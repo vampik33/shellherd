@@ -8,18 +8,23 @@ import '../ssh/ssh_connector.dart';
 import '../ui/link_status.dart';
 import '../ui/palette.dart';
 import 'key_bar.dart';
+import 'mosh_shell_session.dart';
 import 'ssh_shell_session.dart';
 
-/// A full terminal on [host] over SSH, with the key bar under it.
+/// A full terminal on [host] over SSH or mosh, with the key bar under it.
 class TerminalScreen extends StatefulWidget {
   const TerminalScreen({
     super.key,
     required this.host,
     required this.connector,
+    this.mosh = false,
   });
 
   final Host host;
   final SshConnector connector;
+
+  /// Over mosh: SSH only starts mosh-server.
+  final bool mosh;
 
   @override
   State<TerminalScreen> createState() => _TerminalScreenState();
@@ -50,8 +55,9 @@ class _Failed extends _Phase {
 class _TerminalScreenState extends State<TerminalScreen> {
   final _modifiers = StickyModifiers();
   late final _terminal = StickyTerminal(_modifiers);
-  SshShellSession? _session;
+  ShellSession? _session;
   _Phase _phase = const _Connecting();
+  late final AppLifecycleListener _lifecycle;
 
   /// Counts connection attempts, so a late result of an old one is dropped.
   int _attempt = 0;
@@ -59,6 +65,12 @@ class _TerminalScreenState extends State<TerminalScreen> {
   @override
   void initState() {
     super.initState();
+    // The network can change while the app is away; mosh moves along.
+    _lifecycle = AppLifecycleListener(
+      onResume: () {
+        if (_session case final MoshShellSession mosh) unawaited(mosh.rehome());
+      },
+    );
     unawaited(_connect());
   }
 
@@ -66,14 +78,15 @@ class _TerminalScreenState extends State<TerminalScreen> {
     final attempt = ++_attempt;
     bool current() => mounted && attempt == _attempt;
     setState(() => _phase = const _Connecting());
-    final SshShellSession session;
+    final ShellSession session;
     try {
-      final client = await widget.connector.open(widget.host);
-      if (!current()) {
-        client.close();
-        return;
-      }
-      session = await SshShellSession.start(client, _terminal);
+      session = widget.mosh
+          ? await MoshShellSession.start(
+              ssh: () => widget.connector.open(widget.host),
+              host: widget.host,
+              terminal: _terminal,
+            )
+          : await _startSsh();
     } catch (e) {
       if (current()) setState(() => _phase = _Failed(e));
       return;
@@ -90,6 +103,9 @@ class _TerminalScreenState extends State<TerminalScreen> {
     if (current()) setState(() => _phase = _Ended(end));
   }
 
+  Future<ShellSession> _startSsh() async =>
+      SshShellSession.start(await widget.connector.open(widget.host), _terminal);
+
   void _reconnect() {
     _modifiers.clear();
     _terminal.write('\r\n');
@@ -99,10 +115,26 @@ class _TerminalScreenState extends State<TerminalScreen> {
   @override
   void dispose() {
     _attempt++;
+    _lifecycle.dispose();
     _session?.close();
     _modifiers.dispose();
     super.dispose();
   }
+
+  MoshLinkStatus? get _moshLink => switch ((_phase, _session)) {
+    (_Open(), final MoshShellSession mosh) => mosh.link.value,
+    _ => null,
+  };
+
+  /// [build] again on each change of the mosh link: only the chip and the
+  /// banner follow it, not the terminal.
+  Widget _followingLink(Widget Function() build) => switch (_session) {
+    final MoshShellSession mosh => ListenableBuilder(
+      listenable: mosh.link,
+      builder: (_, _) => build(),
+    ),
+    _ => build(),
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -110,12 +142,12 @@ class _TerminalScreenState extends State<TerminalScreen> {
       backgroundColor: _theme.background,
       appBar: AppBar(
         title: Text(widget.host.label),
-        actions: [_chip(), const SizedBox(width: 8)],
+        actions: [_followingLink(_chip), const SizedBox(width: 8)],
       ),
       body: SafeArea(
         child: Column(
           children: [
-            ?_banner(),
+            _followingLink(() => _banner() ?? const SizedBox.shrink()),
             Expanded(
               child: TerminalView(
                 _terminal,
@@ -131,14 +163,34 @@ class _TerminalScreenState extends State<TerminalScreen> {
     );
   }
 
-  LinkChip _chip() => switch (_phase) {
-    _Connecting() => LinkChip('connecting', _theme.yellow),
-    _Open() => LinkChip('ssh', _theme.green),
-    _Ended() || _Failed() => LinkChip('closed', _theme.red),
+  LinkChip _chip() => switch ((_phase, _moshLink)) {
+    (_Connecting(), _) => LinkChip('connecting', _theme.yellow),
+    (_Open(), null) => LinkChip('ssh', _theme.green),
+    (_Open(), (link: MoshLink.live, :final rtt)) => LinkChip(
+      rtt == null ? 'mosh' : 'mosh · ${rtt.inMilliseconds} ms',
+      _theme.green,
+    ),
+    (_Open(), (link: MoshLink.connecting, rtt: _)) => LinkChip(
+      'mosh',
+      _theme.yellow,
+    ),
+    (_Open(), _) => LinkChip('mosh · waiting', _theme.yellow),
+    (_Ended() || _Failed(), _) => LinkChip('closed', _theme.red),
   };
 
   Widget? _banner() => switch (_phase) {
-    _Connecting() || _Open() => null,
+    _Connecting() => null,
+    _Open() => switch (_moshLink?.link) {
+      MoshLink.silent => StatusBanner(
+        'No answer from mosh-server. A firewall may block UDP '
+        '(mosh uses ports 60000 to 61000).',
+      ),
+      MoshLink.stale => const StatusBanner(
+        'No link. The session waits on the PC and catches up when the link '
+        'is back.',
+      ),
+      _ => null,
+    },
     _Ended(:final end) => StatusBanner(
       end.lost
           ? 'Connection lost.'
@@ -153,6 +205,16 @@ class _TerminalScreenState extends State<TerminalScreen> {
     final retry = ('Retry', _reconnect);
     return switch (error) {
       SshConnectException() => sshFailureBanner(error, retry),
+      MoshServerMissing(:final path) => StatusBanner(
+        'mosh-server is not installed on ${widget.host.label}, or not at '
+        '"$path".',
+        action: retry,
+      ),
+      MoshStartFailed(:final output) => StatusBanner(
+        'mosh-server did not start.',
+        detail: output,
+        action: retry,
+      ),
       TimeoutException() => StatusBanner(
         'The shell did not start in time.',
         action: retry,
