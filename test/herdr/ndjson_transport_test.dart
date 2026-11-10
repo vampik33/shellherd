@@ -44,13 +44,32 @@ void main() {
     expect(out.single['t'], 'агент ✻');
   });
 
-  test('accepts CRLF, skips blank lines and a last line without newline', () async {
+  test('accepts CRLF and skips blank lines', () async {
     final out = await decodeNdjson(
-      chunks([utf8.encode('{"a":1}\r\n\n  \n{"b":2}')]),
+      chunks([utf8.encode('{"a":1}\r\n\n  \n{"b":2}\n')]),
     ).toList();
     expect(out, [
       {'a': 1},
       {'b': 2},
+    ]);
+  });
+
+  test('a last line with no newline is dropped, not an error', () async {
+    final out = await decodeNdjson(
+      chunks([utf8.encode('{"a":1}\n{"b":')]),
+    ).toList();
+    expect(out, [
+      {'a': 1},
+    ]);
+  });
+
+  test('a character cut off at the end of the stream is no error', () async {
+    final bytes = utf8.encode('{"a":1}\nж');
+    final out = await decodeNdjson(
+      chunks([bytes.sublist(0, bytes.length - 1)]),
+    ).toList();
+    expect(out, [
+      {'a': 1},
     ]);
   });
 

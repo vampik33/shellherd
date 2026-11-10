@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'herdr_errors.dart';
 
@@ -39,41 +40,59 @@ List<int> encodeNdjson(Map<String, Object?> message) =>
 /// Splits [input] into lines and decodes each as a JSON object.
 ///
 /// Chunk boundaries may fall anywhere, including inside a multi-byte UTF-8
-/// sequence. Blank lines are skipped. Invalid UTF-8, invalid JSON or a
-/// non-object value is reported as an [NdjsonFormatException] stream error.
+/// sequence. Blank lines are skipped. A last line with no newline is dropped:
+/// herdr ends every line with one, so that is a connection cut off in the
+/// middle of a line, and the stream just ends. Invalid UTF-8, invalid JSON or
+/// a non-object value is reported as an [NdjsonFormatException] stream error.
 ///
-/// Built from transformers, not `async*`: an `async*` body cannot be
+/// Built from a transformer, not `async*`: an `async*` body cannot be
 /// cancelled while it waits for input, so a timed-out read could not
 /// release its channel.
 ///
 /// Sockets and SSH channels are `Stream<Uint8List>` at runtime even when
-/// typed as `Stream<List<int>>`; the cast keeps `utf8.decoder` type-safe.
-Stream<Map<String, Object?>> decodeNdjson(Stream<List<int>> input) => input
-    .cast<List<int>>()
-    .transform(utf8.decoder)
-    .transform(const LineSplitter())
-    .transform(
-      StreamTransformer<String, Map<String, Object?>>.fromHandlers(
-        handleData: (line, sink) {
-          if (line.trim().isEmpty) return;
-          final Object? value;
-          try {
-            value = jsonDecode(line);
-          } on FormatException catch (e) {
-            sink.addError(NdjsonFormatException('invalid JSON: ${e.message}', line));
-            return;
-          }
-          if (value is Map<String, Object?>) {
-            sink.add(value);
-          } else {
-            sink.addError(NdjsonFormatException('expected a JSON object', line));
-          }
-        },
-        handleError: (error, stack, sink) => sink.addError(
-          error is FormatException
-              ? NdjsonFormatException('invalid UTF-8: ${error.message}')
-              : error,
-          stack,
-        ),
-      ),
-    );
+/// typed as `Stream<List<int>>`; the cast keeps the handler type-safe.
+Stream<Map<String, Object?>> decodeNdjson(Stream<List<int>> input) {
+  final pending = BytesBuilder(copy: false);
+  return input.cast<List<int>>().transform(
+    StreamTransformer<List<int>, Map<String, Object?>>.fromHandlers(
+      handleData: (chunk, sink) {
+        var start = 0;
+        for (
+          var end = chunk.indexOf(_newline);
+          end >= 0;
+          end = chunk.indexOf(_newline, start)
+        ) {
+          pending.add(chunk.sublist(start, end));
+          _decodeLine(pending.takeBytes(), sink);
+          start = end + 1;
+        }
+        if (start < chunk.length) pending.add(chunk.sublist(start));
+      },
+    ),
+  );
+}
+
+const _newline = 0x0A;
+
+void _decodeLine(Uint8List bytes, EventSink<Map<String, Object?>> sink) {
+  final String line;
+  try {
+    line = utf8.decode(bytes);
+  } on FormatException catch (e) {
+    sink.addError(NdjsonFormatException('invalid UTF-8: ${e.message}'));
+    return;
+  }
+  if (line.trim().isEmpty) return;
+  final Object? value;
+  try {
+    value = jsonDecode(line);
+  } on FormatException catch (e) {
+    sink.addError(NdjsonFormatException('invalid JSON: ${e.message}', line));
+    return;
+  }
+  if (value is Map<String, Object?>) {
+    sink.add(value);
+  } else {
+    sink.addError(NdjsonFormatException('expected a JSON object', line));
+  }
+}

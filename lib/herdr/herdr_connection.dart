@@ -1,0 +1,251 @@
+import 'dart:async';
+import 'dart:math';
+
+import 'package:dartssh2/dartssh2.dart';
+import 'package:flutter/foundation.dart';
+
+import '../ssh/host.dart';
+import '../ssh/ssh_connector.dart';
+import 'api/herdr_client.dart';
+import 'herdr_cache.dart';
+import 'herdr_link.dart';
+
+/// Where a [HerdrConnection] stands. The top bar of the herdr screens shows
+/// it.
+sealed class LinkState {
+  const LinkState();
+}
+
+/// Not connected, because no one asked or the user left.
+class LinkOffline extends LinkState {
+  const LinkOffline();
+}
+
+/// The first attempt: SSH login and the herdr ping.
+class LinkConnecting extends LinkState {
+  const LinkConnecting();
+}
+
+/// SSH works and herdr answered; reading the session.
+class LinkSyncing extends LinkState {
+  const LinkSyncing();
+}
+
+/// Events arrive and the snapshot is current.
+class LinkLive extends LinkState {
+  const LinkLive(this.server);
+  final HerdrPing server;
+}
+
+/// The link failed and the app tries again by itself.
+class LinkReconnecting extends LinkState {
+  const LinkReconnecting(this.cause, {this.retryAt});
+  final Object cause;
+
+  /// When the next attempt starts; null while an attempt runs.
+  final DateTime? retryAt;
+}
+
+/// SSH works, but nothing listens on the herdr socket. Only
+/// [HerdrConnection.connect] tries again.
+class LinkNoServer extends LinkState {
+  const LinkNoServer(this.cause);
+  final Object cause;
+}
+
+/// Trying again cannot help: the login or the host key was refused, or
+/// herdr speaks something this build cannot read. Only
+/// [HerdrConnection.connect] tries again.
+class LinkFailed extends LinkState {
+  const LinkFailed(this.cause);
+  final Object cause;
+}
+
+/// One open link to a herdr server.
+class OpenLink {
+  const OpenLink({
+    required this.client,
+    required this.server,
+    required this.done,
+    required this.close,
+  });
+
+  final HerdrClient client;
+  final HerdrPing server;
+
+  /// Completes, with or without an error, when the link ends.
+  final Future<void> done;
+  final void Function() close;
+}
+
+/// Opens a link, or throws.
+typedef LinkOpener = Future<OpenLink> Function();
+
+/// Opens a link to [host] over a new SSH connection, which it owns.
+LinkOpener sshLinkOpener(
+  SshConnector connector,
+  Host host, {
+  Duration timeout = const Duration(seconds: 15),
+}) => () async {
+  final ssh = await connector.open(host);
+  try {
+    final link = await HerdrLink.connect(
+      ssh,
+      session: host.herdrSession,
+      socketPath: host.herdrSocket,
+      timeout: timeout,
+    );
+    return OpenLink(
+      client: link.client,
+      server: link.server,
+      done: ssh.done,
+      close: ssh.close,
+    );
+  } catch (_) {
+    ssh.close();
+    rethrow;
+  }
+};
+
+/// 1, 2, 4, 8, 16 s, then 30 s for each further failure in a row.
+Duration linkBackoff(int failures) =>
+    Duration(seconds: min(30, 1 << min(failures, 5)));
+
+/// The link to one herdr server: opens it, keeps a [snapshot] of the session
+/// current, and reconnects when the link drops. The [snapshot] survives a
+/// lost link, for the lists to show it dimmed.
+class HerdrConnection {
+  HerdrConnection(
+    this._open, {
+    this.refreshEvery = HerdrCache.defaultRefreshEvery,
+    this.backoff = linkBackoff,
+    this.debounce = HerdrCache.defaultDebounce,
+  });
+
+  final LinkOpener _open;
+
+  /// See [HerdrCache.refreshEvery].
+  final Duration refreshEvery;
+
+  /// The wait before the next attempt, by the failures in a row so far.
+  final Duration Function(int failures) backoff;
+
+  /// See [HerdrCache.debounce].
+  final Duration debounce;
+
+  final state = ValueNotifier<LinkState>(const LinkOffline());
+
+  /// The last state of the session; null until the first sync.
+  final snapshot = ValueNotifier<HerdrSnapshot?>(null);
+
+  /// Identifies the current run of [_run]. An older run sees that it is
+  /// over and stops without touching the state.
+  var _runId = 0;
+  Completer<void>? _wake;
+  Completer<Object>? _stop;
+
+  /// Starts connecting. While a retry waits, it tries at once. It does
+  /// nothing during an attempt or when live.
+  void connect() {
+    switch (state.value) {
+      case LinkOffline() || LinkNoServer() || LinkFailed():
+        unawaited(_run(++_runId));
+      case LinkReconnecting():
+        _endWait();
+      case LinkConnecting() || LinkSyncing() || LinkLive():
+        break;
+    }
+  }
+
+  /// Drops the link and stays offline, keeping the [snapshot].
+  void close() {
+    _runId++;
+    _endWait();
+    if (_stop case final stop? when !stop.isCompleted) stop.complete('closed');
+    state.value = const LinkOffline();
+  }
+
+  void dispose() {
+    close();
+    state.dispose();
+    snapshot.dispose();
+  }
+
+  void _endWait() {
+    _wake?.complete();
+    _wake = null;
+  }
+
+  Future<void> _run(int id) async {
+    bool current() => id == _runId;
+    var failures = 0;
+    state.value = const LinkConnecting();
+    while (current()) {
+      final stop = _stop = Completer<Object>();
+      OpenLink? link;
+      HerdrCache? cache;
+      Object cause;
+      try {
+        link = await _open();
+        if (!current()) return;
+        state.value = const LinkSyncing();
+        cache = HerdrCache(
+          link.client,
+          debounce: debounce,
+          refreshEvery: refreshEvery,
+          onSnapshot: (s) {
+            if (current()) snapshot.value = s;
+          },
+        );
+        await cache.start();
+        if (!current()) return;
+        failures = 0;
+        state.value = LinkLive(link.server);
+        // The first of these to complete is the reason the link ended.
+        cause = await Future.any([
+          stop.future,
+          cache.lost,
+          link.done.then<Object>(
+            (_) => const HerdrConnectionClosedException('link'),
+            onError: (Object e) => e,
+          ),
+        ]);
+      } catch (e) {
+        cause = e;
+      } finally {
+        await cache?.close();
+        link?.close();
+      }
+      if (!current()) return;
+      final finalState = _finalState(cause);
+      if (finalState != null) {
+        state.value = finalState;
+        return;
+      }
+      await _waitToRetry(cause, failures++);
+      if (!current()) return;
+      state.value = LinkReconnecting(cause);
+    }
+  }
+
+  /// The state to stop in when a link fails with [error]; null to retry.
+  static LinkState? _finalState(Object error) => switch (error) {
+    SshHostKeyChanged() ||
+    SshHostKeyRejected() ||
+    SshAuthFailed() => LinkFailed(error),
+    HerdrProtocolException() => LinkFailed(error),
+    HerdrConnectException(cause: SSHChannelOpenError()) => LinkNoServer(error),
+    _ => null,
+  };
+
+  Future<void> _waitToRetry(Object cause, int failures) async {
+    final delay = backoff(failures);
+    final wake = _wake = Completer<void>();
+    final timer = Timer(delay, () {
+      if (identical(_wake, wake)) _endWait();
+    });
+    state.value = LinkReconnecting(cause, retryAt: DateTime.now().add(delay));
+    await wake.future;
+    timer.cancel();
+  }
+}

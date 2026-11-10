@@ -5,7 +5,11 @@ import 'package:shellherd/herdr/api/herdr_client.dart';
 
 /// [HerdrChannel] over a local Unix socket.
 class SocketHerdrChannel implements HerdrChannel {
-  SocketHerdrChannel(this._socket);
+  SocketHerdrChannel(this._socket) {
+    // A write to a server that is stopping fails here too. The reader of
+    // [input] sees the end of the connection anyway.
+    _socket.done.ignore();
+  }
   final Socket _socket;
 
   static HerdrDialer dialer(String path) => () async => SocketHerdrChannel(

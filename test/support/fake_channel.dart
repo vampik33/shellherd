@@ -57,6 +57,9 @@ class FakeDialer {
     return c;
   }
 
+  /// Every channel the client dials, from now on.
+  Stream<FakeChannel> get dialed => _dialed.stream;
+
   /// Completes with the next channel the client dials.
   Future<FakeChannel> get next => _dialed.stream.first;
 }
