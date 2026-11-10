@@ -50,7 +50,7 @@ void main() {
       await untilFound(tester, find.text('testbox'));
       await untilGone(tester, hostField('Label'));
 
-      await tester.tap(find.text('testbox'));
+      await tester.tap(find.byTooltip('Terminal on testbox'));
       await untilFound(tester, find.text('Trust'));
       await tester.tap(find.text('Trust'));
       await untilFound(tester, find.widgetWithText(Chip, 'ssh'));

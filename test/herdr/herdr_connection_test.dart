@@ -23,23 +23,6 @@ final _host = Host(
 );
 const _key = HostKey('ssh-ed25519', 'SHA256:x');
 
-/// One link that the fake opener handed out.
-class FakeLink {
-  final herdr = FakeHerdr();
-  final done = Completer<void>();
-  var closed = false;
-
-  OpenLink get open => OpenLink(
-    client: herdr.client,
-    server: FakeHerdr.ping,
-    done: done.future,
-    close: () {
-      closed = true;
-      if (!done.isCompleted) done.complete();
-    },
-  );
-}
-
 void main() {
   late List<FutureOr<FakeLink> Function()> script;
   late List<FakeLink> links;

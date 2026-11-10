@@ -1,11 +1,13 @@
 import 'package:flutter/material.dart';
 
 import '../app.dart';
+import '../herdr/herdr_connection.dart';
+import '../herdr/ui/herdr_screen.dart';
 import '../ssh/host.dart';
 import '../terminal/terminal_screen.dart';
 import 'host_form_screen.dart';
 
-/// The home screen: the saved PCs. A tap opens the terminal.
+/// The home screen: the saved PCs. A tap opens the herdr session.
 class HostListScreen extends StatefulWidget {
   const HostListScreen(this.services, {super.key});
 
@@ -56,6 +58,18 @@ class _HostListScreenState extends State<HostListScreen> {
     ),
   );
 
+  void _openHerdr(Host host) => Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => HerdrScreen(
+        host: host,
+        createConnection: () => HerdrConnection(
+          sshLinkOpener(widget.services.connector, host),
+        ),
+        onTerminal: () => _openTerminal(host),
+      ),
+    ),
+  );
+
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(title: const Text('shellherd')),
@@ -86,11 +100,21 @@ class _HostListScreenState extends State<HostListScreen> {
               '${host.port == 22 ? '' : ':${host.port}'}',
               style: const TextStyle(fontFamily: 'monospace'),
             ),
-            onTap: () => _openTerminal(host),
-            trailing: IconButton(
-              icon: const Icon(Icons.edit_outlined),
-              tooltip: 'Edit ${host.label}',
-              onPressed: () => _openForm(host),
+            onTap: () => _openHerdr(host),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.terminal),
+                  tooltip: 'Terminal on ${host.label}',
+                  onPressed: () => _openTerminal(host),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.edit_outlined),
+                  tooltip: 'Edit ${host.label}',
+                  onPressed: () => _openForm(host),
+                ),
+              ],
             ),
           ),
       ],

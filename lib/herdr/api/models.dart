@@ -175,6 +175,10 @@ class Pane {
   final String? label;
   final String? cwd;
   final String? terminalTitle;
+
+  /// The best name there is for this pane.
+  String get displayName =>
+      label ?? title ?? displayAgent ?? agent ?? terminalTitle ?? id;
 }
 
 class Agent {
@@ -210,6 +214,9 @@ class Agent {
   final String? agent;
   final String? displayAgent;
   final String? title;
+
+  /// The best name there is for this agent.
+  String get displayName => name ?? displayAgent ?? agent ?? 'agent';
 }
 
 class HerdrSnapshot {

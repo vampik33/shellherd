@@ -5,6 +5,7 @@ import 'package:xterm/xterm.dart';
 
 import '../ssh/host.dart';
 import '../ssh/ssh_connector.dart';
+import '../ui/link_status.dart';
 import '../ui/palette.dart';
 import 'key_bar.dart';
 import 'ssh_shell_session.dart';
@@ -109,7 +110,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
       backgroundColor: _theme.background,
       appBar: AppBar(
         title: Text(widget.host.label),
-        actions: [_LinkChip(_phase), const SizedBox(width: 8)],
+        actions: [_chip(), const SizedBox(width: 8)],
       ),
       body: SafeArea(
         child: Column(
@@ -130,9 +131,15 @@ class _TerminalScreenState extends State<TerminalScreen> {
     );
   }
 
+  LinkChip _chip() => switch (_phase) {
+    _Connecting() => LinkChip('connecting', _theme.yellow),
+    _Open() => LinkChip('ssh', _theme.green),
+    _Ended() || _Failed() => LinkChip('closed', _theme.red),
+  };
+
   Widget? _banner() => switch (_phase) {
     _Connecting() || _Open() => null,
-    _Ended(:final end) => _Banner(
+    _Ended(:final end) => StatusBanner(
       end.lost
           ? 'Connection lost.'
           : 'Session ended'
@@ -143,99 +150,19 @@ class _TerminalScreenState extends State<TerminalScreen> {
   };
 
   Widget _failure(Object error) {
-    final host = widget.host;
     final retry = ('Retry', _reconnect);
     return switch (error) {
-      // No way past a changed key here: the user forgets it on purpose.
-      SshHostKeyChanged(:final trusted, :final presented) => _Banner(
-        'The host key of ${host.address} changed.',
-        detail:
-            'Trusted: $trusted\nServer:  $presented\n'
-            'If you expected this, edit the host and forget the old key.',
-      ),
-      SshHostKeyRejected() => _Banner(
-        'The host key was not trusted.',
-        action: retry,
-      ),
-      SshAuthFailed() => _Banner(
-        'The server refused the key for ${host.user}@${host.address}.',
-        action: retry,
-      ),
-      SshNetworkException(:final cause) => _Banner(
-        'Cannot reach ${host.address}:${host.port}.',
-        detail: '$cause',
-        action: retry,
-      ),
-      TimeoutException() => _Banner(
+      SshConnectException() => sshFailureBanner(error, retry),
+      TimeoutException() => StatusBanner(
         'The shell did not start in time.',
         action: retry,
       ),
-      _ => _Banner('Cannot open the shell.', detail: '$error', action: retry),
-    };
-  }
-}
-
-class _Banner extends StatelessWidget {
-  const _Banner(this.message, {this.detail, this.action});
-
-  final String message;
-  final String? detail;
-  final (String, VoidCallback)? action;
-
-  @override
-  Widget build(BuildContext context) {
-    final scheme = Theme.of(context).colorScheme;
-    return Material(
-      color: scheme.errorContainer,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(12, 8, 8, 8),
-        child: Row(
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    message,
-                    style: TextStyle(color: scheme.onErrorContainer),
-                  ),
-                  if (detail case final detail?)
-                    SelectableText(
-                      detail,
-                      style: TextStyle(
-                        fontFamily: 'monospace',
-                        fontSize: 12,
-                        color: scheme.onErrorContainer,
-                      ),
-                    ),
-                ],
-              ),
-            ),
-            if (action case (final label, final onPressed))
-              TextButton(onPressed: onPressed, child: Text(label)),
-          ],
-        ),
+      _ => StatusBanner(
+        'Cannot open the shell.',
+        detail: '$error',
+        action: retry,
       ),
-    );
-  }
-}
-
-class _LinkChip extends StatelessWidget {
-  const _LinkChip(this.phase);
-  final _Phase phase;
-
-  @override
-  Widget build(BuildContext context) {
-    final (label, color) = switch (phase) {
-      _Connecting() => ('connecting', _theme.yellow),
-      _Open() => ('ssh', _theme.green),
-      _Ended() || _Failed() => ('closed', _theme.red),
     };
-    return Chip(
-      label: Text(label),
-      avatar: Icon(Icons.circle, size: 10, color: color),
-      visualDensity: VisualDensity.compact,
-    );
   }
 }
 
@@ -245,23 +172,23 @@ const _theme = TerminalTheme(
   selection: Color(0x66585B70),
   foreground: Mocha.text,
   background: Mocha.base,
-  black: Color(0xFF45475A),
+  black: Mocha.surface1,
   red: Mocha.red,
-  green: Color(0xFFA6E3A1),
-  yellow: Color(0xFFF9E2AF),
+  green: Mocha.green,
+  yellow: Mocha.yellow,
   blue: Mocha.blue,
   magenta: Color(0xFFF5C2E7),
   cyan: Mocha.teal,
   white: Color(0xFFBAC2DE),
   brightBlack: Color(0xFF585B70),
   brightRed: Mocha.red,
-  brightGreen: Color(0xFFA6E3A1),
-  brightYellow: Color(0xFFF9E2AF),
+  brightGreen: Mocha.green,
+  brightYellow: Mocha.yellow,
   brightBlue: Mocha.blue,
   brightMagenta: Color(0xFFF5C2E7),
   brightCyan: Mocha.teal,
-  brightWhite: Color(0xFFA6ADC8),
-  searchHitBackground: Color(0xFFF9E2AF),
-  searchHitBackgroundCurrent: Color(0xFFA6E3A1),
+  brightWhite: Mocha.subtext,
+  searchHitBackground: Mocha.yellow,
+  searchHitBackgroundCurrent: Mocha.green,
   searchHitForeground: Mocha.base,
 );

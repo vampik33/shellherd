@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:shellherd/herdr/api/herdr_client.dart';
+import 'package:shellherd/herdr/herdr_connection.dart';
 
 import 'fake_channel.dart';
 
@@ -16,6 +17,9 @@ class FakeHerdr {
     dialer.call,
     timeout: const Duration(seconds: 2),
   );
+
+  /// When set, the snapshot to serve instead of one built from [panes].
+  Map<String, Object?>? snapshotJson;
 
   /// Pane ids of the next snapshots.
   var panes = ['w1:p1'];
@@ -80,7 +84,7 @@ class FakeHerdr {
           'id': id,
           'result': {
             'type': 'session_snapshot',
-            'snapshot': _snapshot(n, panesNow),
+            'snapshot': snapshotJson ?? _snapshot(n, panesNow),
           },
         });
         c.end();
@@ -135,4 +139,25 @@ class FakeHerdr {
     ],
     'agents': const <Object?>[],
   };
+}
+
+/// One open link to a [FakeHerdr].
+class FakeLink {
+  FakeLink([Map<String, Object?>? snapshot]) {
+    herdr.snapshotJson = snapshot;
+  }
+
+  final herdr = FakeHerdr();
+  final done = Completer<void>();
+  var closed = false;
+
+  OpenLink get open => OpenLink(
+    client: herdr.client,
+    server: FakeHerdr.ping,
+    done: done.future,
+    close: () {
+      closed = true;
+      if (!done.isCompleted) done.complete();
+    },
+  );
 }
