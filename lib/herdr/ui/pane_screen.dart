@@ -31,11 +31,20 @@ const _answerKeys = [('1', '1'), ('2', '2'), ('3', '3'), ('esc', 'esc')];
 
 /// One pane of the herdr session: its text, and input to it.
 class PaneScreen extends StatefulWidget {
-  const PaneScreen({super.key, required this.connection, required this.paneId});
+  const PaneScreen({
+    super.key,
+    required this.connection,
+    required this.paneId,
+    this.onShown,
+  });
 
   /// Owned by the screen below this one.
   final HerdrConnection connection;
   final String paneId;
+
+  /// True while the pane is on the screen, false when the app hides or the
+  /// screen goes.
+  final void Function(bool shown)? onShown;
 
   @override
   State<PaneScreen> createState() => _PaneScreenState();
@@ -59,9 +68,16 @@ class _PaneScreenState extends State<PaneScreen> {
     _poller = PanePoller(client, widget.paneId)..start();
     _sender = PaneSender(client, widget.paneId, onSent: _poller.kick);
     _lifecycle = AppLifecycleListener(
-      onHide: _poller.pause,
-      onShow: _poller.resume,
+      onHide: () {
+        _poller.pause();
+        widget.onShown?.call(false);
+      },
+      onShow: () {
+        _poller.resume();
+        widget.onShown?.call(true);
+      },
     );
+    widget.onShown?.call(true);
     _changes = Listenable.merge([
       widget.connection.state,
       widget.connection.snapshot,
@@ -72,6 +88,7 @@ class _PaneScreenState extends State<PaneScreen> {
   @override
   void dispose() {
     _lifecycle.dispose();
+    widget.onShown?.call(false);
     _sender.cancel();
     _poller.dispose();
     _composer.dispose();

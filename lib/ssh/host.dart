@@ -14,6 +14,7 @@ class Host {
     this.herdrSocket,
     this.mosh = false,
     this.moshServer = 'mosh-server',
+    this.notify = false,
   }) {
     if (label.isEmpty || address.isEmpty || user.isEmpty) {
       throw ArgumentError('label, address and user must not be empty');
@@ -34,6 +35,7 @@ class Host {
     herdrSocket: j['herdrSocket'] as String?,
     mosh: j['mosh']! as bool,
     moshServer: j['moshServer']! as String,
+    notify: j['notify'] as bool? ?? false,
   );
 
   final String id;
@@ -57,6 +59,10 @@ class Host {
   final bool mosh;
   final String moshServer;
 
+  /// Watch the agents of this host in the background and notify when one
+  /// needs the user or is done.
+  final bool notify;
+
   Map<String, Object?> toJson() => {
     'id': id,
     'label': label,
@@ -68,6 +74,7 @@ class Host {
     'herdrSocket': ?herdrSocket,
     'mosh': mosh,
     'moshServer': moshServer,
+    'notify': notify,
   };
 }
 

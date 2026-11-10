@@ -74,10 +74,17 @@ void main() {
   FakeLink Function() failing(Object error) =>
       () => throw error;
 
-  Future<void> pumpScreen(WidgetTester tester, {Host? on}) => tester.pumpWidget(
+  Future<void> pumpScreen(
+    WidgetTester tester, {
+    Host? on,
+    String? openPane,
+    void Function(String paneId, bool shown)? onPaneShown,
+  }) => tester.pumpWidget(
     MaterialApp(
       home: HerdrScreen(
         host: on ?? host,
+        openPane: openPane,
+        onPaneShown: onPaneShown,
         createConnection: () {
           connections++;
           return HerdrConnection(
@@ -335,6 +342,28 @@ void main() {
     expect(links, hasLength(1), reason: 'the pane shares the link');
     expect(links.single.closed, isFalse);
     expect(find.text('my pane'), findsOneWidget);
+    await close(tester);
+  });
+
+  testWidgets('a pane to open opens at once, and tells when it comes and '
+      'goes', (tester) async {
+    final shown = <(String, bool)>[];
+    await pumpScreen(
+      tester,
+      openPane: 'w1:p2',
+      onPaneShown: (paneId, on) => shown.add((paneId, on)),
+    );
+    await untilFound(tester, find.byType(PaneScreen));
+    expect(
+      tester.widget<PaneScreen>(find.byType(PaneScreen)).paneId,
+      'w1:p2',
+    );
+    expect(shown, [('w1:p2', true)]);
+
+    await tester.pageBack();
+    await untilGone(tester, find.byType(PaneScreen));
+    expect(shown, [('w1:p2', true), ('w1:p2', false)]);
+    expect(find.text('reviewer'), findsOneWidget, reason: 'the lists below');
     await close(tester);
   });
 

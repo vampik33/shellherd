@@ -19,6 +19,8 @@ class HerdrScreen extends StatefulWidget {
     required this.host,
     required this.createConnection,
     required this.onTerminal,
+    this.openPane,
+    this.onPaneShown,
   });
 
   final Host host;
@@ -29,6 +31,12 @@ class HerdrScreen extends StatefulWidget {
 
   /// Opens a plain terminal on the PC.
   final VoidCallback onTerminal;
+
+  /// A pane to open at once, for a tapped notification.
+  final String? openPane;
+
+  /// Gets each pane that comes on the screen or goes from it.
+  final void Function(String paneId, bool shown)? onPaneShown;
 
   @override
   State<HerdrScreen> createState() => _HerdrScreenState();
@@ -45,6 +53,11 @@ class _HerdrScreenState extends State<HerdrScreen> {
   void initState() {
     super.initState();
     _link = widget.createConnection()..connect();
+    if (widget.openPane case final paneId?) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _openPane(paneId);
+      });
+    }
   }
 
   @override
@@ -122,7 +135,11 @@ class _HerdrScreenState extends State<HerdrScreen> {
   void _openPane(String paneId) => unawaited(
     Navigator.of(context).push(
       MaterialPageRoute<void>(
-        builder: (_) => PaneScreen(connection: _link, paneId: paneId),
+        builder: (_) => PaneScreen(
+          connection: _link,
+          paneId: paneId,
+          onShown: (shown) => widget.onPaneShown?.call(paneId, shown),
+        ),
       ),
     ),
   );

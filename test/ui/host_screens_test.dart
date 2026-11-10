@@ -10,11 +10,31 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shellherd/app.dart';
+import 'package:shellherd/herdr/ui/herdr_screen.dart';
+import 'package:shellherd/herdr/ui/pane_screen.dart';
+import 'package:shellherd/notify/notifier.dart';
+import 'package:shellherd/notify/notify_control.dart';
 import 'package:shellherd/ssh/host.dart';
 import 'package:shellherd/ssh/known_hosts.dart';
 
 import '../support/live_widgets.dart';
 import '../support/memory_secret_store.dart';
+
+/// Records the calls; [allowed] is what sync answers.
+class _FakeNotify implements NotifyControl {
+  final syncs = <bool>[];
+  final panes = <(PaneTarget, bool)>[];
+  var allowed = true;
+
+  @override
+  Future<bool> sync({bool ask = false}) async {
+    syncs.add(ask);
+    return allowed;
+  }
+
+  @override
+  void paneShown(PaneTarget pane, bool shown) => panes.add((pane, shown));
+}
 
 void main() {
   LiveTestWidgetsFlutterBinding.ensureInitialized();
@@ -22,11 +42,14 @@ void main() {
   late Directory dir;
   late _ControlledSecrets secrets;
   late AppServices services;
+  late _FakeNotify notify;
 
   setUp(() async {
     dir = await Directory.systemTemp.createTemp('shellherd-ui-');
     secrets = _ControlledSecrets();
     services = AppServices(dataDir: dir, secrets: secrets);
+    notify = _FakeNotify();
+    services.notify = notify;
   });
   tearDown(() => dir.delete(recursive: true));
 
@@ -36,6 +59,7 @@ void main() {
   Future<Host> savedHost({
     String id = 'h1',
     String address = 'pc.example',
+    int port = 22,
     String? herdrSession,
     bool mosh = false,
   }) async {
@@ -43,6 +67,7 @@ void main() {
       id: id,
       label: 'label-$id',
       address: address,
+      port: port,
       user: 'dev',
       keyId: await services.keys.generate(),
       herdrSession: herdrSession,
@@ -178,6 +203,97 @@ void main() {
     expect(saved.keyId, host.keyId);
     expect(saved.herdrSession, 'main');
     expect(saved.mosh, isTrue);
+  });
+
+  group('notify', () {
+    Finder notifySwitch() => find.widgetWithText(SwitchListTile, 'Notify');
+
+    Future<void> saveWithNotifyOn(WidgetTester tester, Host host) async {
+      await openEdit(tester, host);
+      await tester.ensureVisible(notifySwitch());
+      await tester.tap(notifySwitch());
+      await tester.pump();
+      await tapText(tester, 'Save');
+    }
+
+    testWidgets('is off for a new host', (tester) async {
+      await pumpApp(tester);
+      await openAddForm(tester);
+      expect(tester.widget<SwitchListTile>(notifySwitch()).value, isFalse);
+      await fillForm(tester);
+      await tapText(tester, 'Generate key');
+      await untilFound(tester, publicLine());
+      await tapText(tester, 'Save');
+      await untilGone(tester, hostField('Label'));
+      expect((await services.hosts.list()).single.notify, isFalse);
+      expect(notify.syncs, [false], reason: 'no permission prompt');
+    });
+
+    testWidgets('on saves it, and asks to allow notifications', (
+      tester,
+    ) async {
+      final host = await savedHost();
+      await pumpApp(tester);
+      await saveWithNotifyOn(tester, host);
+      await untilGone(tester, hostField('Label'));
+      expect((await services.hosts.list()).single.notify, isTrue);
+      expect(notify.syncs, [true]);
+    });
+
+    testWidgets('says so when the system does not allow notifications', (
+      tester,
+    ) async {
+      final host = await savedHost();
+      notify.allowed = false;
+      await pumpApp(tester);
+      await saveWithNotifyOn(tester, host);
+      await untilFound(
+        tester,
+        find.text(
+          'Notifications are off for shellherd in the system settings.',
+        ),
+      );
+      expect((await services.hosts.list()).single.notify, isTrue);
+    });
+
+    testWidgets('a tapped notification opens its pane over the screens open '
+        'now', (tester) async {
+      // Port 1 refuses at once: the screens show no link.
+      final host = await savedHost(address: '127.0.0.1', port: 1);
+      await pumpApp(tester);
+      await openEdit(tester, host);
+      unawaited(services.openPane(PaneTarget(host.id, 'w1:p2')));
+      await untilFound(tester, find.byType(PaneScreen));
+      expect(hostField('Label'), findsNothing, reason: 'the form is gone');
+      expect(
+        tester.widget<PaneScreen>(find.byType(PaneScreen)).paneId,
+        'w1:p2',
+      );
+      expect(notify.panes, [(PaneTarget(host.id, 'w1:p2'), true)]);
+      await tester.pageBack();
+      await untilGone(tester, find.byType(PaneScreen));
+      expect(find.byType(HerdrScreen), findsOneWidget);
+      expect(notify.panes.last, (PaneTarget(host.id, 'w1:p2'), false));
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('a newly trusted server key updates the watchers', (
+      tester,
+    ) async {
+      final host = await savedHost();
+      services.connector.onTrusted!(host);
+      await tester.pump();
+      expect(notify.syncs, [false], reason: 'no permission prompt');
+    });
+
+    testWidgets('a notification of a removed host opens nothing', (
+      tester,
+    ) async {
+      await pumpApp(tester);
+      await services.openPane(const PaneTarget('gone', 'w1:p1'));
+      await tester.pump();
+      expect(find.byType(HerdrScreen), findsNothing);
+    });
   });
 
   testWidgets('Save deletes the key that a new one replaced', (tester) async {
@@ -421,6 +537,7 @@ void main() {
       expect(await services.hosts.list(), isEmpty);
       expect(await services.keys.ids(), isEmpty);
       expect(await services.knownHosts.lookup(host.address, 22), isNull);
+      expect(notify.syncs, [false], reason: 'its watcher stops');
     });
 
     testWidgets('keeps the trusted key while another host uses the address', (

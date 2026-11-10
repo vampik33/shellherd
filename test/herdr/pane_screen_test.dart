@@ -32,7 +32,11 @@ void main() {
   Finder chip(String label) => find.widgetWithText(Chip, label);
   Finder paneText(String part) => find.textContaining(part, findRichText: true);
 
-  Future<void> open(WidgetTester tester, {Map<String, Object?>? session}) async {
+  Future<void> open(
+    WidgetTester tester, {
+    Map<String, Object?>? session,
+    void Function(bool shown)? onShown,
+  }) async {
     link = FakeLink(session ?? _session());
     herdr().paneText = '\x1b[31mred line\x1b[0m\r\nlast line';
     connection = HerdrConnection(
@@ -42,7 +46,11 @@ void main() {
     )..connect();
     await tester.pumpWidget(
       MaterialApp(
-        home: PaneScreen(connection: connection, paneId: 'w1:p1'),
+        home: PaneScreen(
+          connection: connection,
+          paneId: 'w1:p1',
+          onShown: onShown,
+        ),
       ),
     );
     await untilFound(tester, chip('live'));
@@ -81,6 +89,20 @@ void main() {
       lessThan(tester.getTopLeft(paneText('last line')).dy),
     );
     await close(tester);
+  });
+
+  testWidgets('tells whether the pane is on the screen', (tester) async {
+    final shown = <bool>[];
+    await open(tester, onShown: shown.add);
+    expect(shown, [true]);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+    expect(shown, [true, false]);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    expect(shown, [true, false, true]);
+    await close(tester);
+    expect(shown, [true, false, true, false]);
   });
 
   testWidgets('new text appears', (tester) async {

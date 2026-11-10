@@ -1,7 +1,10 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import 'notify/notifier.dart';
+import 'notify/notify_control.dart';
 import 'ssh/json_file.dart';
 import 'ssh/host.dart';
 import 'ssh/key_store.dart';
@@ -25,6 +28,9 @@ class AppServices {
   final KeyStore keys;
   final KnownHosts knownHosts;
 
+  /// main sets the one of the platform before the first screen.
+  NotifyControl notify = const NoNotify();
+
   /// The first-use prompt comes from the connector, not from a screen.
   final navigatorKey = GlobalKey<NavigatorState>();
 
@@ -33,7 +39,34 @@ class AppServices {
     keys: keys,
     askTrust: (host, key) =>
         showHostKeyDialog(navigatorKey.currentContext!, host, key),
+    // A watcher that stopped on this key can go on now.
+    onTrusted: (_) => unawaited(syncNotify()),
   );
+
+  /// [NotifyControl.sync] for callers that cannot show a failure.
+  Future<void> syncNotify() async {
+    try {
+      await notify.sync();
+    } catch (e) {
+      debugPrint('shellherd: cannot update the watchers: $e');
+    }
+  }
+
+  /// For the watchers, which run with no one to ask: it trusts no new key.
+  late final watchConnector = SshConnector(
+    knownHosts: knownHosts,
+    keys: keys,
+    askTrust: (_, _) async => false,
+  );
+
+  /// Opens the pane of a tapped notification, over the screens open now.
+  Future<void> openPane(PaneTarget target) async {
+    final host = await hosts.get(target.hostId);
+    final navigator = navigatorKey.currentState;
+    if (host == null || navigator == null) return;
+    navigator.popUntil((route) => route.isFirst);
+    unawaited(navigator.push(herdrRoute(this, host, openPane: target.paneId)));
+  }
 
   /// Removes [host] and what only it uses: its key, and the trusted server
   /// key unless another host connects to the same server.

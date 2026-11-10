@@ -64,13 +64,14 @@ void main() {
     keyId: key ?? keyId,
   );
 
-  SshConnector connector() => SshConnector(
+  SshConnector connector({void Function(Host)? onTrusted}) => SshConnector(
     knownHosts: knownHosts,
     keys: keys,
     askTrust: (h, key) async {
       asked.add(key);
       return answer(key);
     },
+    onTrusted: onTrusted,
     timeout: const Duration(seconds: 5),
   );
 
@@ -103,6 +104,24 @@ void main() {
 
       await connect();
       expect(asked, hasLength(1), reason: 'a known key does not ask again');
+    });
+
+    test('says when a key was trusted, only then', () async {
+      final trusted = <String>[];
+      answer = (_) async => false;
+      final declining = connector(onTrusted: (h) => trusted.add(h.id));
+      await expectLater(
+        declining.open(host()),
+        throwsA(isA<SshHostKeyRejected>()),
+      );
+      expect(trusted, isEmpty);
+
+      answer = (_) async => true;
+      open.add(await declining.open(host()));
+      expect(trusted, ['h1']);
+      expect(await knownHosts.lookup('127.0.0.1', sshd.port), serverKey());
+      open.add(await declining.open(host()));
+      expect(trusted, ['h1'], reason: 'a known key is not trusted again');
     });
 
     test('a declined key stops the connection and is not stored', () async {

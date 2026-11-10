@@ -28,6 +28,7 @@ class _HostFormScreenState extends State<HostFormScreen> {
   late final _address = TextEditingController(text: widget.host?.address);
   late final _port = TextEditingController(text: '${widget.host?.port ?? 22}');
   late final _user = TextEditingController(text: widget.host?.user);
+  late bool _notify = widget.host?.notify ?? false;
 
   ({String id, String line})? _key;
 
@@ -177,12 +178,14 @@ class _HostFormScreenState extends State<HostFormScreen> {
           herdrSocket: old?.herdrSocket,
           mosh: old?.mosh ?? false,
           moshServer: old?.moshServer ?? 'mosh-server',
+          notify: _notify,
         ),
       );
       _unsavedKeys.remove(keyId); // the host owns it now
       if (old != null && old.keyId != keyId) {
         await _services.keys.delete(old.keyId);
       }
+      await _syncNotify(ask: _notify);
       if (mounted) Navigator.of(context).pop();
     });
   }
@@ -198,8 +201,20 @@ class _HostFormScreenState extends State<HostFormScreen> {
     }
     await _run('Cannot remove the host', () async {
       await _services.removeHost(host);
+      await _syncNotify();
       if (mounted) Navigator.of(context).pop();
     });
+  }
+
+  /// The host is saved already, so a failure here only tells the user.
+  Future<void> _syncNotify({bool ask = false}) async {
+    try {
+      if (!await _services.notify.sync(ask: ask) && ask && mounted) {
+        _snack('Notifications are off for shellherd in the system settings.');
+      }
+    } catch (e) {
+      if (mounted) _snack('Cannot watch the agents: $e');
+    }
   }
 
   Future<void> _forgetTrusted() async {
@@ -287,6 +302,15 @@ class _HostFormScreenState extends State<HostFormScreen> {
                   keyboard: TextInputType.number,
                 ),
                 _field('User', _user, _required),
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Notify'),
+                  subtitle: const Text('When an agent needs you or is done.'),
+                  value: _notify,
+                  onChanged: _locked
+                      ? null
+                      : (v) => setState(() => _notify = v),
+                ),
                 const SizedBox(height: 24),
                 Text('SSH key', style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 8),

@@ -21,12 +21,16 @@ class SshConnector {
     required this.knownHosts,
     required this.keys,
     required this.askTrust,
+    this.onTrusted,
     this.timeout = const Duration(seconds: 15),
   });
 
   final KnownHosts knownHosts;
   final KeyStore keys;
   final TrustPrompt askTrust;
+
+  /// Called when the user has trusted the key of a new host.
+  final void Function(Host host)? onTrusted;
 
   /// For each of TCP connect, handshake and login.
   final Duration timeout;
@@ -46,6 +50,7 @@ class SshConnector {
     if (trusted != presented) {
       throw SshHostKeyChanged(host, trusted, presented);
     }
+    onTrusted?.call(host);
     return _connect(host, presented);
   }
 
