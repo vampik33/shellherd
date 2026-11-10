@@ -1,0 +1,674 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<title>Shellherd Plan</title>
+<link rel="stylesheet" href="htmlplan.css">
+<script src="htmlplan.js" defer></script>
+<style data-mock-shared>
+  /* Shellherd mock look: herdr default theme (catppuccin mocha), mono everywhere, phone touch targets. */
+  .sh { --base:#1e1e2e; --mantle:#181825; --crust:#11111b; --s0:#313244; --s1:#45475a; --ov:#6c7086; --sub:#a6adc8; --tx:#cdd6f4;
+        --blue:#89b4fa; --green:#a6e3a1; --yellow:#f9e2af; --red:#f38ba8; --peach:#fab387; --mauve:#cba6f7;
+        font: 13px/1.45 "JetBrains Mono", "Fira Code", ui-monospace, monospace; background: var(--base); color: var(--tx); }
+  .sh * { box-sizing: border-box; }
+  .sh .bar { display:flex; align-items:center; gap:8px; padding:10px 12px; background: var(--mantle); border-bottom:1px solid var(--s0); }
+  .sh .bar .t { font-weight:700; } .sh .bar .sp { flex:1; } .sh .bar .ic { color: var(--sub); }
+  .sh .sec { display:flex; justify-content:space-between; padding:10px 12px 4px; color: var(--ov); font-size:12px; text-transform:lowercase; }
+  .sh .sec b { color: var(--sub); font-weight:600; }
+  .sh .row { padding:9px 12px; border-bottom:1px solid var(--mantle); }
+  .sh .row .l1 { display:flex; gap:8px; align-items:center; } .sh .row .l2 { color: var(--ov); padding-left:18px; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+  .sh .row.sel { background: var(--s0); box-shadow: inset 3px 0 0 var(--blue); }
+  .sh .dot { width:9px; height:9px; border-radius:50%; display:inline-block; flex:none; }
+  .sh .blocked { background: var(--red); } .sh .working { background: var(--yellow); } .sh .done { background: var(--green); }
+  .sh .idle { background: var(--s1); } .sh .unknown { border:1px solid var(--ov); }
+  .sh .cr { color: var(--red); } .sh .cy { color: var(--yellow); } .sh .cg { color: var(--green); } .sh .cb { color: var(--blue); } .sh .cm { color: var(--mauve); } .sh .dim { color: var(--ov); } .sh .sub { color: var(--sub); }
+  .sh .chip { font-size:11px; padding:2px 7px; border-radius:9px; background: var(--s0); color: var(--sub); white-space:nowrap; }
+  .sh .chip.on { background: #89b4fa22; color: var(--blue); } .sh .chip.warn { background:#f38ba822; color: var(--red); }
+  .sh .nav { display:flex; border-top:1px solid var(--s0); background: var(--mantle); }
+  .sh .nav div { flex:1; text-align:center; padding:9px 0 11px; color: var(--ov); font-size:12px; } .sh .nav .on { color: var(--blue); box-shadow: inset 0 2px 0 var(--blue); }
+  .sh .seg { display:flex; margin:8px 12px; border:1px solid var(--s1); border-radius:7px; overflow:hidden; }
+  .sh .seg div { flex:1; text-align:center; padding:6px 0; color: var(--sub); } .sh .seg .on { background: var(--s0); color: var(--tx); font-weight:700; }
+  .sh .term { background: var(--crust); padding:8px 10px; white-space:pre; overflow:hidden; font-size:12px; line-height:1.4; }
+  .sh .keys { display:flex; gap:5px; padding:7px 8px; background: var(--mantle); border-top:1px solid var(--s0); overflow:hidden; }
+  .sh .keys span { flex:none; min-width:36px; text-align:center; padding:7px 6px; border-radius:6px; background: var(--s0); color: var(--tx); font-size:12px; }
+  .sh .keys span.mod { color: var(--peach); }
+  .sh .comp { display:flex; gap:8px; align-items:center; padding:8px 10px; background: var(--mantle); }
+  .sh .comp .in { flex:1; padding:9px 10px; border-radius:8px; background: var(--s0); color: var(--ov); }
+  .sh .comp .go { padding:8px 12px; border-radius:8px; background: var(--blue); color: var(--crust); font-weight:700; }
+  .sh .card { margin:8px 10px; padding:10px; border:1px solid #f38ba866; border-radius:8px; background:#f38ba812; }
+  .sh .btns { display:flex; gap:6px; margin-top:8px; flex-wrap:wrap; } .sh .btns span { padding:7px 11px; border-radius:6px; background: var(--s0); }
+  .sh .btns span.pri { background: var(--red); color: var(--crust); font-weight:700; }
+  .sh .fab { margin:10px 12px 12px; padding:10px; text-align:center; border:1px dashed var(--s1); border-radius:8px; color: var(--sub); }
+  .sh .state { padding:12px; display:flex; flex-direction:column; gap:8px; }
+  .sh .banner { padding:8px 10px; border-radius:7px; background: var(--s0); display:flex; gap:8px; align-items:center; }
+</style>
+<body>
+
+<header>
+  <h1>Shellherd: Flutter Herdr Client</h1>
+  <doc-changes new="36"></doc-changes>
+  <details class="thread"><summary>Why · 2 requests</summary>
+    <doc-quote via="prompt" from="the user">I want to create new flutter app It is called shellherd I should be able to run it on linux + android It should be able to connect via ssh and mosh to remote PC. And the main feature for this app it should support herdr server. So I should be able from the pohone connect to remote herdr server. The app itself should look like herdr app (but more phone orientated, so it would be easy to use on the phobe)</doc-quote>
+    <doc-quote via="prompt" from="the user">Ok, leave mosh just for connectiong to PC</doc-quote>
+  </details>
+</header>
+
+<main>
+<doc-plan>
+
+<!-- ═════ 1 · HOSTS ═════ -->
+<doc-claim>
+  <p>The user saves a PC once and sees it on the home screen.</p>
+  <doc-mock frame="phone" w="360" caption="Each PC shows its herdr state before the user opens it.">
+<template>
+<div class="sh">
+  <div class="bar"><span class="t">shellherd</span><span class="sp"></span><span class="ic">⚙</span></div>
+  <div class="sec"><b>machines</b><span>3</span></div>
+  <div class="row sel" data-ref="workbox">
+    <div class="l1"><span class="dot blocked"></span><b>workbox</b><span class="sp" style="flex:1"></span><span class="chip warn">1 blocked</span></div>
+    <div class="l2">dev@10.0.0.5:22 · herdr 0.9.5 · 2 working</div>
+    <div class="l1" style="padding:6px 0 0 18px"><span class="chip on">herdr</span><span class="chip">ssh</span><span class="chip">mosh</span></div>
+  </div>
+  <div class="row">
+    <div class="l1"><span class="dot done"></span><b>laptop</b></div>
+    <div class="l2">dev@laptop.lan · herdr · 1 done</div>
+    <div class="l1" style="padding:6px 0 0 18px"><span class="chip on">herdr</span><span class="chip">ssh</span></div>
+  </div>
+  <div class="row">
+    <div class="l1"><span class="dot unknown"></span><b>nas</b></div>
+    <div class="l2">root@nas.lan · no herdr</div>
+    <div class="l1" style="padding:6px 0 0 18px"><span class="chip">ssh</span><span class="chip">mosh</span></div>
+  </div>
+  <div class="fab" data-ref="add">+ new machine</div>
+</div>
+</template>
+    <doc-pin ref="workbox" anchor="tr" title="Rollup state">The worst agent state on that PC.</doc-pin>
+    <doc-pin ref="add" anchor="bl" title="Add a PC">Address, user, key, and the herdr session.</doc-pin>
+  </doc-mock>
+
+  <doc-claim>
+    <p>The host list is a JSON file. Keys and passwords stay in secure storage.</p>
+    <doc-schema id="host" lang="dart" title="lib/hosts/host.dart · sketch" caption="One saved PC. The app writes no secret into hosts.json.">
+<script type="text/plain">
+class Host {
+  final String id;             // uuid
+  final String label;          // "workbox"
+  final String address;        // DNS name or IP
+  final int port;              // 22
+  final String user;
+  final AuthMethod auth;       // key | password
+  final String? keyId;         // ed25519 private key in flutter_secure_storage
+  final String? herdrSession;  // null = default session
+  final String? herdrSocket;   // override; else ~/.config/herdr[/sessions/<s>]/herdr.sock
+  final bool mosh;             // show the mosh button
+  final String moshServer;     // "mosh-server"
+}
+</script>
+    </doc-schema>
+  </doc-claim>
+
+  <doc-claim>
+    <p>The app trusts a host key on first use and stops on a changed key.</p>
+    <doc-code title="lib/ssh/known_hosts.dart · sketch" lang="dart" hl="5-6">
+<script type="text/plain">
+/// dartssh2 calls this through SSHClient(onVerifyHostKey: ...).
+Future<bool> verify(Host h, String type, Uint8List fingerprint) async {
+  final known = await store.get(h.address, h.port);
+  if (known == null) return ui.askTrust(h, type, fingerprint); // shows SHA256:... once
+  if (known.matches(type, fingerprint)) return true;
+  ui.showKeyChanged(h, known, fingerprint);                     // no "continue" button
+  return false;
+}
+</script>
+    </doc-code>
+  </doc-claim>
+
+  <doc-claim>
+    <p>The app makes an ed25519 key and shows the public line to copy.</p>
+    <doc-calls title="Key setup">
+<script type="text/plain">
++ **KeyStore.generate**()                      @ lib/ssh/key_store.dart:1
++   OpenSSHEd25519KeyPair(...)                 @ lib/ssh/key_store.dart:1   -- dartssh2 key type
++   secureStorage.write(keyId, pem)            @ lib/ssh/key_store.dart:1
++ **KeyStore.publicLine**(keyId)               @ lib/ssh/key_store.dart:1   -- "ssh-ed25519 AAAA... shellherd@phone"
++ **KeyStore.importPem**(text, passphrase)     @ lib/ssh/key_store.dart:1   -- paste or file
+</script>
+    </doc-calls>
+  </doc-claim>
+</doc-claim>
+
+<!-- ═════ 2 · TERMINAL ═════ -->
+<doc-claim>
+  <p>The user opens a full terminal on the PC over SSH or mosh.</p>
+  <doc-mock frame="phone" w="360" caption="The key bar gives the keys that a phone keyboard does not have.">
+<template>
+<div class="sh">
+  <div class="bar"><span class="ic">‹</span><span class="t">workbox</span><span class="chip on" data-ref="link">mosh · 38 ms</span><span class="sp"></span><span class="ic">⋮</span></div>
+  <div class="term"><span class="cg">dev@workbox</span> <span class="cb">~/shellherd</span> <span class="dim">main</span>
+❯ cargo test -q
+running 42 tests
+..........................................
+test result: <span class="cg">ok</span>. 42 passed; 0 failed
+
+<span class="cg">dev@workbox</span> <span class="cb">~/shellherd</span> <span class="dim">main</span>
+❯ herdr status
+client:
+  version: 0.9.5
+server:
+  status: running
+❯ <span style="background:#cdd6f4">&nbsp;</span>
+
+
+
+
+
+
+
+
+</div>
+  <div class="keys" data-ref="keys"><span>esc</span><span>tab</span><span class="mod">ctrl</span><span class="mod">alt</span><span>↑</span><span>↓</span><span>←</span><span>→</span><span>|</span><span>~</span></div>
+</div>
+</template>
+    <doc-pin ref="link" anchor="br" title="Link state">Shows the mode and the round trip time.</doc-pin>
+    <doc-pin ref="keys" anchor="tl" title="Key bar">Scrolls sideways. Ctrl and alt stay on for one key.</doc-pin>
+  </doc-mock>
+
+  <doc-claim>
+    <p>For SSH, a dartssh2 shell with a PTY feeds the xterm.dart view.</p>
+    <doc-calls title="SSH terminal">
+<script type="text/plain">
++ **TerminalScreen**(host, mode: ssh)                  @ lib/terminal/terminal_screen.dart:1
++   **SshConnector.open**(host)                        @ lib/ssh/ssh_connector.dart:1   -- shared with herdr
++   client.shell(pty: SSHPtyConfig(width, height))     @ lib/terminal/ssh_shell_session.dart:1
++   session.stdout -> terminal.write                   @ lib/terminal/ssh_shell_session.dart:1
++   terminal.onOutput -> session.write                 @ lib/terminal/ssh_shell_session.dart:1
++   terminal.onResize -> session.resizeTerminal        @ lib/terminal/ssh_shell_session.dart:1
++   **KeyBar**(onKey: terminal.keyInput)               @ lib/terminal/key_bar.dart:1
+</script>
+    </doc-calls>
+  </doc-claim>
+
+  <doc-claim>
+    <p>For mosh, SSH starts mosh-server, then a local mosh-client runs in a PTY.</p>
+    <doc-calls title="Mosh terminal" caption="SSH is only for the start. After that, only UDP flows.">
+<script type="text/plain">
++ **MoshSession.start**(host)                                  @ lib/terminal/mosh_session.dart:1
++   client.run('mosh-server new -s -c 256 -l LANG=C.UTF-8')    @ lib/terminal/mosh_session.dart:1   -- prints MOSH CONNECT port key
++   **parseMoshConnect**(stdout)                               @ lib/terminal/mosh_session.dart:1
++   client.close()                                             @ lib/terminal/mosh_session.dart:1
++   **moshClientPath**()                                       @ lib/terminal/mosh_session.dart:1   -- Linux: PATH. Android: nativeLibraryDir
++   Pty.start(path, [ip, port], environment: {MOSH_KEY: key})  @ lib/terminal/mosh_session.dart:1   -- flutter_pty
++   pty.output -> terminal.write                               @ lib/terminal/mosh_session.dart:1
+</script>
+    </doc-calls>
+    <doc-ask id="mosh-android">
+      <p>How does mosh work on Android in v1?</p>
+      <label><input type="radio" name="moshAndroid" value="ndk" checked> Build mosh-client with the NDK and ship it in the APK <small>full feature; approximately 2 days of build work</small></label>
+      <label><input type="radio" name="moshAndroid" value="linux-only"> Mosh on Linux only in v1 <small>Android gets SSH; mosh comes later</small></label>
+      <label><input type="radio" name="moshAndroid" value="dart"> Write mosh in pure Dart <small>no native code; weeks of protocol work</small></label>
+    </doc-ask>
+    <div data-if="moshAndroid=linux-only"><doc-note tone="info">Then claim 2.3.1 goes, and the Android build has no mosh button.</doc-note></div>
+    <div data-if="moshAndroid=dart"><doc-note tone="risk"><strong>Risk</strong> The client must keep old screen states for SSP diffs and do AES-OCB. xterm.dart cannot copy a screen state.</doc-note></div>
+
+    <doc-claim at="tool/build_mosh_android.sh:1">
+      <p><b>build_mosh_android.sh</b> · static mosh-client for each ABI</p>
+      <doc-code title="tool/build_mosh_android.sh · sketch" lang="bash" hl="13">
+<script type="text/plain">
+#!/usr/bin/env bash
+# Builds a static mosh-client for Android and puts it where Android can exec it.
+set -euo pipefail
+NDK=${ANDROID_NDK_HOME:-$HOME/Android/Sdk/ndk/29.0.14206865}
+API=26
+for ABI in arm64-v8a x86_64; do
+  case $ABI in arm64-v8a) T=aarch64-linux-android ;; x86_64) T=x86_64-linux-android ;; esac
+  CC="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/${T}${API}-clang"
+  build_protobuf "$ABI" "$CC"          # static, lite runtime
+  build_openssl "$ABI" "$CC"           # AES-OCB for mosh crypto
+  build_ncurses "$ABI" "$CC"           # --with-fallbacks=xterm-256color, no terminfo files
+  build_mosh "$ABI" "$CC"              # with the Termux patches for bionic
+  install -m755 "out/$ABI/mosh-client" "android/app/src/main/jniLibs/$ABI/libmoshclient.so"
+done
+</script>
+      </doc-code>
+      <doc-note tone="warn"><strong>Android rule</strong> Since API 29 an app cannot exec a file from its data folder. The binary must be a <code>lib*.so</code> in <code>nativeLibraryDir</code>, with <code>extractNativeLibs="true"</code>.</doc-note>
+    </doc-claim>
+  </doc-claim>
+</doc-claim>
+
+<!-- ═════ 3 · HERDR LISTS ═════ -->
+<doc-claim>
+  <p>The user sees all herdr agents and spaces of a PC as phone lists.</p>
+  <doc-mock frame="phone" w="360" caption="The agents tab sorts by attention, as the herdr priority mode does.">
+<template>
+<div class="sh">
+  <div class="bar"><span class="ic">‹</span><span class="t">workbox</span><span class="dim">· default</span><span class="sp"></span><span class="dot working" title="live" style="background:#a6e3a1"></span></div>
+  <div class="seg" data-ref="seg"><div class="on">agents</div><div>spaces</div></div>
+  <div class="sec"><b>needs you</b><span>1</span></div>
+  <div class="row sel" data-ref="blocked">
+    <div class="l1"><span class="dot blocked"></span><b>claude</b><span class="dim">api-server › 1</span></div>
+    <div class="l2 cr">Allow edit of src/routes.rs?</div>
+  </div>
+  <div class="row">
+    <div class="l1"><span class="dot done"></span><b>codex</b><span class="dim">shellherd › review</span></div>
+    <div class="l2">done · 3 min ago</div>
+  </div>
+  <div class="sec"><b>working</b><span>2</span></div>
+  <div class="row">
+    <div class="l1"><span class="dot working"></span><b>claude</b><span class="dim">shellherd › agents</span></div>
+    <div class="l2">✻ Writing lib/herdr/herdr_cache.dart…</div>
+  </div>
+  <div class="row">
+    <div class="l1"><span class="dot working"></span><b>reviewer</b><span class="dim">kbo › 2</span></div>
+    <div class="l2">running cargo clippy</div>
+  </div>
+  <div class="sec"><b>idle</b><span>1</span></div>
+  <div class="row">
+    <div class="l1"><span class="dot idle"></span><b>opencode</b><span class="dim">notes › 1</span></div>
+  </div>
+  <div class="nav"><div class="on">agents</div><div>spaces</div><div>terminal</div></div>
+</div>
+</template>
+    <doc-pin ref="blocked" anchor="tr" title="Blocked first">The second line is the question the agent asks.</doc-pin>
+    <doc-pin ref="seg" anchor="br" title="Spaces tab">Workspaces, then tabs, then panes, as in the herdr sidebar.</doc-pin>
+  </doc-mock>
+
+  <doc-claim>
+    <p>Over SSH, the app opens the herdr socket as a direct-streamlocal channel.</p>
+    <doc-calls title="Connect to herdr" caption="herdr answers one request per connection, so each request opens its own SSH channel.">
+<script type="text/plain">
++ **HerdrLink.connect**(host)                       @ lib/herdr/herdr_link.dart:1
++   SshConnector.open(host)                         @ lib/ssh/ssh_connector.dart:1
++   client.run('printf %s "$HOME"')                 @ lib/herdr/herdr_link.dart:1           -- the socket path must be absolute
++   HerdrClient(**sshDialer**(client, socketPath))  @ lib/herdr/herdr_link.dart:1           -- the existing client, new dialer
+    HerdrClient.ping()                              @ lib/herdr/api/herdr_client.dart:1     -- protocol 22 and capabilities
+    HerdrClient.subscribe(subs)                     @ lib/herdr/api/herdr_client.dart:1     -- keeps its own channel open
+</script>
+    </doc-calls>
+    <doc-claim at="lib/herdr/herdr_link.dart:1">
+      <p><b>herdr_link.dart</b> · sshDialer() opens one streamlocal channel per dial</p>
+      <doc-code title="lib/herdr/herdr_link.dart · sketch" lang="dart">
+<script type="text/plain">
+/// HerdrClient calls this once for each request and once for
+/// each subscription. Channels share one SSH connection.
+HerdrDialer sshDialer(SSHClient ssh, String socketPath) => () async {
+  final ch = await ssh.forwardLocalUnix(socketPath);
+  return _SshHerdrChannel(ch);
+};
+
+class _SshHerdrChannel implements HerdrChannel {
+  _SshHerdrChannel(this._ch);
+  final SSHForwardChannel _ch;
+
+  @override
+  Stream<List<int>> get input => _ch.stream;  // decodeNdjson casts it
+
+  @override
+  void write(List<int> bytes) => _ch.sink.add(bytes);
+
+  @override
+  Future<void> close() async => _ch.close();
+}
+</script>
+      </doc-code>
+    </doc-claim>
+  </doc-claim>
+
+  <doc-claim>
+    <p>The app shows the link state and reconnects on its own.</p>
+    <doc-machine name="link" caption="The top bar of each herdr screen shows the current state.">
+<script type="text/plain">
+machine link initial offline
+state offline        # No SSH link. The lists show the last snapshot, dimmed.
+state connecting     # SSH handshake and login.
+state syncing        # Subscribe, then read session.snapshot.
+state live           # Events arrive. The lists are current.
+state reconnecting   # The link dropped. The app tries again with backoff.
+state no_server      # SSH works, but no herdr socket answers.
+state failed         # Login failed or the host key changed.
+
+| offline    | connecting   | syncing | live |
+| failed     | no_server    | .       | reconnecting |
+
+offline     -open->     connecting
+connecting  -ok->       syncing      : ssh ok
+connecting  -refused->  failed       : auth / key
+syncing     -ok->       live         : snapshot
+syncing     -nosock->   no_server    : no socket
+live        -drop->     reconnecting : drop / events_lost
+reconnecting -ok->      syncing
+reconnecting -close->   offline      : user leaves
+no_server   -retry->    syncing
+failed      -edit->     offline      : edit host
++ no_server -start->    syncing      : start herdr
+</script>
+      <div data-state="offline"><doc-mock frame="none" w="320"><template><div class="sh"><div class="state"><div class="banner"><span class="dot idle"></span><span class="sub">offline · last seen 08:41</span><span style="flex:1"></span><span class="cb">connect</span></div></div></div></template></doc-mock></div>
+      <div data-state="connecting"><doc-mock frame="none" w="320"><template><div class="sh"><div class="state"><div class="banner"><span class="dot working"></span><span class="sub">connecting to 10.0.0.5:22…</span></div></div></div></template></doc-mock></div>
+      <div data-state="syncing"><doc-mock frame="none" w="320"><template><div class="sh"><div class="state"><div class="banner"><span class="dot working"></span><span class="sub">reading herdr session…</span></div></div></div></template></doc-mock></div>
+      <div data-state="live"><doc-mock frame="none" w="320"><template><div class="sh"><div class="state"><div class="banner"><span class="dot done"></span><span class="sub">live · herdr 0.9.5 · protocol 22</span></div></div></div></template></doc-mock></div>
+      <div data-state="reconnecting"><doc-mock frame="none" w="320"><template><div class="sh"><div class="state"><div class="banner"><span class="dot working"></span><span class="cy">link lost · retry in 4 s</span><span style="flex:1"></span><span class="cb">now</span></div></div></div></template></doc-mock></div>
+      <div data-state="no_server"><doc-mock frame="none" w="320"><template><div class="sh"><div class="state"><div class="banner"><span class="dot unknown"></span><span class="sub">herdr is not running on workbox</span></div><div class="btns"><span class="pri" style="background:#89b4fa">start herdr</span><span>retry</span><span>terminal</span></div></div></div></template></doc-mock></div>
+      <div data-state="failed"><doc-mock frame="none" w="320"><template><div class="sh"><div class="state"><div class="banner" style="background:#f38ba822"><span class="dot blocked"></span><span class="cr">host key changed for workbox</span></div><div class="dim">SHA256:Qm4x… was SHA256:8fKd…</div><div class="btns"><span>edit host</span></div></div></div></template></doc-mock></div>
+    </doc-machine>
+    <doc-ask id="start-server">
+      <p>When no herdr server runs, can the app start one?</p>
+      <label><input type="radio" name="startServer" value="confirm" checked> Yes, after the user taps "start herdr" <small>runs herdr server detached over SSH</small></label>
+      <label><input type="radio" name="startServer" value="never"> No, the app only shows the message <small>the user starts it in the terminal</small></label>
+    </doc-ask>
+    <div data-if="startServer=never"><doc-note tone="info">Then the dashed "start" arrow goes.</doc-note></div>
+  </doc-claim>
+
+  <doc-claim>
+    <p>The cache subscribes first, then reads the snapshot, as the herdr docs require.</p>
+    <doc-code title="lib/herdr/herdr_cache.dart · sketch" lang="dart" hl="3,9">
+<script type="text/plain">
+Future<void> sync() async {
+  final events = await link.client.subscribe(kLifecycleSubscriptions); // waits for subscription_started
+  final early = <HerdrEvent>[];
+  final sub = events.listen(early.add);
+  state = HerdrState.from(await link.client.snapshot());
+  sub.onData(_apply);
+  early.forEach(_apply);
+  sub.onDone(link.markLost);                // events_lost or a drop: sync again
+}
+
+void _apply(HerdrEvent e) => switch (e) {
+  PaneAgentStatusChanged(:final paneId, :final status) => state = state.withStatus(paneId, status),
+  _ => _resnapshot.run(),                   // 150 ms debounce, then session.snapshot again
+};
+</script>
+    </doc-code>
+    <doc-note tone="info">A probe on herdr 0.9.5 showed no event for new pane output. Events only change the lists. Claim 4.1 reads the pane text.</doc-note>
+  </doc-claim>
+
+  <doc-claim>
+    <p>On a wide screen, the app shows the herdr sidebar and the pane side by side.</p>
+    <doc-mock frame="desktop" w="480" thumbnail title="shellherd — workbox" caption="At 840 dp and wider, the Linux window looks like the herdr TUI.">
+<template>
+<div class="sh" style="display:flex;height:260px">
+  <div style="width:150px;background:#181825;border-right:1px solid #313244;font-size:11px">
+    <div class="sec"><b>spaces</b></div>
+    <div class="row"><div class="l1"><span class="dot blocked"></span>api-server</div></div>
+    <div class="row sel"><div class="l1"><span class="dot working"></span>shellherd</div></div>
+    <div class="row"><div class="l1"><span class="dot idle"></span>notes</div></div>
+    <div class="sec"><b>agents</b><span>grouped</span></div>
+    <div class="row"><div class="l1"><span class="dot blocked"></span>claude</div></div>
+    <div class="row"><div class="l1"><span class="dot working"></span>claude</div></div>
+  </div>
+  <div style="flex:1;min-width:0;display:flex;flex-direction:column">
+    <div class="bar" style="font-size:11px;padding:6px 10px"><span class="chip on">1 agents</span><span class="chip">2 review</span><span class="dim">+</span></div>
+    <div class="term" style="flex:1;font-size:10px">✻ Writing lib/herdr/herdr_cache.dart…
+
+  ⎿ Read socket-api.mdx (946 lines)
+  ⎿ Edit lib/herdr/herdr_cache.dart
+
+<span class="dim">esc to interrupt</span></div>
+    <div class="comp" style="padding:6px 8px"><div class="in" style="padding:6px">prompt claude…</div><div class="go" style="padding:5px 9px">send</div></div>
+  </div>
+</div>
+</template>
+    </doc-mock>
+  </doc-claim>
+</doc-claim>
+
+<!-- ═════ 4 · PANE ═════ -->
+<doc-claim>
+  <p>The user reads a pane and answers its agent from the phone.</p>
+  <doc-mock frame="phone" w="360" caption="A blocked agent shows its question above the composer.">
+<template>
+<div class="sh">
+  <div class="bar"><span class="ic">‹</span><span class="dot blocked"></span><span class="t">claude</span><span class="dim">api-server › 1 › w1:p2</span><span class="sp"></span><span class="ic" data-ref="mode">⇄</span></div>
+  <div class="term" style="white-space:pre-wrap;height:250px">● I will add the rate limit to the router.
+
+● Update(src/routes.rs)
+  ⎿ +  .layer(RateLimitLayer::new(100, 60s))
+     +  .route("/health", get(health))
+
+<span class="cr">Do you want to make this edit to routes.rs?</span>
+ <span class="cb">❯ 1. Yes</span>
+   2. Yes, allow all edits this session
+   3. No, and tell Claude what to do</div>
+  <div class="card" data-ref="ask">
+    <div class="cr">● blocked · needs approval</div>
+    <div class="btns"><span class="pri">1 yes</span><span>2 always</span><span>3 no</span><span>esc</span></div>
+  </div>
+  <div class="keys"><span>esc</span><span class="mod">ctrl+c</span><span>tab</span><span>↑</span><span>↓</span><span>enter</span></div>
+  <div class="comp" data-ref="comp"><div class="in">prompt claude…</div><div class="go">send</div></div>
+</div>
+</template>
+    <doc-pin ref="mode" anchor="bl" title="View mode">Switch between the text view and the exact screen.</doc-pin>
+    <doc-pin ref="ask" anchor="tr" title="Quick answers">Each button sends one herdr key.</doc-pin>
+    <doc-pin ref="comp" anchor="tl" title="Composer">Sends with agent.prompt. The phone keyboard stays usable.</doc-pin>
+  </doc-mock>
+
+  <doc-claim>
+    <p>The app reads only the open pane, fast while its text changes.</p>
+    <doc-code title="lib/herdr/pane_poller.dart · sketch" lang="dart" hl="8-9,14-15">
+<script type="text/plain">
+class PanePoller {
+  static const fast = Duration(milliseconds: 400), slow = Duration(seconds: 2);
+  var _wait = fast;
+  var _last = '';
+
+  Stream<String> watch(String paneId, ReadSource source) async* {
+    while (_active) {                       // false when the screen closes or the app pauses
+      final r = await api.call('pane.read', {'pane_id': paneId, 'source': source.wire,
+          'format': 'ansi', 'strip_ansi': false, 'lines': 400});
+      final text = (r['read'] as Map)['text'] as String;
+      if (text != _last) {
+        _last = text; _wait = fast;
+        yield text;
+      } else {
+        _wait = _wait * 2 > slow ? slow : _wait * 2;
+      }
+      await _sleepOrKick(_wait);            // kick() after a send ends the wait at once
+    }
+  }
+}
+</script>
+    </doc-code>
+    <doc-ask id="pane-view">
+      <p>What does the pane view show first?</p>
+      <label><input type="radio" name="paneView" value="text" checked> Reflowed text, source recent_unwrapped <small>fits the phone width; colors kept</small></label>
+      <label><input type="radio" name="paneView" value="screen"> The exact screen, source visible, in xterm.dart <small>keeps the layout; the user pinches to zoom</small></label>
+    </doc-ask>
+    <doc-note tone="warn"><strong>Limit</strong> The JSON API has no output stream. The herdr thin client uses a private binary protocol, and v1 does not use it.</doc-note>
+  </doc-claim>
+
+  <doc-claim>
+    <p>A prompt goes through agent.prompt. A key goes through pane.send_keys.</p>
+    <doc-calls title="Answer an agent">
+<script type="text/plain">
++ **Composer.submit**(text)                                @ lib/herdr/ui/pane_screen.dart:1
++   agent.prompt {target: paneId, text}                    @ lib/herdr/api/herdr_client.dart:1   -- the pane holds an agent
++   pane.send_input {pane_id, text, keys: [enter]}         @ lib/herdr/api/herdr_client.dart:1   -- a plain shell pane
++   poller.kick()                                          @ lib/herdr/pane_poller.dart:1
++ **KeyBar.tap**(key)                                      @ lib/terminal/key_bar.dart:1
++   pane.send_keys {pane_id, keys: ["esc"]}                @ lib/herdr/api/herdr_client.dart:1   -- herdr names: esc, ctrl+c, enter, up
++   poller.kick()                                          @ lib/herdr/pane_poller.dart:1
+</script>
+    </doc-calls>
+    <doc-note tone="info">If agent.prompt returns <code>agent_blocked</code>, the app keeps the text in the composer and shows the quick answers. It does not send again.</doc-note>
+  </doc-claim>
+</doc-claim>
+
+<!-- ═════ 5 · NOTIFY ═════ -->
+<doc-claim>
+  <p>The phone shows a notification when an agent becomes blocked or done.</p>
+  <doc-mock frame="none" w="360" caption="A tap opens that pane.">
+<template>
+<div class="sh" style="border-radius:12px;padding:12px;background:#313244">
+  <div class="dim" style="font-size:11px">shellherd · workbox · now</div>
+  <div style="font-weight:700;margin-top:4px"><span class="cr">●</span> claude needs approval</div>
+  <div class="sub">api-server › 1 · Do you want to make this edit to routes.rs?</div>
+  <div class="btns"><span>open</span><span>mute 1 h</span></div>
+</div>
+</template>
+  </doc-mock>
+
+  <doc-claim>
+    <p>On Android, a foreground service keeps one event link per host.</p>
+    <doc-calls title="Background watcher" caption="The service isolate has its own SSH link. It holds only the event channel.">
+<script type="text/plain">
++ **BackgroundService.start**(hosts)                     @ lib/notify/background_service.dart:1   -- flutter_foreground_task
++   **AgentWatcher.run**(host)                           @ lib/notify/agent_watcher.dart:1
++     HerdrLink.connect(host)                            @ lib/herdr/herdr_link.dart:1
++     events.subscribe [pane.created, pane.closed]       @ lib/notify/agent_watcher.dart:1        -- pane list changes
++     events.subscribe [pane.agent_status_changed × N]   @ lib/notify/agent_watcher.dart:1        -- herdr needs one pane_id each
++     notifications.show(...)                            @ lib/notify/agent_watcher.dart:1        -- flutter_local_notifications
+</script>
+    </doc-calls>
+    <doc-note tone="warn">One unknown pane id rejects the whole subscribe request. The watcher must subscribe again when a pane closes.</doc-note>
+    <doc-ask id="background">
+      <p>Does the app watch agents when it is in the background?</p>
+      <label><input type="radio" name="background" value="service" checked> Yes, with a foreground service the user turns on per host <small>a permanent notification shows it runs</small></label>
+      <label><input type="radio" name="background" value="open-only"> Only while the app is open <small>no service; no battery cost</small></label>
+    </doc-ask>
+    <div data-if="background=open-only"><doc-note tone="info">Then background_service.dart goes, and claim 5.2 runs in the main isolate.</doc-note></div>
+  </doc-claim>
+
+  <doc-claim>
+    <p>The app notifies once for each change into blocked or done.</p>
+    <doc-code title="lib/notify/agent_watcher.dart · sketch" lang="dart" hl="5">
+<script type="text/plain">
+final _last = <String, AgentStatus>{};       // pane_id -> last status seen
+
+void onStatus(PaneAgentStatusChanged e) {
+  final before = _last[e.paneId]; _last[e.paneId] = e.status;
+  if (before == e.status || !const {AgentStatus.blocked, AgentStatus.done}.contains(e.status)) return;
+  if (app.isShowingPane(host, e.paneId)) return;    // the user sees it already
+  notifications.show(id: '${host.id}/${e.paneId}'.hashCode,
+      title: '${e.displayAgent ?? 'agent'} ${e.status == AgentStatus.blocked ? 'needs approval' : 'is done'}',
+      body: '${e.title ?? ''}', payload: '${host.id}|${e.paneId}');
+}
+</script>
+    </doc-code>
+  </doc-claim>
+</doc-claim>
+
+<!-- ═════ SHARED ═════ -->
+<doc-claim aux="shared">
+  <p>Shared: one Flutter project, one SSH connector, one herdr client.</p>
+  <doc-tree caption="All files are new. flutter create makes the android/ and linux/ folders.">
+<script type="text/plain">
+shellherd/
+  + pubspec.yaml
+  + lib/main.dart
+  + lib/app/theme.dart                 # herdr catppuccin tokens, mono font
+  + lib/app/router.dart
+  + lib/hosts/host.dart
+  + lib/hosts/host_store.dart
+  + lib/hosts/hosts_screen.dart
+  + lib/hosts/host_edit_screen.dart
+  + lib/ssh/ssh_connector.dart          # used by terminal, herdr and the watcher
+  + lib/ssh/known_hosts.dart
+  + lib/ssh/key_store.dart
+  + lib/terminal/terminal_screen.dart
+  + lib/terminal/key_bar.dart
+  + lib/terminal/ssh_shell_session.dart
+  + lib/terminal/mosh_session.dart
+  ~ lib/herdr/api/ndjson_transport.dart # exists: line codec, HerdrChannel, HerdrDialer
+  ~ lib/herdr/api/herdr_errors.dart     # exists
+  ~ lib/herdr/api/herdr_client.dart
+  ~ lib/herdr/api/models.dart
+  + lib/herdr/herdr_link.dart
+  + lib/herdr/herdr_cache.dart
+  + lib/herdr/pane_poller.dart
+  + lib/herdr/ui/agents_screen.dart
+  + lib/herdr/ui/spaces_screen.dart
+  + lib/herdr/ui/pane_screen.dart
+  + lib/herdr/ui/wide_layout.dart
+  + lib/herdr/ui/status_dot.dart
+  + lib/notify/agent_watcher.dart
+  + lib/notify/background_service.dart
+  + android/app/src/main/jniLibs/arm64-v8a/libmoshclient.so
+  + tool/build_mosh_android.sh
+  ~ test/herdr/ndjson_transport_test.dart   # exists
+  ~ test/herdr/herdr_client_test.dart       # exists
+  ~ test/herdr/schema_contract_test.dart    # exists
+  ~ test/herdr/herdr_live_test.dart         # exists
+  + test/herdr/herdr_cache_test.dart
+  + test/terminal/mosh_session_test.dart
+  + test/notify/agent_watcher_test.dart
+</script>
+  </doc-tree>
+
+  <doc-claim>
+    <p>The packages need Flutter 3.44 or later. The local Flutter is 3.38.5.</p>
+    <doc-code title="pubspec.yaml · sketch" lang="yaml">
+<script type="text/plain">
+environment:
+  sdk: ^3.12.0
+dependencies:
+  dartssh2: ^4.1.0                    # forwardLocalUnix, ed25519, PTY
+  xterm: ^4.0.0
+  flutter_pty: ^0.4.2                 # mosh-client on Linux and Android
+  flutter_riverpod: ^3.5.0
+  go_router: ^18.1.4
+  flutter_secure_storage: ^11.2.0
+  path_provider: ^2.1.6
+  flutter_foreground_task: ^11.0.3
+  flutter_local_notifications: ^23.0.0
+dev_dependencies:
+  json_schema: ^5.2.2                 # contract test against herdr api schema --json
+</script>
+    </doc-code>
+    <doc-ask id="flutter">
+      <p>How do we meet the package SDK limits?</p>
+      <label><input type="radio" name="flutter" value="upgrade" checked> Run flutter upgrade to the current stable <small>current packages; one global change</small></label>
+      <label><input type="radio" name="flutter" value="pin"> Stay on 3.38.5 and pin older packages <small>riverpod 3.3, older go_router and notifications</small></label>
+    </doc-ask>
+  </doc-claim>
+
+  <doc-claim>
+    <p>The Dart models keep only the fields that the UI uses.</p>
+    <doc-schema id="models" lang="dart" title="lib/herdr/api/models.dart · sketch" caption="Fields from herdr protocol 22. The parser ignores unknown fields.">
+<script type="text/plain">
+enum AgentStatus { idle, working, blocked, done, unknown }
+
+class Workspace { String id; int number; String label; bool focused; AgentStatus status; String activeTabId; }
+class Tab       { String id; String workspaceId; int number; String label; AgentStatus status; }
+class Pane {
+  String id;              // "w1:p2"
+  String workspaceId, tabId;
+  String? agent, displayAgent, title, label, cwd;
+  AgentStatus status;
+  int revision;
+}
+class HerdrState { List<Workspace> workspaces; List<Tab> tabs; List<Pane> panes; String? focusedPaneId; }
+</script>
+    </doc-schema>
+  </doc-claim>
+
+  <doc-claim>
+    <p>The tests run the client against a real herdr server in a named session.</p>
+    <doc-code title="test/herdr/herdr_cache_test.dart · sketch" lang="dart">
+<script type="text/plain">
+// Linux only. HerdrTestSession starts `herdr --session <tmp> server`, dials
+// the local Unix socket with the same HerdrClient, and deletes the session.
+test('subscribe, snapshot, then a new workspace shows in the cache', () async {
+  final cache = HerdrCache(await LocalLink.open(testSocket));
+  await cache.sync();
+  await cache.link.client.request('workspace.create', {'cwd': '/tmp', 'label': 'probe', 'focus': false});
+  await expectLater(cache.changes, emitsThrough(hasWorkspace('probe')));
+});
+</script>
+    </doc-code>
+  </doc-claim>
+</doc-claim>
+
+<!-- ═════ SCOPE ═════ -->
+<doc-claim aux="scope">
+  <p>Not changing or not in v1: these stay out.</p>
+  <ul>
+    <li>iOS, macOS, Windows and web builds.</li>
+    <li>The herdr binary client protocol (the thin client screen stream).</li>
+    <li>Herdr over mosh. Mosh carries only a terminal screen, so herdr uses SSH.</li>
+    <li>Worktree, plugin and integration management.</li>
+    <li>SFTP, port forwards, jump hosts and ssh-agent.</li>
+    <li>Changes to herdr itself or to the herdr config on the PC.</li>
+  </ul>
+</doc-claim>
+
+</doc-plan>
+</main>
+</body>
+</html>
