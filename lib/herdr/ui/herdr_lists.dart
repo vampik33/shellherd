@@ -37,9 +37,12 @@ class StatusDot extends StatelessWidget {
 
 /// All agents of the session, the ones that need attention first.
 class AgentsList extends StatelessWidget {
-  const AgentsList(this.snapshot, {super.key});
+  const AgentsList(this.snapshot, {super.key, required this.onOpen});
 
   final HerdrSnapshot snapshot;
+
+  /// Opens the pane with this id.
+  final void Function(String paneId) onOpen;
 
   static const _groups = [
     ('needs you', [AgentStatus.blocked, AgentStatus.done]),
@@ -61,6 +64,7 @@ class AgentsList extends StatelessWidget {
       aside: '${workspaces[a.workspaceId]} › ${tabs[a.tabId]}',
       detail: a.title ?? _statusLine(a.status),
       detailColor: a.status == AgentStatus.blocked ? Mocha.red : null,
+      onTap: () => onOpen(a.paneId),
     );
 
     List<Widget> section(String title, List<AgentStatus> statuses) {
@@ -90,9 +94,12 @@ class AgentsList extends StatelessWidget {
 
 /// Workspaces, their tabs and their panes, as in the herdr sidebar.
 class SpacesList extends StatelessWidget {
-  const SpacesList(this.snapshot, {super.key});
+  const SpacesList(this.snapshot, {super.key, required this.onOpen});
 
   final HerdrSnapshot snapshot;
+
+  /// Opens the pane with this id.
+  final void Function(String paneId) onOpen;
 
   @override
   Widget build(BuildContext context) {
@@ -117,6 +124,7 @@ class SpacesList extends StatelessWidget {
                 title: p.displayName,
                 aside: p.cwd,
                 indent: 2,
+                onTap: () => onOpen(p.id),
               ),
           ],
         ],
@@ -168,6 +176,7 @@ class _Row extends StatelessWidget {
     this.detail,
     this.detailColor,
     this.indent = 0,
+    this.onTap,
   });
 
   final AgentStatus status;
@@ -176,6 +185,7 @@ class _Row extends StatelessWidget {
   final String? detail;
   final Color? detailColor;
   final int indent;
+  final VoidCallback? onTap;
 
   static const _dim = TextStyle(
     fontFamily: _mono,
@@ -184,50 +194,53 @@ class _Row extends StatelessWidget {
   );
 
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: EdgeInsets.fromLTRB(12.0 + 16 * indent, 9, 12, 9),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Row(
-          children: [
-            StatusDot(status),
-            const SizedBox(width: 8),
-            Flexible(
-              child: Text(
-                title,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  fontFamily: _mono,
-                  fontWeight: indent == 0 ? FontWeight.w700 : null,
-                ),
-              ),
-            ),
-            if (aside case final aside?) ...[
+  Widget build(BuildContext context) => InkWell(
+    onTap: onTap,
+    child: Padding(
+      padding: EdgeInsets.fromLTRB(12.0 + 16 * indent, 9, 12, 9),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              StatusDot(status),
               const SizedBox(width: 8),
-              Expanded(
+              Flexible(
                 child: Text(
-                  aside,
+                  title,
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
-                  style: _dim,
+                  style: TextStyle(
+                    fontFamily: _mono,
+                    fontWeight: indent == 0 ? FontWeight.w700 : null,
+                  ),
                 ),
               ),
+              if (aside case final aside?) ...[
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    aside,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: _dim,
+                  ),
+                ),
+              ],
             ],
-          ],
-        ),
-        if (detail case final detail?)
-          Padding(
-            padding: const EdgeInsets.only(left: 17),
-            child: Text(
-              detail,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
-              style: _dim.copyWith(color: detailColor),
-            ),
           ),
-      ],
+          if (detail case final detail?)
+            Padding(
+              padding: const EdgeInsets.only(left: 17),
+              child: Text(
+                detail,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: _dim.copyWith(color: detailColor),
+              ),
+            ),
+        ],
+      ),
     ),
   );
 }

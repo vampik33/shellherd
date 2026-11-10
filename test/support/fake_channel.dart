@@ -11,11 +11,15 @@ class FakeChannel implements HerdrChannel {
   final _firstWrite = Completer<Map<String, Object?>>();
   var closed = false;
 
+  /// While set, a write throws it.
+  Object? writeError;
+
   @override
   Stream<List<int>> get input => _input.stream;
 
   @override
   void write(List<int> bytes) {
+    if (writeError case final error?) throw error;
     final msg = jsonDecode(utf8.decode(bytes)) as Map<String, Object?>;
     sent.add(msg);
     if (!_firstWrite.isCompleted) _firstWrite.complete(msg);
@@ -36,6 +40,9 @@ class FakeChannel implements HerdrChannel {
     if (!_input.isClosed) _input.add(bytes);
   }
 
+  /// The channel fails with [error], which is not from herdr.
+  void fail(Object error) => _input.addError(error);
+
   /// The server closes the connection. Not awaited: a controller's close()
   /// completes only once a listener sees "done".
   void end() {
@@ -49,9 +56,12 @@ class FakeDialer {
   final _dialed = StreamController<FakeChannel>.broadcast();
   Object? failWith;
 
+  /// Passed on to [FakeChannel.writeError] of each new channel.
+  Object? writeError;
+
   Future<HerdrChannel> call() async {
     if (failWith != null) throw failWith!;
-    final c = FakeChannel();
+    final c = FakeChannel()..writeError = writeError;
     channels.add(c);
     _dialed.add(c);
     return c;

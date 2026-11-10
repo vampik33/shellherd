@@ -166,29 +166,4 @@ class _TerminalScreenState extends State<TerminalScreen> {
   }
 }
 
-/// The Catppuccin Mocha colours that herdr uses.
-const _theme = TerminalTheme(
-  cursor: Color(0xFFF5E0DC),
-  selection: Color(0x66585B70),
-  foreground: Mocha.text,
-  background: Mocha.base,
-  black: Mocha.surface1,
-  red: Mocha.red,
-  green: Mocha.green,
-  yellow: Mocha.yellow,
-  blue: Mocha.blue,
-  magenta: Color(0xFFF5C2E7),
-  cyan: Mocha.teal,
-  white: Color(0xFFBAC2DE),
-  brightBlack: Color(0xFF585B70),
-  brightRed: Mocha.red,
-  brightGreen: Mocha.green,
-  brightYellow: Mocha.yellow,
-  brightBlue: Mocha.blue,
-  brightMagenta: Color(0xFFF5C2E7),
-  brightCyan: Mocha.teal,
-  brightWhite: Mocha.subtext,
-  searchHitBackground: Mocha.yellow,
-  searchHitBackgroundCurrent: Mocha.green,
-  searchHitForeground: Mocha.base,
-);
+const _theme = mochaTerminalTheme;

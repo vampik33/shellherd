@@ -6,10 +6,11 @@ import 'package:flutter/material.dart';
 import '../../ssh/host.dart';
 import '../../ssh/ssh_connector.dart';
 import '../../ui/link_status.dart';
-import '../../ui/palette.dart';
 import '../api/herdr_client.dart';
 import '../herdr_connection.dart';
 import 'herdr_lists.dart';
+import 'link_chip.dart';
+import 'pane_screen.dart';
 
 /// The herdr session of one PC, as phone lists.
 class HerdrScreen extends StatefulWidget {
@@ -63,7 +64,7 @@ class _HerdrScreenState extends State<HerdrScreen> {
     builder: (context, state, _) => Scaffold(
       appBar: AppBar(
         title: Text(_title),
-        actions: [_chip(state), const SizedBox(width: 8)],
+        actions: [herdrLinkChip(state), const SizedBox(width: 8)],
       ),
       body: SafeArea(
         child: Column(
@@ -112,19 +113,19 @@ class _HerdrScreenState extends State<HerdrScreen> {
     // The last known state, dimmed while it may be out of date.
     return Opacity(
       opacity: state is LinkLive ? 1 : 0.5,
-      child: _tab == 0 ? AgentsList(snapshot) : SpacesList(snapshot),
+      child: _tab == 0
+          ? AgentsList(snapshot, onOpen: _openPane)
+          : SpacesList(snapshot, onOpen: _openPane),
     );
   }
 
-  LinkChip _chip(LinkState state) => switch (state) {
-    LinkOffline() => const LinkChip('offline', Mocha.overlay),
-    LinkConnecting() => const LinkChip('connecting', Mocha.yellow),
-    LinkSyncing() => const LinkChip('syncing', Mocha.yellow),
-    LinkLive() => const LinkChip('live', Mocha.green),
-    LinkReconnecting() => const LinkChip('retrying', Mocha.yellow),
-    LinkNoServer() => const LinkChip('no herdr', Mocha.red),
-    LinkFailed() => const LinkChip('failed', Mocha.red),
-  };
+  void _openPane(String paneId) => unawaited(
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) => PaneScreen(connection: _link, paneId: paneId),
+      ),
+    ),
+  );
 
   Widget? _banner(LinkState state) {
     final retry = ('Retry', _link.connect);

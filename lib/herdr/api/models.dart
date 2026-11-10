@@ -253,6 +253,13 @@ class HerdrSnapshot {
   final List<Tab> tabs;
   final List<Pane> panes;
   final List<Agent> agents;
+
+  Pane? pane(String id) => panes.where((p) => p.id == id).firstOrNull;
+
+  Workspace? workspace(String id) =>
+      workspaces.where((w) => w.id == id).firstOrNull;
+
+  Tab? tab(String id) => tabs.where((t) => t.id == id).firstOrNull;
 }
 
 class PaneRead {

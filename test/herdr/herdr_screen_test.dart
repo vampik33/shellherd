@@ -12,101 +12,34 @@ import 'package:shellherd/herdr/api/herdr_client.dart';
 import 'package:shellherd/herdr/herdr_connection.dart';
 import 'package:shellherd/herdr/ui/herdr_lists.dart';
 import 'package:shellherd/herdr/ui/herdr_screen.dart';
+import 'package:shellherd/herdr/ui/pane_screen.dart';
 import 'package:shellherd/ssh/host.dart';
 import 'package:shellherd/ssh/known_hosts.dart';
 import 'package:shellherd/ssh/ssh_connector.dart';
 
 import '../support/fake_herdr.dart';
+import '../support/fake_snapshots.dart';
 import '../support/live_widgets.dart';
 
-Map<String, Object?> _workspace(
-  String id,
-  int number,
-  String label,
-  String status, {
-  int panes = 1,
-}) => {
-  'workspace_id': id,
-  'number': number,
-  'label': label,
-  'focused': false,
-  'pane_count': panes,
-  'tab_count': 1,
-  'active_tab_id': '$id:t1',
-  'agent_status': status,
-};
-
-Map<String, Object?> _tab(String workspace, String label, String status) => {
-  'tab_id': '$workspace:t1',
-  'workspace_id': workspace,
-  'number': 1,
-  'label': label,
-  'focused': false,
-  'pane_count': 1,
-  'agent_status': status,
-};
-
-Map<String, Object?> _pane(
-  String id,
-  String workspace,
-  String status,
-  Map<String, Object?> names,
-) => {
-  'pane_id': id,
-  'workspace_id': workspace,
-  'tab_id': '$workspace:t1',
-  'focused': false,
-  'agent_status': status,
-  'revision': 0,
-  ...names,
-};
-
-Map<String, Object?> _agent(
-  String pane,
-  String workspace,
-  String status,
-  Map<String, Object?> names,
-) => {
-  'pane_id': pane,
-  'workspace_id': workspace,
-  'tab_id': '$workspace:t1',
-  'agent_status': status,
-  ...names,
-};
-
-Map<String, Object?> _snapshot({
-  List<Map<String, Object?>> workspaces = const [],
-  List<Map<String, Object?>> tabs = const [],
-  List<Map<String, Object?>> panes = const [],
-  List<Map<String, Object?>> agents = const [],
-}) => {
-  'version': '0.9.5',
-  'protocol': 22,
-  'workspaces': workspaces,
-  'tabs': tabs,
-  'panes': panes,
-  'agents': agents,
-};
-
-Map<String, Object?> _busySession() => _snapshot(
+Map<String, Object?> _busySession() => fakeSnapshot(
   workspaces: [
-    _workspace('w1', 1, 'api', 'blocked', panes: 2),
-    _workspace('w2', 2, 'notes', 'idle'),
+    fakeWorkspace('w1', 1, 'api', 'blocked', panes: 2),
+    fakeWorkspace('w2', 2, 'notes', 'idle'),
   ],
-  tabs: [_tab('w1', 'server', 'blocked'), _tab('w2', 'one', 'idle')],
+  tabs: [fakeTab('w1', 'server', 'blocked'), fakeTab('w2', 'one', 'idle')],
   panes: [
-    _pane('w1:p1', 'w1', 'blocked', {'agent': 'claude', 'cwd': '/srv/api'}),
-    _pane('w1:p2', 'w1', 'working', {'label': 'my pane', 'agent': 'codex'}),
-    _pane('w2:p1', 'w2', 'idle', {}),
+    fakePane('w1:p1', 'w1', 'blocked', {'agent': 'claude', 'cwd': '/srv/api'}),
+    fakePane('w1:p2', 'w1', 'working', {'label': 'my pane', 'agent': 'codex'}),
+    fakePane('w2:p1', 'w2', 'idle', {}),
   ],
   agents: [
-    _agent('w1:p4', 'w1', 'idle', {'agent': 'opencode'}),
-    _agent('w1:p3', 'w1', 'working', {'name': 'reviewer', 'agent': 'claude'}),
-    _agent('w1:p2', 'w1', 'done', {
+    fakeAgent('w1:p4', 'w1', 'idle', {'agent': 'opencode'}),
+    fakeAgent('w1:p3', 'w1', 'working', {'name': 'reviewer', 'agent': 'claude'}),
+    fakeAgent('w1:p2', 'w1', 'done', {
       'display_agent': 'Codex CLI',
       'agent': 'codex',
     }),
-    _agent('w1:p1', 'w1', 'blocked', {
+    fakeAgent('w1:p1', 'w1', 'blocked', {
       'agent': 'claude',
       'title': 'Allow edit?',
     }),
@@ -236,12 +169,12 @@ void main() {
     await pumpScreen(tester);
     await live(tester);
     final herdr = links.single.herdr;
-    herdr.snapshotJson = _snapshot(
-      workspaces: [_workspace('w1', 1, 'api', 'working')],
-      tabs: [_tab('w1', 'server', 'working')],
-      panes: [_pane('w1:p9', 'w1', 'working', {})],
+    herdr.snapshotJson = fakeSnapshot(
+      workspaces: [fakeWorkspace('w1', 1, 'api', 'working')],
+      tabs: [fakeTab('w1', 'server', 'working')],
+      panes: [fakePane('w1:p9', 'w1', 'working', {})],
       agents: [
-        _agent('w1:p9', 'w1', 'working', {'agent': 'fresh'}),
+        fakeAgent('w1:p9', 'w1', 'working', {'agent': 'fresh'}),
       ],
     );
     herdr.push();
@@ -251,7 +184,7 @@ void main() {
   });
 
   testWidgets('an empty session says so', (tester) async {
-    script.add(() => FakeLink(_snapshot()));
+    script.add(() => FakeLink(fakeSnapshot()));
     await pumpScreen(tester);
     await live(tester);
     expect(find.text('No agents are running.'), findsOneWidget);
@@ -371,6 +304,52 @@ void main() {
     await close(tester);
   });
 
+  testWidgets('a tap on an agent opens its pane', (tester) async {
+    await pumpScreen(tester);
+    await live(tester);
+    await tester.tap(find.text('reviewer'));
+    await untilFound(tester, find.byType(PaneScreen));
+    expect(
+      tester.widget<PaneScreen>(find.byType(PaneScreen)).paneId,
+      'w1:p3',
+    );
+    await until(tester, () => links.single.herdr.reads.isNotEmpty, 'a read');
+    expect(links.single.herdr.reads.first['pane_id'], 'w1:p3');
+    await close(tester);
+  });
+
+  testWidgets('a tap on a pane opens it, and back returns', (tester) async {
+    await pumpScreen(tester);
+    await live(tester);
+    await tester.tap(nav('spaces'));
+    await tester.pump();
+    await tester.tap(find.text('my pane'));
+    await untilFound(tester, find.byType(PaneScreen));
+    expect(
+      tester.widget<PaneScreen>(find.byType(PaneScreen)).paneId,
+      'w1:p2',
+    );
+
+    await tester.pageBack();
+    await untilGone(tester, find.byType(PaneScreen));
+    expect(links, hasLength(1), reason: 'the pane shares the link');
+    expect(links.single.closed, isFalse);
+    expect(find.text('my pane'), findsOneWidget);
+    await close(tester);
+  });
+
+  testWidgets('a tap on a workspace or a tab opens nothing', (tester) async {
+    await pumpScreen(tester);
+    await live(tester);
+    await tester.tap(nav('spaces'));
+    await tester.pump();
+    await tester.tap(find.text('api'));
+    await tester.tap(find.text('server'));
+    await tester.pump();
+    expect(find.byType(PaneScreen), findsNothing);
+    await close(tester);
+  });
+
   testWidgets('long names fit a phone', (tester) async {
     tester.view.physicalSize = const Size(320, 640);
     tester.view.devicePixelRatio = 1;
@@ -378,14 +357,14 @@ void main() {
     final long = 'very-long-name-' * 6;
     script.add(
       () => FakeLink(
-        _snapshot(
-          workspaces: [_workspace('w1', 1, long, 'blocked')],
-          tabs: [_tab('w1', long, 'blocked')],
+        fakeSnapshot(
+          workspaces: [fakeWorkspace('w1', 1, long, 'blocked')],
+          tabs: [fakeTab('w1', long, 'blocked')],
           panes: [
-            _pane('w1:p1', 'w1', 'blocked', {'label': long, 'cwd': '/$long'}),
+            fakePane('w1:p1', 'w1', 'blocked', {'label': long, 'cwd': '/$long'}),
           ],
           agents: [
-            _agent('w1:p1', 'w1', 'blocked', {'agent': long, 'title': long}),
+            fakeAgent('w1:p1', 'w1', 'blocked', {'agent': long, 'title': long}),
           ],
         ),
       ),

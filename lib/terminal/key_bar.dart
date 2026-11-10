@@ -103,25 +103,45 @@ class KeyBar extends StatelessWidget {
           listenable: mods,
           builder: (context, _) => _Key(label, on: on(), onTap: toggle),
         );
-    return SizedBox(
-      height: 44,
-      child: ListView(
-        scrollDirection: Axis.horizontal,
-        children: [
-          key('esc', TerminalKey.escape),
-          key('tab', TerminalKey.tab),
-          modifier('ctrl', () => mods.ctrl, mods.toggleCtrl),
-          modifier('alt', () => mods.alt, mods.toggleAlt),
-          key('↑', TerminalKey.arrowUp),
-          key('↓', TerminalKey.arrowDown),
-          key('←', TerminalKey.arrowLeft),
-          key('→', TerminalKey.arrowRight),
-          text('|'),
-          text('~'),
-        ],
-      ),
-    );
+    return _KeyRow([
+      key('esc', TerminalKey.escape),
+      key('tab', TerminalKey.tab),
+      modifier('ctrl', () => mods.ctrl, mods.toggleCtrl),
+      modifier('alt', () => mods.alt, mods.toggleAlt),
+      key('↑', TerminalKey.arrowUp),
+      key('↓', TerminalKey.arrowDown),
+      key('←', TerminalKey.arrowLeft),
+      key('→', TerminalKey.arrowRight),
+      text('|'),
+      text('~'),
+    ]);
   }
+}
+
+/// Keys for a herdr pane: each sends one herdr key name.
+class HerdrKeys extends StatelessWidget {
+  const HerdrKeys(this.keys, {super.key, required this.onKey});
+
+  /// Label and herdr key name of each key.
+  final List<(String, String)> keys;
+  final void Function(String key) onKey;
+
+  @override
+  Widget build(BuildContext context) => _KeyRow([
+    for (final (label, key) in keys) _Key(label, onTap: () => onKey(key)),
+  ]);
+}
+
+class _KeyRow extends StatelessWidget {
+  const _KeyRow(this.keys);
+
+  final List<Widget> keys;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    height: 44,
+    child: ListView(scrollDirection: Axis.horizontal, children: keys),
+  );
 }
 
 class _Key extends StatelessWidget {
@@ -140,7 +160,7 @@ class _Key extends StatelessWidget {
         color: on ? scheme.primary : scheme.surfaceContainerHighest,
         borderRadius: BorderRadius.circular(6),
         child: InkWell(
-          // The terminal keeps the focus, so the phone keyboard stays open.
+          // The text input keeps the focus, so the phone keyboard stays open.
           canRequestFocus: false,
           borderRadius: BorderRadius.circular(6),
           onTap: onTap,

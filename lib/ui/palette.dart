@@ -1,4 +1,5 @@
 import 'package:flutter/painting.dart';
+import 'package:xterm/xterm.dart';
 
 /// The Catppuccin Mocha colours that herdr uses, for the app and the
 /// terminal.
@@ -14,3 +15,30 @@ abstract final class Mocha {
   static const overlay = Color(0xFF6C7086);
   static const subtext = Color(0xFFA6ADC8);
 }
+
+/// The Catppuccin Mocha colours that herdr uses.
+const mochaTerminalTheme = TerminalTheme(
+  cursor: Color(0xFFF5E0DC),
+  selection: Color(0x66585B70),
+  foreground: Mocha.text,
+  background: Mocha.base,
+  black: Mocha.surface1,
+  red: Mocha.red,
+  green: Mocha.green,
+  yellow: Mocha.yellow,
+  blue: Mocha.blue,
+  magenta: Color(0xFFF5C2E7),
+  cyan: Mocha.teal,
+  white: Color(0xFFBAC2DE),
+  brightBlack: Color(0xFF585B70),
+  brightRed: Mocha.red,
+  brightGreen: Mocha.green,
+  brightYellow: Mocha.yellow,
+  brightBlue: Mocha.blue,
+  brightMagenta: Color(0xFFF5C2E7),
+  brightCyan: Mocha.teal,
+  brightWhite: Mocha.subtext,
+  searchHitBackground: Mocha.yellow,
+  searchHitBackgroundCurrent: Mocha.green,
+  searchHitForeground: Mocha.base,
+);

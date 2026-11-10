@@ -138,6 +138,12 @@ class HerdrConnection {
   /// The last state of the session; null until the first sync.
   final snapshot = ValueNotifier<HerdrSnapshot?>(null);
 
+  HerdrClient? _client;
+
+  /// The client of the live link, for requests of the open screen; null
+  /// while there is none.
+  HerdrClient? get client => _client;
+
   /// Identifies the current run of [_run]. An older run sees that it is
   /// over and stops without touching the state.
   var _runId = 0;
@@ -160,6 +166,7 @@ class HerdrConnection {
   /// Drops the link and stays offline, keeping the [snapshot].
   void close() {
     _runId++;
+    _client = null;
     _endWait();
     if (_stop case final stop? when !stop.isCompleted) stop.complete('closed');
     state.value = const LinkOffline();
@@ -200,6 +207,7 @@ class HerdrConnection {
         await cache.start();
         if (!current()) return;
         failures = 0;
+        _client = link.client;
         state.value = LinkLive(link.server);
         // The first of these to complete is the reason the link ended.
         cause = await Future.any([
@@ -213,6 +221,7 @@ class HerdrConnection {
       } catch (e) {
         cause = e;
       } finally {
+        if (identical(_client, link?.client)) _client = null;
         await cache?.close();
         link?.close();
       }

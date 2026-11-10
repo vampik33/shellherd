@@ -264,6 +264,41 @@ void main() {
     });
   });
 
+  group('a channel that fails', () {
+    test('during a request counts as a closed connection', () async {
+      final (f, ch) = await serve(
+        client.ping,
+        (ch, _) => ch.fail(Exception('from the SSH library')),
+      );
+      await expectLater(f, throwsA(isA<HerdrConnectionClosedException>()));
+      expect(ch.closed, isTrue);
+    });
+
+    test('at the write counts as a closed connection', () async {
+      dialer.writeError = StateError('Cannot add event after closing');
+      final channel = dialer.next;
+      await expectLater(
+        client.ping(),
+        throwsA(isA<HerdrConnectionClosedException>()),
+      );
+      expect((await channel).closed, isTrue);
+    });
+
+    test('on a subscription comes out as a herdr error', () async {
+      final (f, ch) = await serve(
+        () => client.subscribe([const Subscription.lifecycle('pane.created')]),
+        (ch, req) => ok(ch, req, {'type': 'subscription_started'}),
+      );
+      final sub = await f;
+      final errors = <Object>[];
+      final done = Completer<void>();
+      sub.events.listen(null, onError: errors.add, onDone: done.complete);
+      ch.fail(Exception('from the SSH library'));
+      await done.future;
+      expect(errors.single, isA<HerdrConnectionClosedException>());
+    });
+  });
+
   group('subscribe', () {
     final subs = [
       const Subscription.lifecycle('workspace.created'),

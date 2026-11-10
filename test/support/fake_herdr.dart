@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:dartssh2/dartssh2.dart';
 import 'package:shellherd/herdr/api/herdr_client.dart';
 import 'package:shellherd/herdr/herdr_connection.dart';
 
@@ -46,6 +47,24 @@ class FakeHerdr {
   /// connection drops.
   final torn = <String>{};
 
+  /// Methods whose channel fails with an error of the SSH library.
+  final broken = <String>{};
+
+  /// What `pane.read` answers, by source; [paneText] for the others.
+  final paneTexts = <String, String>{};
+  var paneText = 'hello';
+
+  /// While set, `pane.read` replies wait for it.
+  Completer<void>? holdReads;
+
+  /// While set, replies to input wait for it.
+  Completer<void>? holdInput;
+
+  /// Parameters of each `pane.read`, and of each input request as
+  /// `(method, params)`.
+  final reads = <Map<String, Object?>>[];
+  final inputs = <(String, Map<String, Object?>)>[];
+
   int count(String method) => methods.where((m) => m == method).length;
 
   /// Pushes one event on the newest subscription.
@@ -62,6 +81,12 @@ class FakeHerdr {
     methods.add(method);
     if (torn.contains(method)) {
       c.replyRaw(utf8.encode('{"id":"cut off by a dro'));
+      c.end();
+      return;
+    }
+
+    if (broken.contains(method)) {
+      c.fail(SSHStateError('channel failed'));
       c.end();
       return;
     }
@@ -85,6 +110,38 @@ class FakeHerdr {
           'result': {
             'type': 'session_snapshot',
             'snapshot': snapshotJson ?? _snapshot(n, panesNow),
+          },
+        });
+        c.end();
+      case 'pane.read':
+        reads.add(params);
+        final source = params['source']! as String;
+        final text = paneTexts[source] ?? paneText;
+        await holdReads?.future;
+        c.reply({
+          'id': id,
+          'result': {
+            'type': 'pane_read',
+            'read': {
+              'pane_id': params['pane_id'],
+              'workspace_id': 'w1',
+              'tab_id': 'w1:t1',
+              'source': source,
+              'format': params['format'],
+              'text': text,
+              'revision': 0,
+              'truncated': false,
+            },
+          },
+        });
+        c.end();
+      case 'pane.send_keys' || 'pane.send_input' || 'agent.prompt':
+        inputs.add((method, params));
+        await holdInput?.future;
+        c.reply({
+          'id': id,
+          'result': {
+            'type': method == 'agent.prompt' ? 'agent_prompted' : 'ok',
           },
         });
         c.end();

@@ -147,11 +147,22 @@ class HerdrClient {
     final id = _nextId();
     final wait = timeout ?? this.timeout;
     final channel = await _open(method, wait);
-    final lines = StreamIterator(decodeNdjson(channel.input));
+    // A channel can fail with an error of the SSH library.
+    final lines = StreamIterator(
+      decodeNdjson(channel.input).handleError(
+        (Object _) => throw HerdrConnectionClosedException(method),
+        test: (e) => e is! HerdrException,
+      ),
+    );
     try {
-      channel.write(
-        encodeNdjson({'id': id, 'method': method, 'params': params}),
-      );
+      try {
+        channel.write(
+          encodeNdjson({'id': id, 'method': method, 'params': params}),
+        );
+      } on StateError {
+        // The channel has just closed.
+        throw HerdrConnectionClosedException(method);
+      }
       return (channel, lines, _resultOf(await _next(lines, method, wait), id, method));
     } catch (_) {
       await lines.cancel();
