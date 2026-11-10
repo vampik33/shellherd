@@ -32,13 +32,15 @@ class KnownHosts {
   KnownHosts(this._file);
   final JsonFile _file;
 
-  static String _entry(String address, int port) {
+  /// The identity of a server here: two hosts with the same entry share
+  /// one trusted key.
+  static String entryOf(String address, int port) {
     final host = address.toLowerCase();
     return host.contains(':') ? '[$host]:$port' : '$host:$port';
   }
 
   Future<HostKey?> lookup(String address, int port) async =>
-      _keyOf((await _file.read())[_entry(address, port)]);
+      _keyOf((await _file.read())[entryOf(address, port)]);
 
   static HostKey? _keyOf(Object? e) => e is Map<String, Object?>
       ? HostKey(e['type']! as String, e['fingerprint']! as String)
@@ -51,7 +53,7 @@ class KnownHosts {
   Future<HostKey> trust(String address, int port, HostKey key) async {
     late HostKey trusted;
     await _file.update((data) {
-      final entry = _entry(address, port);
+      final entry = entryOf(address, port);
       trusted = _keyOf(data[entry]) ?? key;
       data[entry] = {'type': trusted.type, 'fingerprint': trusted.fingerprint};
     });
@@ -61,5 +63,5 @@ class KnownHosts {
   /// Removes the trusted key, so the next connection asks again. This is
   /// the only way past a changed key.
   Future<void> forget(String address, int port) =>
-      _file.update((data) => data.remove(_entry(address, port)));
+      _file.update((data) => data.remove(entryOf(address, port)));
 }

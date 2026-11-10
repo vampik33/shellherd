@@ -19,6 +19,7 @@ import 'package:shellherd/terminal/terminal_screen.dart';
 import 'package:shellherd/ui/host_key_dialog.dart';
 import 'package:xterm/xterm.dart';
 
+import '../support/live_widgets.dart';
 import '../support/memory_secret_store.dart';
 import '../support/test_sshd.dart';
 
@@ -68,25 +69,6 @@ void main() {
     await sshd.stop();
     await dir.delete(recursive: true);
   });
-
-  Future<void> until(
-    WidgetTester tester,
-    bool Function() done,
-    String what,
-  ) async {
-    for (var i = 0; i < 500; i++) {
-      if (done()) return;
-      await Future<void>.delayed(const Duration(milliseconds: 20));
-      await tester.pump();
-    }
-    final texts = tester
-        .widgetList<Text>(find.byType(Text))
-        .map((t) => t.data ?? t.textSpan?.toPlainText());
-    fail('no $what; the screen shows: ${texts.join(' | ')}');
-  }
-
-  Future<void> untilFound(WidgetTester tester, Finder finder) =>
-      until(tester, () => finder.evaluate().isNotEmpty, '$finder');
 
   Terminal terminal(WidgetTester tester) =>
       tester.widget<TerminalView>(find.byType(TerminalView)).terminal;

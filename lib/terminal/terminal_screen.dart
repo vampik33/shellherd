@@ -5,6 +5,7 @@ import 'package:xterm/xterm.dart';
 
 import '../ssh/host.dart';
 import '../ssh/ssh_connector.dart';
+import '../ui/palette.dart';
 import 'key_bar.dart';
 import 'ssh_shell_session.dart';
 
@@ -148,7 +149,9 @@ class _TerminalScreenState extends State<TerminalScreen> {
       // No way past a changed key here: the user forgets it on purpose.
       SshHostKeyChanged(:final trusted, :final presented) => _Banner(
         'The host key of ${host.address} changed.',
-        detail: 'Trusted: $trusted\nServer:  $presented',
+        detail:
+            'Trusted: $trusted\nServer:  $presented\n'
+            'If you expected this, edit the host and forget the old key.',
       ),
       SshHostKeyRejected() => _Banner(
         'The host key was not trusted.',
@@ -240,25 +243,25 @@ class _LinkChip extends StatelessWidget {
 const _theme = TerminalTheme(
   cursor: Color(0xFFF5E0DC),
   selection: Color(0x66585B70),
-  foreground: Color(0xFFCDD6F4),
-  background: Color(0xFF1E1E2E),
+  foreground: Mocha.text,
+  background: Mocha.base,
   black: Color(0xFF45475A),
-  red: Color(0xFFF38BA8),
+  red: Mocha.red,
   green: Color(0xFFA6E3A1),
   yellow: Color(0xFFF9E2AF),
-  blue: Color(0xFF89B4FA),
+  blue: Mocha.blue,
   magenta: Color(0xFFF5C2E7),
-  cyan: Color(0xFF94E2D5),
+  cyan: Mocha.teal,
   white: Color(0xFFBAC2DE),
   brightBlack: Color(0xFF585B70),
-  brightRed: Color(0xFFF38BA8),
+  brightRed: Mocha.red,
   brightGreen: Color(0xFFA6E3A1),
   brightYellow: Color(0xFFF9E2AF),
-  brightBlue: Color(0xFF89B4FA),
+  brightBlue: Mocha.blue,
   brightMagenta: Color(0xFFF5C2E7),
-  brightCyan: Color(0xFF94E2D5),
+  brightCyan: Mocha.teal,
   brightWhite: Color(0xFFA6ADC8),
   searchHitBackground: Color(0xFFF9E2AF),
   searchHitBackgroundCurrent: Color(0xFFA6E3A1),
-  searchHitForeground: Color(0xFF1E1E2E),
+  searchHitForeground: Mocha.base,
 );

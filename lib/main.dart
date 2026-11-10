@@ -1,16 +1,14 @@
 import 'package:flutter/material.dart';
+import 'package:path_provider/path_provider.dart';
 
-void main() {
-  runApp(const MainApp());
-}
+import 'app.dart';
+import 'ssh/secret_store.dart';
 
-class MainApp extends StatelessWidget {
-  const MainApp({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return const MaterialApp(
-      home: Scaffold(body: Center(child: Text('Hello World!'))),
-    );
-  }
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  final services = AppServices(
+    dataDir: await getApplicationSupportDirectory(),
+    secrets: SecureSecretStore(),
+  );
+  runApp(ShellherdApp(services));
 }
