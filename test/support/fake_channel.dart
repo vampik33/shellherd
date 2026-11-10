@@ -24,21 +24,21 @@ class FakeChannel implements HerdrChannel {
   @override
   Future<void> close() async {
     closed = true;
-    // Not awaited: close() only completes once a listener sees "done".
-    if (!_input.isClosed) unawaited(_input.close());
+    end();
   }
 
   /// The first request the client wrote.
   Future<Map<String, Object?>> get request => _firstWrite.future;
 
-  void reply(Map<String, Object?> msg) => replyRaw(utf8.encode('${jsonEncode(msg)}\n'));
+  void reply(Map<String, Object?> msg) => replyRaw(encodeNdjson(msg));
 
   void replyRaw(List<int> bytes) {
     if (!_input.isClosed) _input.add(bytes);
   }
 
-  /// The server closes the connection.
-  Future<void> end() async {
+  /// The server closes the connection. Not awaited: a controller's close()
+  /// completes only once a listener sees "done".
+  void end() {
     if (!_input.isClosed) unawaited(_input.close());
   }
 }

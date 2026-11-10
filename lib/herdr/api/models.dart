@@ -312,16 +312,14 @@ class HerdrEvent {
   final String kind;
   final Map<String, Object?> data;
 
-  String? get paneId =>
-      _opt<String>(data, 'pane_id') ??
-      _opt<String>(_opt<Map<String, Object?>>(data, 'pane') ?? const {}, 'pane_id');
+  String? get paneId => _idOf('pane');
 
-  String? get workspaceId =>
-      _opt<String>(data, 'workspace_id') ??
-      _opt<String>(
-        _opt<Map<String, Object?>>(data, 'workspace') ?? const {},
-        'workspace_id',
-      );
+  String? get workspaceId => _idOf('workspace');
+
+  /// `<kind>_id` on the event itself, or inside its nested `<kind>` record.
+  String? _idOf(String kind) =>
+      _opt<String>(data, '${kind}_id') ??
+      _opt<String>(_opt<Map<String, Object?>>(data, kind) ?? const {}, '${kind}_id');
 
   /// Present on `pane_agent_status_changed`.
   AgentStatus? get agentStatus => data.containsKey('agent_status')

@@ -37,31 +37,19 @@ class HerdrClient {
     Map<String, Object?> params = const {},
     Duration? timeout,
   ]) async {
-    final id = _nextId();
-    final wait = timeout ?? this.timeout;
-    final channel = await _open(method);
-    final replies = StreamIterator(decodeNdjson(channel.input));
-    try {
-      channel.write(encodeNdjson(_envelope(id, method, params)));
-      return _resultOf(await _next(replies, method, wait), id, method);
-    } finally {
-      await replies.cancel();
-      await channel.close();
-    }
+    final (channel, lines, result) = await _exchange(method, params, timeout);
+    await lines.cancel();
+    await channel.close();
+    return result;
   }
 
-  Future<HerdrPing> ping() async {
-    final r = await request('ping');
-    return HerdrPing.fromJson(_expectType(r, 'pong', 'ping'));
-  }
+  Future<HerdrPing> ping() async =>
+      HerdrPing.fromJson(await _call('ping', 'pong'));
 
   Future<HerdrSnapshot> snapshot() async {
-    final r = _expectType(
-      await request('session.snapshot'),
-      'session_snapshot',
-      'session.snapshot',
-    );
-    return HerdrSnapshot.fromJson(_field(r, 'snapshot', 'session.snapshot'));
+    const method = 'session.snapshot';
+    final r = await _call(method, 'session_snapshot');
+    return HerdrSnapshot.fromJson(_field(r, 'snapshot', method));
   }
 
   /// Reads pane text. With [ReadFormat.ansi] the escape sequences are kept.
@@ -71,18 +59,15 @@ class HerdrClient {
     ReadFormat format = ReadFormat.text,
     int? lines,
   }) async {
-    final r = _expectType(
-      await request('pane.read', {
-        'pane_id': paneId,
-        'source': source.wire,
-        'format': format.name,
-        'lines': ?lines,
-        if (format == ReadFormat.ansi) 'strip_ansi': false,
-      }),
-      'pane_read',
-      'pane.read',
-    );
-    return PaneRead.fromJson(_field(r, 'read', 'pane.read'));
+    const method = 'pane.read';
+    final r = await _call(method, 'pane_read', {
+      'pane_id': paneId,
+      'source': source.wire,
+      'format': format.name,
+      'lines': ?lines,
+      if (format == ReadFormat.ansi) 'strip_ansi': false,
+    });
+    return PaneRead.fromJson(_field(r, 'read', method));
   }
 
   /// Sends literal [text], then herdr key names such as `enter`, in order.
@@ -95,35 +80,26 @@ class HerdrClient {
     if (text == null && keys.isEmpty) {
       throw ArgumentError('paneSendInput needs text or keys');
     }
-    _expectType(
-      await request('pane.send_input', {
-        'pane_id': paneId,
-        'text': ?text,
-        if (keys.isNotEmpty) 'keys': keys,
-      }),
-      'ok',
-      'pane.send_input',
-    );
+    await _call('pane.send_input', 'ok', {
+      'pane_id': paneId,
+      'text': ?text,
+      if (keys.isNotEmpty) 'keys': keys,
+    });
   }
 
   /// Sends herdr key names: `esc`, `enter`, `ctrl+c`, `up`, `f1`, ...
   Future<void> paneSendKeys(String paneId, List<String> keys) async {
     if (keys.isEmpty) throw ArgumentError('paneSendKeys needs keys');
-    _expectType(
-      await request('pane.send_keys', {'pane_id': paneId, 'keys': keys}),
-      'ok',
-      'pane.send_keys',
-    );
+    await _call('pane.send_keys', 'ok', {'pane_id': paneId, 'keys': keys});
   }
 
   /// Submits [text] plus Enter to the agent in [target] (a pane id or a live
   /// agent name). herdr rejects a blocked agent with `agent_blocked`.
   Future<void> agentPrompt(String target, String text) async {
-    _expectType(
-      await request('agent.prompt', {'target': target, 'text': text}),
-      'agent_prompted',
-      'agent.prompt',
-    );
+    await _call('agent.prompt', 'agent_prompted', {
+      'target': target,
+      'text': text,
+    });
   }
 
   /// Opens an event subscription. Returns after herdr acknowledges it.
@@ -136,22 +112,10 @@ class HerdrClient {
   }) async {
     if (subscriptions.isEmpty) throw ArgumentError('no subscriptions');
     const method = 'events.subscribe';
-    final id = _nextId();
-    final channel = await _open(method);
-    final lines = StreamIterator(decodeNdjson(channel.input));
+    final (channel, lines, ack) = await _exchange(method, {
+      'subscriptions': [for (final s in subscriptions) s.toJson()],
+    }, timeout);
     try {
-      channel.write(
-        encodeNdjson(
-          _envelope(id, method, {
-            'subscriptions': [for (final s in subscriptions) s.toJson()],
-          }),
-        ),
-      );
-      final ack = _resultOf(
-        await _next(lines, method, timeout ?? this.timeout),
-        id,
-        method,
-      );
       _expectType(ack, 'subscription_started', method);
     } catch (_) {
       await lines.cancel();
@@ -159,6 +123,39 @@ class HerdrClient {
       rethrow;
     }
     return HerdrSubscription._(channel, lines);
+  }
+
+  /// [request] plus a check of the result `type`.
+  Future<Map<String, Object?>> _call(
+    String method,
+    String type, [
+    Map<String, Object?> params = const {},
+  ]) async => _expectType(await request(method, params), type, method);
+
+  /// Dials, writes one request and reads its reply. On success the caller
+  /// owns the open channel and line iterator; on failure both are released.
+  Future<
+    (HerdrChannel, StreamIterator<Map<String, Object?>>, Map<String, Object?>)
+  >
+  _exchange(
+    String method,
+    Map<String, Object?> params,
+    Duration? timeout,
+  ) async {
+    final id = _nextId();
+    final wait = timeout ?? this.timeout;
+    final channel = await _open(method);
+    final lines = StreamIterator(decodeNdjson(channel.input));
+    try {
+      channel.write(
+        encodeNdjson({'id': id, 'method': method, 'params': params}),
+      );
+      return (channel, lines, _resultOf(await _next(lines, method, wait), id, method));
+    } catch (_) {
+      await lines.cancel();
+      await channel.close();
+      rethrow;
+    }
   }
 
   Future<HerdrChannel> _open(String method) async {
@@ -171,12 +168,6 @@ class HerdrClient {
     }
   }
 
-  static Map<String, Object?> _envelope(
-    String id,
-    String method,
-    Map<String, Object?> params,
-  ) => {'id': id, 'method': method, 'params': params};
-
   static Future<Map<String, Object?>> _next(
     StreamIterator<Map<String, Object?>> lines,
     String method,
@@ -187,8 +178,6 @@ class HerdrClient {
       hasLine = await lines.moveNext().timeout(wait);
     } on TimeoutException {
       throw HerdrTimeoutException(method, wait);
-    } on NdjsonFormatException catch (e) {
-      throw HerdrProtocolException('$method: ${e.message}');
     }
     if (!hasLine) throw HerdrConnectionClosedException(method);
     return lines.current;
@@ -207,11 +196,7 @@ class HerdrClient {
       if (replyId != id && replyId != '') {
         throw HerdrProtocolException('$method: reply id "$replyId" != "$id"');
       }
-      throw HerdrApiException(
-        method,
-        error['code'] is String ? error['code']! as String : 'unknown',
-        error['message'] is String ? error['message']! as String : '',
-      );
+      throw HerdrApiException.fromJson(method, error);
     }
     if (reply['id'] != id) {
       throw HerdrProtocolException('$method: reply id "${reply['id']}" != "$id"');
@@ -274,28 +259,18 @@ class HerdrSubscription {
         while (await _lines.moveNext()) {
           if (out.isClosed) return;
           final line = _lines.current;
-          if (line.containsKey('event')) {
-            out.add(HerdrEvent.fromJson(line));
-          } else if (line['error'] case final Map<String, Object?> error) {
-            out.addError(
-              HerdrApiException(
-                'events.subscribe',
-                error['code'] is String ? error['code']! as String : 'unknown',
-                error['message'] is String ? error['message']! as String : '',
-              ),
-            );
-            return;
-          } else {
+          if (line['error'] case final Map<String, Object?> error) {
+            throw HerdrApiException.fromJson('events.subscribe', error);
+          }
+          if (!line.containsKey('event')) {
             throw const HerdrProtocolException(
               'events.subscribe: unexpected line',
             );
           }
-        }
-      } on NdjsonFormatException catch (e) {
-        if (!out.isClosed) {
-          out.addError(HerdrProtocolException('events.subscribe: ${e.message}'));
+          out.add(HerdrEvent.fromJson(line));
         }
       } on HerdrException catch (e) {
+        // Includes NdjsonFormatException, a HerdrProtocolException.
         if (!out.isClosed) out.addError(e);
       } finally {
         await close();

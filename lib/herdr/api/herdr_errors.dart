@@ -9,6 +9,14 @@ sealed class HerdrException implements Exception {
 /// `agent_blocked`, `invalid_request` and, on a subscription, `events_lost`.
 class HerdrApiException extends HerdrException {
   const HerdrApiException(this.method, this.code, this.message);
+
+  /// From the wire `error` object: `{"code": "...", "message": "..."}`.
+  factory HerdrApiException.fromJson(String method, Map<String, Object?> e) =>
+      HerdrApiException(
+        method,
+        e['code'] is String ? e['code']! as String : 'unknown',
+        e['message'] is String ? e['message']! as String : '',
+      );
   final String method;
   final String code;
   final String message;

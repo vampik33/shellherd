@@ -301,7 +301,7 @@ void main() {
           'workspace': {'workspace_id': 'w2'},
         },
       });
-      await ch.end();
+      ch.end();
       final events = await sub.events.toList();
       expect(events.map((e) => e.kind), ['pane_agent_status_changed', 'workspace_created']);
       expect(events[0].paneId, 'w1:p1');

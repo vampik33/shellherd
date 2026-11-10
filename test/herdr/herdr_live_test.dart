@@ -4,7 +4,6 @@
 @Tags(['herdr'])
 library;
 
-import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shellherd/herdr/api/herdr_client.dart';
@@ -95,19 +94,12 @@ Future<void> main() async {
         Subscription.lifecycle('workspace.created'),
         Subscription.lifecycle('pane.created'),
       ]);
-      final events = StreamIterator(sub.events);
-      try {
-        final paneId = await herdr.createWorkspace('evented');
-        final seen = <HerdrEvent>[];
-        while (seen.length < 2 && await events.moveNext().timeout(const Duration(seconds: 5))) {
-          seen.add(events.current);
-        }
-        final ws = seen.singleWhere((e) => e.kind == 'workspace_created');
-        expect((ws.data['workspace']! as Map)['label'], 'evented');
-        expect(seen.singleWhere((e) => e.kind == 'pane_created').paneId, paneId);
-      } finally {
-        await events.cancel();
-      }
+      final seen = sub.events.take(2).toList(); // take() cancels, closing the channel
+      final paneId = await herdr.createWorkspace('evented');
+      final events = await seen.timeout(const Duration(seconds: 5));
+      final ws = events.singleWhere((e) => e.kind == 'workspace_created');
+      expect((ws.data['workspace']! as Map)['label'], 'evented');
+      expect(events.singleWhere((e) => e.kind == 'pane_created').paneId, paneId);
     });
 
     test('subscribing to the status of an unknown pane is rejected', () async {

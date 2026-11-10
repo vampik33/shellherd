@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'herdr_errors.dart';
+
 /// One byte stream to a herdr API socket.
 ///
 /// Locally this is a Unix socket; over SSH it is a
@@ -14,13 +16,15 @@ abstract interface class HerdrChannel {
   Future<void> close();
 }
 
-/// Opens a new [HerdrChannel] to the same herdr server.
+/// Opens a new [HerdrChannel] to the same herdr server. It is called for
+/// every request, so an SSH dialer must reuse one SSH connection and open
+/// only a new channel each time.
 typedef HerdrDialer = Future<HerdrChannel> Function();
 
-/// Thrown when a line from herdr is not a UTF-8 JSON object.
-class NdjsonFormatException implements Exception {
-  NdjsonFormatException(this.message, [this.line]);
-  final String message;
+/// A line from herdr is not a UTF-8 JSON object. It is a
+/// [HerdrProtocolException], so client callers need no extra catch.
+class NdjsonFormatException extends HerdrProtocolException {
+  const NdjsonFormatException(super.message, [this.line]);
   final String? line;
 
   @override
