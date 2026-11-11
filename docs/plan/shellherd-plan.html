@@ -87,23 +87,28 @@
 
   <doc-claim>
     <p>The host list is a JSON file. Keys and passwords stay in secure storage.</p>
-    <doc-schema id="host" lang="dart" title="lib/hosts/host.dart · sketch" caption="One saved PC. The app writes no secret into hosts.json.">
+    <doc-schema id="host" lang="dart" title="lib/ssh/host.dart" caption="One saved PC. The app writes no secret into hosts.json.">
 <script type="text/plain">
+enum SshAuth { key, password }
+
 class Host {
-  final String id;             // uuid
+  final String id;             // random 32 hex characters
   final String label;          // "workbox"
   final String address;        // DNS name or IP
   final int port;              // 22
   final String user;
-  final AuthMethod auth;       // key | password
-  final String? keyId;         // ed25519 private key in flutter_secure_storage
+  final SshAuth auth;          // key | password; a host saved before passwords loads as key
+  final String? keyId;         // key hosts only: KeyStore "ssh-key.<keyId>"
+                               // password hosts: KeyStore "ssh-password.<id>"
   final String? herdrSession;  // null = default session
   final String? herdrSocket;   // override; else ~/.config/herdr[/sessions/<s>]/herdr.sock
   final bool mosh;             // show the mosh button
   final String moshServer;     // "mosh-server"
+  final bool notify;           // watch the agents in the background
 }
 </script>
     </doc-schema>
+    <doc-note tone="ok">Done: password login. The connector answers the password method and keyboard-interactive (one hidden prompt, once), and the host form switches between SSH key and password.</doc-note>
   </doc-claim>
 
   <doc-claim>
