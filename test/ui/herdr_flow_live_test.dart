@@ -9,12 +9,19 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shellherd/app.dart';
+import 'package:shellherd/herdr/ui/herdr_lists.dart';
 import 'package:shellherd/ssh/host.dart';
 
 import '../support/herdr_test_session.dart';
 import '../support/live_widgets.dart';
 import '../support/memory_secret_store.dart';
 import '../support/test_sshd.dart';
+
+/// [part] in the pane text. find.text would also match the composer, which
+/// holds a prompt until herdr takes it.
+Finder inPane(String part) => find.byWidgetPredicate(
+  (w) => w is RichText && w.text.toPlainText().contains(part),
+);
 
 Future<void> main() async {
   LiveTestWidgetsFlutterBinding.ensureInitialized();
@@ -135,9 +142,68 @@ Future<void> main() async {
     await submit('${dir.path}/claude');
     await untilFound(tester, find.text('prompt claude…'));
     await submit('hello-agent');
-    await untilFound(tester, text('hello-agent'));
+    await untilFound(tester, inPane('hello-agent'));
 
     await tester.pumpWidget(const SizedBox()); // closes the connections
     await Future<void>.delayed(const Duration(milliseconds: 50));
   });
+
+  testWidgets(
+    'a wide window shows the sidebar and the pane side by side',
+    skip: skip,
+    (tester) async {
+      tester.view.physicalSize = const Size(1280, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final herdr = await HerdrTestSession.start();
+      addTearDown(herdr.stop);
+      final pane = await herdr.createWorkspace('myspace');
+      final dir = await Directory.systemTemp.createTemp('shellherd-agent-');
+      addTearDown(() => dir.delete(recursive: true));
+      // herdr takes a process with this name for an agent.
+      await Link('${dir.path}/claude').create('/usr/bin/cat');
+      Finder inSidebar(Finder f) =>
+          find.descendant(of: find.byType(HerdrSidebar), matching: f);
+      Finder text(String part) => find.textContaining(part, findRichText: true);
+
+      await openHost(tester, herdr);
+      await untilFound(tester, inSidebar(find.text('myspace')));
+      expect(inSidebar(find.text('No agents are running.')), findsOneWidget);
+      expect(find.text('Pick a pane'), findsOneWidget);
+
+      final snapshot = await herdr.client.snapshot();
+      final row = snapshot.panes.singleWhere((p) => p.id == pane);
+      await tester.tap(inSidebar(find.text(row.displayName)));
+      await untilFound(tester, find.byType(TextField));
+      expect(find.byType(HerdrSidebar), findsOneWidget);
+
+      Future<void> submit(String input) async {
+        await tester.enterText(find.byType(TextField), input);
+        await tester.pump();
+        await tester.tap(find.text('send'));
+      }
+
+      await submit(r'echo wide-$((40+2))');
+      await untilFound(tester, text('wide-42'));
+
+      // A real agent at work takes a prompt.
+      await submit('${dir.path}/claude');
+      await untilFound(tester, find.text('prompt claude…'));
+      await herdr.client.request('pane.report_agent', {
+        'pane_id': pane,
+        'source': 'test',
+        'agent': 'claude',
+        'state': 'working',
+      });
+      await untilFound(tester, inSidebar(find.text('working')));
+      await submit('while-working');
+      await untilFound(tester, inPane('while-working'));
+
+      await tester.tap(find.byTooltip('terminal'));
+      await untilFound(tester, find.widgetWithText(Chip, 'ssh'));
+
+      await tester.pumpWidget(const SizedBox()); // closes the connections
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    },
+  );
 }

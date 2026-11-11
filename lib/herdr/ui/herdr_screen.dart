@@ -6,13 +6,19 @@ import 'package:flutter/material.dart';
 import '../../ssh/host.dart';
 import '../../ssh/ssh_connector.dart';
 import '../../ui/link_status.dart';
+import '../../ui/palette.dart';
 import '../api/herdr_client.dart';
 import '../herdr_connection.dart';
 import 'herdr_lists.dart';
 import 'link_chip.dart';
 import 'pane_screen.dart';
 
-/// The herdr session of one PC, as phone lists.
+/// From this width on, the herdr screen shows the sidebar and the pane side
+/// by side.
+const wideLayoutWidth = 840.0;
+
+/// The herdr session of one PC: phone lists, or on a wide screen the
+/// sidebar and the open pane side by side.
 class HerdrScreen extends StatefulWidget {
   const HerdrScreen({
     super.key,
@@ -49,19 +55,28 @@ class _HerdrScreenState extends State<HerdrScreen> {
   late final HerdrConnection _link;
   var _tab = 0;
 
+  /// The open pane, in either layout.
+  String? _pane;
+
+  /// Keeps the pane screen, its text and what the user typed, when the
+  /// layout changes. A new one for each pane.
+  var _paneKey = GlobalKey();
+
+  /// What the user typed in each pane, kept while another one is open.
+  final _drafts = <String, TextEditingController>{};
+
   @override
   void initState() {
     super.initState();
     _link = widget.createConnection()..connect();
-    if (widget.openPane case final paneId?) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _openPane(paneId);
-      });
-    }
+    _pane = widget.openPane;
   }
 
   @override
   void dispose() {
+    for (final draft in _drafts.values) {
+      draft.dispose();
+    }
     _link.dispose();
     super.dispose();
   }
@@ -72,77 +87,145 @@ class _HerdrScreenState extends State<HerdrScreen> {
   };
 
   @override
-  Widget build(BuildContext context) => ValueListenableBuilder(
-    valueListenable: _link.state,
-    builder: (context, state, _) => Scaffold(
-      appBar: AppBar(
-        title: Text(_title),
-        actions: [herdrLinkChip(state), const SizedBox(width: 8)],
-      ),
-      body: SafeArea(
-        child: Column(
-          children: [
-            ?_banner(state),
-            Expanded(
-              child: ValueListenableBuilder(
-                valueListenable: _link.snapshot,
-                builder: (context, snapshot, _) => _lists(state, snapshot),
-              ),
-            ),
-          ],
+  Widget build(BuildContext context) {
+    final wide = MediaQuery.sizeOf(context).width >= wideLayoutWidth;
+    final pane = _pane;
+    return PopScope(
+      // On a phone, back closes the open pane first.
+      canPop: wide || pane == null,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _closePane();
+      },
+      child: switch ((wide, pane)) {
+        (false, final pane?) => _paneScreen(pane, wide: false),
+        _ => ValueListenableBuilder(
+          valueListenable: _link.state,
+          builder: (context, state, _) => _scaffold(state, wide: wide),
         ),
-      ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _tab,
-        onDestinationSelected: (i) {
-          if (i == _terminalDestination) {
-            widget.onTerminal();
-          } else {
-            setState(() => _tab = i);
-          }
-        },
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.smart_toy_outlined),
-            label: 'agents',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.view_list_outlined),
-            label: 'spaces',
-          ),
-          NavigationDestination(icon: Icon(Icons.terminal), label: 'terminal'),
-        ],
-      ),
-    ),
-  );
-
-  Widget _lists(LinkState state, HerdrSnapshot? snapshot) {
-    if (snapshot == null) {
-      return switch (state) {
-        LinkNoServer() || LinkFailed() => const SizedBox.shrink(),
-        _ => const Center(child: CircularProgressIndicator()),
-      };
-    }
-    // The last known state, dimmed while it may be out of date.
-    return Opacity(
-      opacity: state is LinkLive ? 1 : 0.5,
-      child: _tab == 0
-          ? AgentsList(snapshot, onOpen: _openPane)
-          : SpacesList(snapshot, onOpen: _openPane),
+      },
     );
   }
 
-  void _openPane(String paneId) => unawaited(
-    Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => PaneScreen(
-          connection: _link,
-          paneId: paneId,
-          onShown: (shown) => widget.onPaneShown?.call(paneId, shown),
-        ),
+  /// The phone and the wide layout differ only in the body and in where
+  /// the terminal opens.
+  Widget _scaffold(LinkState state, {required bool wide}) => Scaffold(
+    appBar: AppBar(
+      title: Text(_title),
+      actions: [
+        if (wide)
+          IconButton(
+            tooltip: 'terminal',
+            icon: const Icon(Icons.terminal),
+            onPressed: widget.onTerminal,
+          ),
+        herdrLinkChip(state),
+        const SizedBox(width: 8),
+      ],
+    ),
+    body: SafeArea(
+      child: Column(
+        children: [
+          ?_banner(state),
+          Expanded(
+            child: wide ? _sideBySide(state) : _withSnapshot(state, _lists),
+          ),
+        ],
       ),
     ),
+    bottomNavigationBar: wide ? null : _navigationBar(),
   );
+
+  NavigationBar _navigationBar() => NavigationBar(
+    selectedIndex: _tab,
+    onDestinationSelected: (i) {
+      if (i == _terminalDestination) {
+        widget.onTerminal();
+      } else {
+        setState(() => _tab = i);
+      }
+    },
+    destinations: const [
+      NavigationDestination(
+        icon: Icon(Icons.smart_toy_outlined),
+        label: 'agents',
+      ),
+      NavigationDestination(
+        icon: Icon(Icons.view_list_outlined),
+        label: 'spaces',
+      ),
+      NavigationDestination(icon: Icon(Icons.terminal), label: 'terminal'),
+    ],
+  );
+
+  /// The sidebar, and the open pane beside it.
+  Widget _sideBySide(LinkState state) => Row(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      SizedBox(
+        width: 320,
+        child: ColoredBox(
+          color: Mocha.mantle,
+          child: _withSnapshot(
+            state,
+            (snapshot) =>
+                HerdrSidebar(snapshot, onOpen: _openPane, selected: _pane),
+          ),
+        ),
+      ),
+      const VerticalDivider(width: 1, color: Mocha.surface0),
+      Expanded(
+        child: switch (_pane) {
+          final pane? => _paneScreen(pane, wide: true),
+          null => const Center(child: Text('Pick a pane')),
+        },
+      ),
+    ],
+  );
+
+  /// [build] with the last known snapshot, dimmed while it may be out of
+  /// date.
+  Widget _withSnapshot(
+    LinkState state,
+    Widget Function(HerdrSnapshot snapshot) build,
+  ) => ValueListenableBuilder(
+    valueListenable: _link.snapshot,
+    builder: (context, snapshot, _) {
+      if (snapshot == null) {
+        return switch (state) {
+          LinkNoServer() || LinkFailed() => const SizedBox.shrink(),
+          _ => const Center(child: CircularProgressIndicator()),
+        };
+      }
+      return Opacity(
+        opacity: state is LinkLive ? 1 : 0.5,
+        child: build(snapshot),
+      );
+    },
+  );
+
+  Widget _lists(HerdrSnapshot snapshot) => _tab == 0
+      ? AgentsList(snapshot, onOpen: _openPane)
+      : SpacesList(snapshot, onOpen: _openPane);
+
+  Widget _paneScreen(String paneId, {required bool wide}) => PaneScreen(
+    key: _paneKey,
+    draft: _drafts.putIfAbsent(paneId, TextEditingController.new),
+    connection: _link,
+    paneId: paneId,
+    onShown: (shown) => widget.onPaneShown?.call(paneId, shown),
+    onClose: wide ? null : _closePane,
+    showLink: !wide,
+  );
+
+  void _openPane(String paneId) {
+    if (paneId == _pane) return;
+    setState(() {
+      _pane = paneId;
+      _paneKey = GlobalKey();
+    });
+  }
+
+  void _closePane() => setState(() => _pane = null);
 
   Widget? _banner(LinkState state) {
     final retry = ('Retry', _link.connect);

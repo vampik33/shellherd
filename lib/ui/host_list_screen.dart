@@ -126,7 +126,7 @@ Route<void> terminalRoute(
       TerminalScreen(host: host, connector: services.connector, mosh: mosh),
 );
 
-/// The herdr session of [host]; with [openPane], that pane on top of it.
+/// The herdr session of [host]; with [openPane], that pane open in it.
 Route<void> herdrRoute(AppServices services, Host host, {String? openPane}) =>
     MaterialPageRoute<void>(
       builder: (context) => HerdrScreen(

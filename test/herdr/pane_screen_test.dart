@@ -105,6 +105,29 @@ void main() {
     expect(shown, [true, false, true, false]);
   });
 
+  testWidgets('a screen on top hides the pane and stops the reads', (
+    tester,
+  ) async {
+    final shown = <bool>[];
+    await open(tester, onShown: shown.add);
+    final navigator = Navigator.of(tester.element(find.byType(PaneScreen)));
+    unawaited(
+      navigator.push(MaterialPageRoute<void>(builder: (_) => const Scaffold())),
+    );
+    await until(tester, () => shown.length == 2, 'the pane to hide');
+    expect(shown, [true, false]);
+    final reads = herdr().reads.length;
+    await Future<void>.delayed(const Duration(milliseconds: 1200));
+    await tester.pump();
+    expect(herdr().reads.length, reads, reason: 'no reads while covered');
+
+    navigator.pop();
+    await until(tester, () => shown.length == 3, 'the pane to show');
+    expect(shown, [true, false, true]);
+    await until(tester, () => herdr().reads.length > reads, 'a read again');
+    await close(tester);
+  });
+
   testWidgets('new text appears', (tester) async {
     await open(tester);
     herdr().paneText = 'something new';
@@ -220,6 +243,24 @@ void main() {
     await tester.tap(find.text('OK'));
     await tester.pump();
     expect(find.textContaining('waiting for an answer'), findsNothing);
+    await close(tester);
+  });
+
+  testWidgets('an agent that is not in front keeps the text and says why', (
+    tester,
+  ) async {
+    await open(tester);
+    herdr().errors['agent.prompt'] = ['agent_not_ready'];
+    await type(tester, 'precious');
+    await tester.tap(find.text('send'));
+    await untilFound(
+      tester,
+      find.text(
+        'The agent is not running in this pane now. Your text was not sent.',
+      ),
+    );
+    expect(typed(tester), 'precious');
+    expect(herdr().count('pane.send_input'), 0, reason: 'not to the shell');
     await close(tester);
   });
 

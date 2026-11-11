@@ -103,7 +103,7 @@ final _theme = ThemeData(
     onSecondary: Mocha.base,
     surface: Mocha.base,
     onSurface: Mocha.text,
-    surfaceContainerHighest: Color(0xFF313244),
+    surfaceContainerHighest: Mocha.surface0,
     error: Mocha.red,
     onError: Mocha.base,
     errorContainer: Color(0xFF4A2A3A),

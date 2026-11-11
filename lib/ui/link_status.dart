@@ -10,6 +10,9 @@ class StatusBanner extends StatelessWidget {
   final String? detail;
   final (String, VoidCallback)? action;
 
+  /// About six lines of the detail.
+  static const maxDetailHeight = 100.0;
+
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
@@ -27,13 +30,23 @@ class StatusBanner extends StatelessWidget {
                     message,
                     style: TextStyle(color: scheme.onErrorContainer),
                   ),
+                  // A long detail scrolls, so the banner leaves room for
+                  // the screen under it.
                   if (detail case final detail?)
-                    SelectableText(
-                      detail,
-                      style: TextStyle(
-                        fontFamily: 'monospace',
-                        fontSize: 12,
-                        color: scheme.onErrorContainer,
+                    ConstrainedBox(
+                      constraints: const BoxConstraints(
+                        maxHeight: maxDetailHeight,
+                      ),
+                      child: SingleChildScrollView(
+                        primary: false,
+                        child: SelectableText(
+                          detail,
+                          style: TextStyle(
+                            fontFamily: 'monospace',
+                            fontSize: 12,
+                            color: scheme.onErrorContainer,
+                          ),
+                        ),
                       ),
                     ),
                 ],

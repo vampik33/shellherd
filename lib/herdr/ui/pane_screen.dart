@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import '../../terminal/key_bar.dart';
@@ -36,15 +37,29 @@ class PaneScreen extends StatefulWidget {
     required this.connection,
     required this.paneId,
     this.onShown,
+    this.onClose,
+    this.showLink = true,
+    this.draft,
   });
 
   /// Owned by the screen below this one.
   final HerdrConnection connection;
   final String paneId;
 
-  /// True while the pane is on the screen, false when the app hides or the
-  /// screen goes.
+  /// True while the pane is on the screen, false when the app hides, a
+  /// screen covers it or it goes.
   final void Function(bool shown)? onShown;
+
+  /// The back arrow. The pane is no route of its own: it stands in the
+  /// herdr screen.
+  final VoidCallback? onClose;
+
+  /// The chip of the link; off where the herdr screen shows it already.
+  final bool showLink;
+
+  /// The text being typed, when the screen below keeps it while the pane
+  /// is closed. A send that herdr took empties it.
+  final TextEditingController? draft;
 
   @override
   State<PaneScreen> createState() => _PaneScreenState();
@@ -55,8 +70,13 @@ class _PaneScreenState extends State<PaneScreen> {
   late final PaneSender _sender;
   late final AppLifecycleListener _lifecycle;
   late final Listenable _changes;
-  final _composer = TextEditingController();
+  late final _composer = widget.draft ?? TextEditingController();
   var _sending = false;
+
+  /// The app is in front, and no other screen covers the pane.
+  var _appShown = true;
+  ValueListenable<TickerModeData>? _uncovered;
+  var _shown = true;
 
   /// Message and detail of the last input that failed.
   (String, String?)? _failure;
@@ -68,14 +88,8 @@ class _PaneScreenState extends State<PaneScreen> {
     _poller = PanePoller(client, widget.paneId)..start();
     _sender = PaneSender(client, widget.paneId, onSent: _poller.kick);
     _lifecycle = AppLifecycleListener(
-      onHide: () {
-        _poller.pause();
-        widget.onShown?.call(false);
-      },
-      onShow: () {
-        _poller.resume();
-        widget.onShown?.call(true);
-      },
+      onHide: () => _setAppShown(false),
+      onShow: () => _setAppShown(true),
     );
     widget.onShown?.call(true);
     _changes = Listenable.merge([
@@ -86,12 +100,39 @@ class _PaneScreenState extends State<PaneScreen> {
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    // A screen pushed on top, such as the terminal from a wide herdr
+    // screen, turns the tickers of this one off.
+    final uncovered = TickerMode.getValuesNotifier(context);
+    if (uncovered == _uncovered) return;
+    _uncovered?.removeListener(_followShown);
+    _uncovered = uncovered..addListener(_followShown);
+    _followShown();
+  }
+
+  void _setAppShown(bool shown) {
+    _appShown = shown;
+    _followShown();
+  }
+
+  /// Polls and tells [PaneScreen.onShown] only while the pane can be seen.
+  void _followShown() {
+    final shown = _appShown && (_uncovered?.value.enabled ?? true);
+    if (shown == _shown) return;
+    _shown = shown;
+    shown ? _poller.resume() : _poller.pause();
+    widget.onShown?.call(shown);
+  }
+
+  @override
   void dispose() {
+    _uncovered?.removeListener(_followShown);
     _lifecycle.dispose();
     widget.onShown?.call(false);
     _sender.cancel();
     _poller.dispose();
-    _composer.dispose();
+    if (widget.draft == null) _composer.dispose();
     super.dispose();
   }
 
@@ -120,6 +161,12 @@ class _PaneScreenState extends State<PaneScreen> {
   (String, String?) _sendFailure(HerdrException e) => switch (e) {
     HerdrApiException(code: 'agent_blocked') => (
       'The agent is waiting for an answer. Your text was not sent.',
+      null,
+    ),
+    // herdr knows of an agent here, but it does not run in front now, for
+    // example after it quit to the shell.
+    HerdrApiException(code: 'agent_not_ready') => (
+      'The agent is not running in this pane now. Your text was not sent.',
       null,
     ),
     HerdrTimeoutException() || HerdrConnectionClosedException() => (
@@ -157,6 +204,11 @@ class _PaneScreenState extends State<PaneScreen> {
       return Scaffold(
         backgroundColor: Mocha.base,
         appBar: AppBar(
+          automaticallyImplyLeading: false,
+          leading: switch (widget.onClose) {
+            final close? => BackButton(onPressed: close),
+            null => null,
+          },
           title: _Header(paneId: widget.paneId, pane: pane, snapshot: snapshot),
           actions: [
             IconButton(
@@ -164,8 +216,10 @@ class _PaneScreenState extends State<PaneScreen> {
               icon: Icon(_exact ? Icons.notes : Icons.fit_screen_outlined),
               onPressed: _toggleExact,
             ),
-            herdrLinkChip(state),
-            const SizedBox(width: 8),
+            if (widget.showLink) ...[
+              herdrLinkChip(state),
+              const SizedBox(width: 8),
+            ],
           ],
         ),
         body: SafeArea(

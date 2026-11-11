@@ -16,6 +16,7 @@ import 'package:shellherd/herdr/ui/pane_screen.dart';
 import 'package:shellherd/ssh/host.dart';
 import 'package:shellherd/ssh/known_hosts.dart';
 import 'package:shellherd/ssh/ssh_connector.dart';
+import 'package:shellherd/ui/palette.dart';
 
 import '../support/fake_herdr.dart';
 import '../support/fake_snapshots.dart';
@@ -407,6 +408,251 @@ void main() {
     await tester.pump();
     expect(tester.takeException(), isNull);
     await close(tester);
+  });
+
+  testWidgets('back on a phone closes the pane first', (tester) async {
+    await pumpScreen(tester);
+    await live(tester);
+    await tester.tap(find.text('reviewer'));
+    await untilFound(tester, find.byType(PaneScreen));
+    await tester.binding.handlePopRoute();
+    await untilGone(tester, find.byType(PaneScreen));
+    expect(find.text('reviewer'), findsOneWidget, reason: 'the lists');
+    await close(tester);
+  });
+
+  testWidgets('on a phone, a pane keeps its typed text after back', (
+    tester,
+  ) async {
+    await pumpScreen(tester);
+    await live(tester);
+    await tester.tap(find.text('reviewer'));
+    await untilFound(tester, find.byType(TextField));
+    await tester.enterText(find.byType(TextField), 'half a prompt');
+    await tester.pageBack();
+    await untilGone(tester, find.byType(PaneScreen));
+    await tester.tap(find.text('reviewer'));
+    await untilFound(tester, find.byType(TextField));
+    expect(find.text('half a prompt'), findsOneWidget);
+    await close(tester);
+  });
+
+  group('wide', () {
+    void setWidth(WidgetTester tester, double width) {
+      tester.view.physicalSize = Size(width, 800);
+      tester.view.devicePixelRatio = 1;
+    }
+
+    Future<void> pumpWide(
+      WidgetTester tester, {
+      String? openPane,
+      void Function(String paneId, bool shown)? onPaneShown,
+    }) async {
+      setWidth(tester, 1280);
+      addTearDown(tester.view.reset);
+      await pumpScreen(tester, openPane: openPane, onPaneShown: onPaneShown);
+      await live(tester);
+    }
+
+    Finder inSidebar(Finder f) =>
+        find.descendant(of: find.byType(HerdrSidebar), matching: f);
+    String? openPaneId(WidgetTester tester) => tester
+        .widgetList<PaneScreen>(find.byType(PaneScreen))
+        .singleOrNull
+        ?.paneId;
+    Color? rowColor(WidgetTester tester, String text) => tester
+        .widget<Material>(
+          find
+              .ancestor(
+                of: inSidebar(find.text(text)).first,
+                matching: find.byType(Material),
+              )
+              .first,
+        )
+        .color;
+
+    testWidgets('shows spaces and agents in one sidebar, and no tabs', (
+      tester,
+    ) async {
+      await pumpWide(tester);
+      expect(find.byType(NavigationBar), findsNothing);
+      expect(inSidebar(find.text('spaces')), findsOneWidget);
+      expect(inSidebar(find.text('needs you')), findsOneWidget);
+      expect(inSidebar(find.text('/srv/api')), findsOneWidget);
+      expect(inSidebar(find.text('reviewer')), findsOneWidget);
+      double y(Finder f) => tester.getTopLeft(f).dy;
+      expect(
+        y(inSidebar(find.text('notes'))),
+        lessThan(y(inSidebar(find.text('needs you')))),
+        reason: 'spaces first, as in herdr',
+      );
+      expect(find.text('Pick a pane'), findsOneWidget);
+      await close(tester);
+    });
+
+    testWidgets('a tap opens the pane beside the sidebar, on the same route', (
+      tester,
+    ) async {
+      await pumpWide(tester);
+      await tester.tap(inSidebar(find.text('my pane')));
+      await untilFound(tester, find.byType(PaneScreen));
+      expect(openPaneId(tester), 'w1:p2');
+      expect(find.byType(HerdrSidebar), findsOneWidget);
+      expect(find.text('Pick a pane'), findsNothing);
+      expect(
+        ModalRoute.of(tester.element(find.byType(PaneScreen)))!.isFirst,
+        isTrue,
+      );
+      expect(find.byType(BackButton), findsNothing);
+      expect(chip('live'), findsOneWidget, reason: 'one chip, at the top');
+      expect(rowColor(tester, 'my pane'), Mocha.surface0);
+      expect(rowColor(tester, 'reviewer'), isNot(Mocha.surface0));
+      await close(tester);
+    });
+
+    testWidgets('another pane comes in place of the first', (tester) async {
+      final shown = <(String, bool)>[];
+      await pumpWide(tester, onPaneShown: (id, on) => shown.add((id, on)));
+      await tester.tap(inSidebar(find.text('reviewer')));
+      await untilFound(tester, find.byType(PaneScreen));
+      await tester.tap(inSidebar(find.text('my pane')));
+      await tester.pump();
+      expect(openPaneId(tester), 'w1:p2');
+      expect(shown, [('w1:p3', true), ('w1:p2', true), ('w1:p3', false)]);
+      expect(rowColor(tester, 'reviewer'), isNot(Mocha.surface0));
+      await close(tester);
+    });
+
+    String typed(WidgetTester tester) =>
+        tester.widget<TextField>(find.byType(TextField)).controller!.text;
+
+    Future<void> openInSidebar(WidgetTester tester, String row) async {
+      await tester.tap(inSidebar(find.text(row)));
+      await tester.pump();
+    }
+
+    testWidgets('each pane keeps its typed text while another is open', (
+      tester,
+    ) async {
+      await pumpWide(tester);
+      await openInSidebar(tester, 'my pane');
+      await tester.enterText(find.byType(TextField), 'draft for A');
+      await openInSidebar(tester, 'reviewer');
+      expect(typed(tester), isEmpty, reason: 'B has its own field');
+      await tester.enterText(find.byType(TextField), 'draft for B');
+
+      await openInSidebar(tester, 'my pane');
+      expect(typed(tester), 'draft for A');
+      await openInSidebar(tester, 'reviewer');
+      expect(typed(tester), 'draft for B');
+      await close(tester);
+    });
+
+    testWidgets('a sent prompt leaves no draft; a refused one stays', (
+      tester,
+    ) async {
+      await pumpWide(tester);
+      final herdr = links.single.herdr;
+      await openInSidebar(tester, 'my pane');
+      await tester.enterText(find.byType(TextField), 'sent one');
+      await tester.pump();
+      await tester.tap(find.text('send'));
+      await until(tester, () => typed(tester).isEmpty, 'the send');
+      expect(herdr.count('agent.prompt'), 1);
+
+      herdr.errors['agent.prompt'] = ['agent_blocked'];
+      await tester.enterText(find.byType(TextField), 'refused one');
+      await tester.pump();
+      await tester.tap(find.text('send'));
+      await untilFound(tester, find.textContaining('was not sent'));
+
+      await openInSidebar(tester, 'reviewer');
+      await openInSidebar(tester, 'my pane');
+      expect(typed(tester), 'refused one');
+      await close(tester);
+    });
+
+    testWidgets('a pane to open opens beside the sidebar', (tester) async {
+      await pumpWide(tester, openPane: 'w1:p2');
+      expect(openPaneId(tester), 'w1:p2');
+      expect(find.byType(HerdrSidebar), findsOneWidget);
+      await close(tester);
+    });
+
+    testWidgets('the pane and its typed text stay when the screen narrows '
+        'and widens', (tester) async {
+      final shown = <(String, bool)>[];
+      await pumpWide(tester, onPaneShown: (id, on) => shown.add((id, on)));
+      await tester.tap(inSidebar(find.text('my pane')));
+      await untilFound(tester, find.byType(PaneScreen));
+      await tester.enterText(find.byType(TextField), 'half a prompt');
+
+      setWidth(tester, 600);
+      await tester.pump();
+      expect(openPaneId(tester), 'w1:p2');
+      expect(find.byType(HerdrSidebar), findsNothing);
+      expect(find.byType(BackButton), findsOneWidget);
+      expect(find.text('half a prompt'), findsOneWidget);
+
+      setWidth(tester, 1280);
+      await tester.pump();
+      expect(openPaneId(tester), 'w1:p2');
+      expect(find.byType(HerdrSidebar), findsOneWidget);
+      expect(find.text('half a prompt'), findsOneWidget);
+      expect(shown, [('w1:p2', true)], reason: 'the pane never left');
+
+      setWidth(tester, 600);
+      await tester.pump();
+      await tester.pageBack();
+      await tester.pump();
+      expect(find.byType(PaneScreen), findsNothing);
+      expect(find.byType(NavigationBar), findsOneWidget);
+      expect(shown, [('w1:p2', true), ('w1:p2', false)]);
+      await close(tester);
+    });
+
+    testWidgets('the terminal button opens the terminal', (tester) async {
+      await pumpWide(tester);
+      await tester.tap(find.byTooltip('terminal'));
+      await tester.pump();
+      expect(terminals, 1);
+      await close(tester);
+    });
+
+    testWidgets('long names fit the sidebar', (tester) async {
+      final long = 'very-long-name-' * 6;
+      script.add(
+        () => FakeLink(
+          fakeSnapshot(
+            workspaces: [fakeWorkspace('w1', 1, long, 'blocked')],
+            tabs: [fakeTab('w1', long, 'blocked')],
+            panes: [
+              fakePane('w1:p1', 'w1', 'blocked', {
+                'label': long,
+                'cwd': '/$long',
+              }),
+            ],
+            agents: [
+              fakeAgent('w1:p1', 'w1', 'blocked', {
+                'agent': long,
+                'title': long,
+              }),
+            ],
+          ),
+        ),
+      );
+      await pumpWide(tester, openPane: 'w1:p1');
+      expect(tester.takeException(), isNull);
+      await close(tester);
+    });
+
+    testWidgets('an empty session says so in the sidebar', (tester) async {
+      script.add(() => FakeLink(fakeSnapshot()));
+      await pumpWide(tester);
+      expect(find.text('No spaces yet.'), findsOneWidget);
+      expect(find.text('No agents are running.'), findsOneWidget);
+      await close(tester);
+    });
   });
 
   testWidgets('leaving the screen closes the link', (tester) async {

@@ -11,6 +11,8 @@ abstract final class Mocha {
   static const red = Color(0xFFF38BA8);
   static const green = Color(0xFFA6E3A1);
   static const yellow = Color(0xFFF9E2AF);
+  static const mantle = Color(0xFF181825);
+  static const surface0 = Color(0xFF313244);
   static const surface1 = Color(0xFF45475A);
   static const overlay = Color(0xFF6C7086);
   static const subtext = Color(0xFFA6ADC8);
