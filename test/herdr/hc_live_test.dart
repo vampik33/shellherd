@@ -280,6 +280,34 @@ Future<void> main() async {
         ),
       );
     });
+
+    test('a send that the core holds holds up no other request', () async {
+      // herdr-core waits up to 5 s for the output of a new terminal to
+      // settle before it types into it; on one connection that held up
+      // every request behind it. This output never settles, so the core
+      // gives up after the wait.
+      final shell = await run([
+        'sh',
+        '-c',
+        'while :; do echo y; sleep 0.1; done',
+      ]);
+      final started = Stopwatch()..start();
+      final send = expectLater(
+        client.send(shell, 'x'),
+        throwsA(
+          isA<HerdrApiException>().having((e) => e.code, 'code', 'unavailable'),
+        ),
+      );
+      await client.terminals();
+      expect(await client.read(shell, lines: 0), isA<String>());
+      expect(started.elapsed, lessThan(const Duration(seconds: 1)));
+      await send;
+      expect(
+        started.elapsed,
+        greaterThan(const Duration(seconds: 3)),
+        reason: 'the core no longer holds a send to a new terminal',
+      );
+    });
   });
 
   group('herdr-core over ssh', skip: skip ?? false, () {

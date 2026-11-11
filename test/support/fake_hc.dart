@@ -68,7 +68,8 @@ Map<String, Object?> hcSpace(
 }) => {'id': id, 'name': name, 'folder': folder, 'tabs': tabs};
 
 /// A herdr-core in memory. It answers every request on a channel by its
-/// method, as the real one answers many requests per connection.
+/// method, as the real one answers many requests per connection: one at a
+/// time, so a request it holds back holds up the ones behind it.
 class FakeHc {
   FakeHc() {
     dialer.dialed.listen(_serve);
@@ -107,6 +108,10 @@ class FakeHc {
   /// While set, `terminal.list` replies wait for it.
   Completer<void>? holdLists;
 
+  /// While set, `terminal.send` replies wait for it, as for a person's
+  /// draft on the PC.
+  Completer<void>? holdSends;
+
   /// Methods that get no reply at all.
   final silent = <String>{};
 
@@ -123,60 +128,66 @@ class FakeHc {
   });
 
   void _serve(FakeChannel c) {
-    c.writes.listen((request) async {
-      final id = request['id'];
-      final method = request['method']! as String;
-      final params = request['params']! as Map<String, Object?>;
-      methods.add(method);
-      requests.add((method, params));
-      if (silent.contains(method)) return;
-      final queued = errors[method];
-      if (queued != null && queued.isNotEmpty) {
-        c.reply({
-          'jsonrpc': '2.0',
-          'id': id,
-          'error': {
-            'code': -32000,
-            'message': 'fake',
-            'data': {'kind': queued.removeAt(0)},
-          },
-        });
-        return;
-      }
-      final Map<String, Object?> result;
-      switch (method) {
-        case 'hello':
-          result = {
-            'generation': generation,
-            'version': '0.1.20',
-            'core': {'id': 'c', 'name': 'box'},
-            'framed': false,
-            'methods': const <String>[],
-            'features': const <String>[],
-          };
-        case 'terminal.list':
-          final now = [...terminals];
-          await holdLists?.future;
-          result = {'terminals': now, 'hidden_finished': 0};
-        case 'terminal.get':
-          result = terminals.singleWhere(
-            (t) => t['address'] == params['terminal'],
-          );
-        case 'doc.get':
-          result = {'value': layout, 'version': layout == null ? 0 : 1};
-        case 'terminal.read':
-          result = {'text': text, 'complete': true, 'how': 'screen'};
-        case 'terminal.keys':
-          result = {'turn': 0};
-        case 'terminal.send':
-          result = {'turn': 0};
-        case 'events.subscribe':
-          subscriptions.add(c);
-          result = {'seq': 0, 'terminals': terminals};
-        default:
-          result = {};
-      }
-      c.reply({'jsonrpc': '2.0', 'id': id, 'result': result});
+    var turn = Future<void>.value();
+    c.writes.listen((request) {
+      turn = turn.then((_) => _answer(c, request));
     });
+  }
+
+  Future<void> _answer(FakeChannel c, Map<String, Object?> request) async {
+    final id = request['id'];
+    final method = request['method']! as String;
+    final params = request['params']! as Map<String, Object?>;
+    methods.add(method);
+    requests.add((method, params));
+    if (silent.contains(method)) return;
+    final queued = errors[method];
+    if (queued != null && queued.isNotEmpty) {
+      c.reply({
+        'jsonrpc': '2.0',
+        'id': id,
+        'error': {
+          'code': -32000,
+          'message': 'fake',
+          'data': {'kind': queued.removeAt(0)},
+        },
+      });
+      return;
+    }
+    final Map<String, Object?> result;
+    switch (method) {
+      case 'hello':
+        result = {
+          'generation': generation,
+          'version': '0.1.20',
+          'core': {'id': 'c', 'name': 'box'},
+          'framed': false,
+          'methods': const <String>[],
+          'features': const <String>[],
+        };
+      case 'terminal.list':
+        final now = [...terminals];
+        await holdLists?.future;
+        result = {'terminals': now, 'hidden_finished': 0};
+      case 'terminal.get':
+        result = terminals.singleWhere(
+          (t) => t['address'] == params['terminal'],
+        );
+      case 'doc.get':
+        result = {'value': layout, 'version': layout == null ? 0 : 1};
+      case 'terminal.read':
+        result = {'text': text, 'complete': true, 'how': 'screen'};
+      case 'terminal.keys':
+        result = {'turn': 0};
+      case 'terminal.send':
+        await holdSends?.future;
+        result = {'turn': 0};
+      case 'events.subscribe':
+        subscriptions.add(c);
+        result = {'seq': 0, 'terminals': terminals};
+      default:
+        result = {};
+    }
+    c.reply({'jsonrpc': '2.0', 'id': id, 'result': result});
   }
 }
