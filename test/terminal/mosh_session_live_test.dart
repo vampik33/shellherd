@@ -48,7 +48,7 @@ Future<void> main() async {
         mosh: true,
       );
       terminal = Terminal()..resize(80, 24);
-      before = moshServers();
+      before = moshServers(sshd.port);
     });
     tearDown(() async {
       for (final s in sessions) {
@@ -57,11 +57,11 @@ Future<void> main() async {
       sessions.clear();
       // Closing ends the servers over SSH; give it the time, then make sure.
       final deadline = DateTime.now().add(const Duration(seconds: 5));
-      while (moshServers().difference(before).isNotEmpty &&
+      while (moshServers(sshd.port).difference(before).isNotEmpty &&
           DateTime.now().isBefore(deadline)) {
         await Future<void>.delayed(const Duration(milliseconds: 100));
       }
-      final left = killMoshServersSince(before);
+      final left = killMoshServersSince(before, sshd.port);
       await sshd.stop();
       expect(left, isEmpty, reason: 'a mosh-server was left running');
     });
@@ -113,15 +113,21 @@ Future<void> main() async {
       terminal.textInput('exit\r');
       final end = await session.done.timeout(const Duration(seconds: 10));
       expect(end, (exitCode: null, lost: false));
-      await until(() => moshServers().difference(before).isEmpty, 'no server');
+      await until(
+        () => moshServers(sshd.port).difference(before).isEmpty,
+        'no server',
+      );
     });
 
     test('close ends the mosh-server on the PC', () async {
       final session = await start();
       await runs('before-close');
-      expect((moshServers()).difference(before), hasLength(1));
+      expect(moshServers(sshd.port).difference(before), hasLength(1));
       session.close();
-      await until(() => moshServers().difference(before).isEmpty, 'no server');
+      await until(
+        () => moshServers(sshd.port).difference(before).isEmpty,
+        'no server',
+      );
     });
 
     test('a session lives through a new local socket', () async {
@@ -178,7 +184,7 @@ Future<void> main() async {
         // The kill needs the trusted key, which goes with the test's files.
         session.close();
         await until(
-          () => moshServers().difference(before).isEmpty,
+          () => moshServers(sshd.port).difference(before).isEmpty,
           'no server',
         );
       },

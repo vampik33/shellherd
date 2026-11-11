@@ -239,8 +239,8 @@ void main() {
             : false),
     () {
       late Set<int> before;
-      setUp(() => before = moshServers());
-      tearDown(() => killMoshServersSince(before));
+      setUp(() => before = moshServers(sshd.port));
+      tearDown(() => killMoshServersSince(before, sshd.port));
 
       Finder chipStarting(String prefix) => find.byWidgetPredicate(
         (w) =>
@@ -254,11 +254,11 @@ void main() {
         await untilFound(tester, chipStarting('mosh'));
         await runsCommands(tester, 'm');
         await untilFound(tester, chipStarting('mosh · '));
-        expect(moshServers().difference(before), hasLength(1));
+        expect(moshServers(sshd.port).difference(before), hasLength(1));
         await closeScreen(tester);
         await until(
           tester,
-          () => moshServers().difference(before).isEmpty,
+          () => moshServers(sshd.port).difference(before).isEmpty,
           'mosh-server to end',
         );
       });
@@ -279,7 +279,7 @@ void main() {
         await closeScreen(tester);
         await until(
           tester,
-          () => moshServers().difference(before).isEmpty,
+          () => moshServers(sshd.port).difference(before).isEmpty,
           'mosh-server to end',
         );
       });
