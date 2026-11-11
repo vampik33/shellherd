@@ -91,7 +91,7 @@ class Host {
   /// Overrides the socket path that the link finds by itself.
   final String? herdrSocket;
 
-  /// Show the mosh button for the plain terminal.
+  /// The plain terminal runs over mosh instead of SSH.
   final bool mosh;
   final String moshServer;
 

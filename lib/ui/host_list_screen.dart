@@ -52,9 +52,8 @@ class _HostListScreenState extends State<HostListScreen> {
     await _load();
   }
 
-  void _openTerminal(Host host, {bool mosh = false}) => Navigator.of(
-    context,
-  ).push(terminalRoute(widget.services, host, mosh: mosh));
+  void _openTerminal(Host host) =>
+      Navigator.of(context).push(terminalRoute(widget.services, host));
 
   void _openHerdr(Host host) =>
       Navigator.of(context).push(herdrRoute(widget.services, host));
@@ -93,12 +92,6 @@ class _HostListScreenState extends State<HostListScreen> {
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
-                if (host.mosh)
-                  IconButton(
-                    icon: const Icon(Icons.cell_tower),
-                    tooltip: 'Mosh terminal on ${host.label}',
-                    onPressed: () => _openTerminal(host, mosh: true),
-                  ),
                 IconButton(
                   icon: const Icon(Icons.terminal),
                   tooltip: 'Terminal on ${host.label}',
@@ -117,14 +110,15 @@ class _HostListScreenState extends State<HostListScreen> {
   }
 }
 
-Route<void> terminalRoute(
-  AppServices services,
-  Host host, {
-  bool mosh = false,
-}) => MaterialPageRoute<void>(
-  builder: (_) =>
-      TerminalScreen(host: host, connector: services.connector, mosh: mosh),
-);
+/// The plain terminal of [host]: over mosh when the host has it on.
+Route<void> terminalRoute(AppServices services, Host host) =>
+    MaterialPageRoute<void>(
+      builder: (_) => TerminalScreen(
+        host: host,
+        connector: services.connector,
+        mosh: host.mosh,
+      ),
+    );
 
 /// The herdr session of [host]; with [openPane], that pane open in it.
 Route<void> herdrRoute(AppServices services, Host host, {String? openPane}) =>
@@ -133,10 +127,8 @@ Route<void> herdrRoute(AppServices services, Host host, {String? openPane}) =>
         host: host,
         createConnection: () =>
             HerdrConnection(sshLinkOpener(services.connector, host)),
-        // With mosh on, the terminal tab uses it.
-        onTerminal: () => Navigator.of(
-          context,
-        ).push(terminalRoute(services, host, mosh: host.mosh)),
+        onTerminal: () =>
+            Navigator.of(context).push(terminalRoute(services, host)),
         openPane: openPane,
         onPaneShown: (paneId, shown) =>
             services.notify.paneShown(PaneTarget(host.id, paneId), shown),

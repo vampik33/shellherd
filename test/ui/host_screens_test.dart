@@ -218,25 +218,42 @@ void main() {
     expect(saved.mosh, isTrue);
   });
 
-  testWidgets('mosh: the switch shows the server command, and the list a '
-      'mosh button', (tester) async {
+  testWidgets('mosh: the switch shows the server command', (tester) async {
     final host = await savedHost();
     await pumpApp(tester);
-    expect(find.byTooltip('Mosh terminal on ${host.label}'), findsNothing);
     await openEdit(tester, host);
     expect(hostField('mosh-server command'), findsNothing);
     final moshSwitch = find.widgetWithText(SwitchListTile, 'Mosh');
     await tester.ensureVisible(moshSwitch);
     await tester.tap(moshSwitch);
     await tester.pump();
-    await tester.enterText(hostField('mosh-server command'), ' ~/bin/mosh-server ');
+    await tester.enterText(
+      hostField('mosh-server command'),
+      ' ~/bin/mosh-server ',
+    );
     await tapText(tester, 'Save');
     await untilGone(tester, hostField('Label'));
     final saved = (await services.hosts.list()).single;
     expect(saved.mosh, isTrue);
     expect(saved.moshServer, '~/bin/mosh-server');
-    await untilFound(tester, find.byTooltip('Mosh terminal on ${host.label}'));
   });
+
+  for (final mosh in [false, true]) {
+    testWidgets('the one terminal button opens ${mosh ? 'mosh' : 'SSH'} when '
+        'the host has mosh ${mosh ? 'on' : 'off'}', (tester) async {
+      // Port 1 refuses at once.
+      final host = await savedHost(address: '127.0.0.1', port: 1, mosh: mosh);
+      await pumpApp(tester);
+      await untilFound(tester, find.byTooltip('Terminal on ${host.label}'));
+      expect(find.byIcon(Icons.terminal), findsOneWidget);
+      await tester.tap(find.byTooltip('Terminal on ${host.label}'));
+      await untilFound(tester, find.byType(TerminalScreen));
+      expect(
+        tester.widget<TerminalScreen>(find.byType(TerminalScreen)).mosh,
+        mosh,
+      );
+    });
+  }
 
   testWidgets('the Herdr app is a choice of the host, kept on edit', (
     tester,
@@ -296,9 +313,7 @@ void main() {
       expect(notify.syncs, [false], reason: 'no permission prompt');
     });
 
-    testWidgets('on saves it, and asks to allow notifications', (
-      tester,
-    ) async {
+    testWidgets('on saves it, and asks to allow notifications', (tester) async {
       final host = await savedHost();
       await pumpApp(tester);
       await saveWithNotifyOn(tester, host);
