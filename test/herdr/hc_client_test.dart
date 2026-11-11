@@ -348,6 +348,7 @@ void main() {
       String? seen,
       int turn = 3,
       int? acked,
+      int? upTo,
     }) async {
       hc.terminals = [
         hcTerminal(
@@ -360,7 +361,7 @@ void main() {
       final before = hc.requests.length;
       final now = await HcPaneApi(
         await hc.connect(),
-      ).markSeen('t1', acked: acked, looking: () => true);
+      ).markSeen('t1', acked: acked, upTo: upTo, looking: () => true);
       final label = [
         for (final (m, p) in hc.requests.skip(before))
           if (m == 'terminal.label') p,
@@ -413,6 +414,12 @@ void main() {
       ).markSeen('t1', acked: 1, looking: () => false);
       expect(turn, 1);
       expect(hc.methods, isNot(contains('terminal.label')));
+    });
+
+    test('marks no later turn than the screen shows', () async {
+      final (label, turn) = await markSeenWith(seen: '1', turn: 4, upTo: 3);
+      expect(label?['labels'], {'herdr.seen': '3'});
+      expect(turn, 3);
     });
 
     test('marks the next turn after one it marked', () async {

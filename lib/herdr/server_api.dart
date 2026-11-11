@@ -25,11 +25,13 @@ abstract interface class PaneApi {
   /// [acked] is the turn this view marked already: it is not marked again,
   /// so a "mark unread" from another client stays. [looking] is asked
   /// again right before the write: the pane can go while the server
-  /// answers. Returns the agent's turn now, for the next call; null where
+  /// answers. [upTo] is the last turn whose text the screen shows: a later
+  /// one stays done. Returns the turn marked, for the next call; null where
   /// the server has no turns.
   Future<int?> markSeen(
     String paneId, {
     int? acked,
+    int? upTo,
     required bool Function() looking,
   });
 }
@@ -80,6 +82,7 @@ class HerdrPaneApi implements PaneApi {
   Future<int?> markSeen(
     String paneId, {
     int? acked,
+    int? upTo,
     required bool Function() looking,
   }) async => null;
 }
@@ -135,16 +138,18 @@ class HcPaneApi implements PaneApi {
   Future<int?> markSeen(
     String paneId, {
     int? acked,
+    int? upTo,
     required bool Function() looking,
   }) async {
     final t = await _client.terminal(paneId);
     if (t.status == null) return acked;
+    final turn = upTo != null && upTo < t.turn ? upTo : t.turn;
     final seen = t.seen;
-    final marked = (seen != null && seen >= t.turn) ||
-        (acked != null && acked >= t.turn);
-    if (marked) return t.turn;
+    final marked = (seen != null && seen >= turn) ||
+        (acked != null && acked >= turn);
+    if (marked) return turn;
     if (!looking()) return acked;
-    await _client.label(paneId, {HcTerminal.seenLabel: '${t.turn}'});
-    return t.turn;
+    await _client.label(paneId, {HcTerminal.seenLabel: '$turn'});
+    return turn;
   }
 }

@@ -101,7 +101,7 @@ class _PaneScreenState extends State<PaneScreen> {
       onShow: () => _setAppShown(true),
     );
     widget.onShown?.call(true);
-    _seen = SeenMarker(widget.connection, widget.paneId);
+    _seen = SeenMarker(widget.connection, widget.paneId, _poller);
     _changes = Listenable.merge([
       widget.connection.state,
       widget.connection.snapshot,

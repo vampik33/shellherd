@@ -195,6 +195,38 @@ void main() {
       await closeScreen(tester);
     });
 
+    testWidgets(
+      'a shell that comes up while the app is away does not judge the link',
+      (tester) async {
+        await knownHosts.trust('127.0.0.1', sshd.port, sshd.hostKey);
+        await pumpScreen(tester);
+        // The app goes to the background before the shell is up.
+        tester.binding
+          ..handleAppLifecycleStateChanged(AppLifecycleState.inactive)
+          ..handleAppLifecycleStateChanged(AppLifecycleState.hidden)
+          ..handleAppLifecycleStateChanged(AppLifecycleState.paused);
+        // A paused app draws no frames: wait on the clock for the prompt.
+        final t = terminal(tester);
+        for (var i = 0; i < 500 && t.buffer.getText().trim().isEmpty; i++) {
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+        }
+        expect(t.buffer.getText().trim(), isNotEmpty, reason: 'the prompt');
+        // Android freezes the app; the link gives no replies meanwhile.
+        // Past the first ping (15 s) and its deadline (20 s).
+        await sshd.signalConnections(ProcessSignal.sigstop);
+        await Future<void>.delayed(const Duration(seconds: 37));
+        await sshd.signalConnections(ProcessSignal.sigcont);
+        tester.binding
+          ..handleAppLifecycleStateChanged(AppLifecycleState.hidden)
+          ..handleAppLifecycleStateChanged(AppLifecycleState.inactive)
+          ..handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+        await runsCommands(tester, 'g');
+        expect(find.text('Connection lost.'), findsNothing);
+        await closeScreen(tester);
+      },
+      timeout: const Timeout(Duration(seconds: 90)),
+    );
+
     testWidgets('a declined key stops; retry asks again', (tester) async {
       await pumpScreen(tester);
       await untilFound(tester, find.text('Cancel'));

@@ -465,6 +465,7 @@ void main() {
       WidgetTester tester, {
       bool failFirst = false,
       bool holdGets = false,
+      bool failReads = false,
     }) async {
       hc = FakeHc()
         ..holdGets = holdGets ? Completer() : null
@@ -481,6 +482,7 @@ void main() {
           ),
         ];
       if (failFirst) hc.dialer.failWith = StateError('not yet');
+      if (failReads) hc.errors['terminal.read'] = List.filled(100, 'internal', growable: true);
       hcConnection = HerdrConnection(
         () async {
           final client = await hc.connect();
@@ -506,7 +508,7 @@ void main() {
         );
         hc.dialer.failWith = null;
       }
-      await untilFound(tester, paneText('hello'));
+      if (!failReads) await untilFound(tester, paneText('hello'));
     }
 
     Future<void> settle(WidgetTester tester) async {
@@ -539,6 +541,20 @@ void main() {
       await Future<void>.delayed(const Duration(milliseconds: 100));
       await tester.pump();
       expect(labels(), hasLength(2), reason: 'once per turn');
+      await closeHc(tester);
+    });
+
+    testWidgets('a done agent whose text cannot be read stays done', (
+      tester,
+    ) async {
+      await openHc(tester, failReads: true);
+      await until(tester, () => hc.count('terminal.read') >= 2, 'reads');
+      await settle(tester);
+      expect(labels(), isEmpty);
+      hc.errors.clear();
+      await untilFound(tester, paneText('hello'));
+      await until(tester, () => labels().isNotEmpty, 'the seen label');
+      expect(labels().single['labels'], {'herdr.seen': '2'});
       await closeHc(tester);
     });
 
@@ -580,7 +596,8 @@ void main() {
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
       hc.update('t1', turn: 3);
       hc.holdGets!.complete();
-      await settle(tester);
+      // A hidden app draws no frames: a pump would wait for one.
+      await Future<void>.delayed(const Duration(milliseconds: 200));
       expect(labels(), isEmpty);
       // A hidden app draws no frames: the close needs it in front.
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
@@ -606,13 +623,19 @@ void main() {
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
       hc.update('t1', turn: 3);
       hc.note('event');
-      await until(
-        tester,
-        () => hcConnection.snapshot.value?.pane('t1')?.status == AgentStatus.done,
-        'the next turn',
+      // A hidden app draws no frames: a pump would wait for one.
+      for (var i = 0; i < 500; i++) {
+        if (hcConnection.snapshot.value?.pane('t1')?.status ==
+            AgentStatus.done) {
+          break;
+        }
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+      expect(
+        hcConnection.snapshot.value?.pane('t1')?.status,
+        AgentStatus.done,
       );
       await Future<void>.delayed(const Duration(milliseconds: 200));
-      await tester.pump();
       expect(labels(), hasLength(1));
 
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
