@@ -176,14 +176,18 @@ Future<String> _run(
   }
 }
 
+/// herdr's validate_name: ASCII letters, digits, . _ -, up to 64 bytes.
+final _herdrSession = RegExp(r'^[A-Za-z0-9._-]{1,64}$');
+
 /// Path of the herdr API socket under the remote [configDir]:
-/// `herdr/herdr.sock`, or `herdr/sessions/<session>/herdr.sock`.
+/// `herdr/herdr.sock` for the default session (null or `default`, as herdr
+/// names it), else `herdr/sessions/<session>/herdr.sock`. Throws
+/// [ArgumentError] for a name herdr refuses.
 String herdrSocketPath(String configDir, {String? session}) {
-  if (session == null) return '$configDir/herdr/herdr.sock';
-  if (session.isEmpty ||
-      session.contains('/') ||
-      session == '.' ||
-      session == '..') {
+  if (session == null || session == 'default') {
+    return '$configDir/herdr/herdr.sock';
+  }
+  if (session == '.' || session == '..' || !_herdrSession.hasMatch(session)) {
     throw ArgumentError.value(session, 'session', 'not a herdr session name');
   }
   return '$configDir/herdr/sessions/$session/herdr.sock';
