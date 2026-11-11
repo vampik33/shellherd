@@ -66,6 +66,9 @@ class ServiceNotify implements NotifyControl {
           serviceTypes: const [ForegroundServiceTypes.specialUse],
           notificationTitle: _title,
           notificationText: '',
+          notificationIcon: const NotificationIcon(
+            metaDataName: 'io.github.vampik33.shellherd.NOTIFICATION_ICON',
+          ),
           callback: startWatchService,
         ),
       );

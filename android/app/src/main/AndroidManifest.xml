@@ -44,6 +44,12 @@
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                 android:value="Keeps an SSH link to the user's own computer open to notify when a coding agent there needs the user or has finished." />
         </service>
+        <!-- The status bar icon of the watching service, by this name. It
+             also keeps the drawable in a release build, which strips
+             resources that nothing names. -->
+        <meta-data
+            android:name="io.github.vampik33.shellherd.NOTIFICATION_ICON"
+            android:resource="@drawable/ic_stat_shellherd" />
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

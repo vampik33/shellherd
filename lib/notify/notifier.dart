@@ -84,7 +84,8 @@ class LocalNotifier implements Notifier {
     final plugin = FlutterLocalNotificationsPlugin();
     await plugin.initialize(
       settings: const InitializationSettings(
-        android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+        // Monochrome: Android shows a status bar icon as a white shape.
+        android: AndroidInitializationSettings('ic_stat_shellherd'),
         linux: LinuxInitializationSettings(defaultActionName: 'Open'),
       ),
       onDidReceiveNotificationResponse: onTap == null
