@@ -45,6 +45,14 @@ class PanePoller {
 
   final view = ValueNotifier(const PaneView());
 
+  /// The read whose text [view] shows, numbered from 1 as reads start; 0
+  /// before the first one worked.
+  final shownRead = ValueNotifier(0);
+
+  /// The reads started so far.
+  int get readsStarted => _reads;
+  var _reads = 0;
+
   var _source = ReadSource.recentUnwrapped;
   Duration _wait;
   Completer<void>? _wake;
@@ -82,6 +90,7 @@ class PanePoller {
     _closed = true;
     _endWait();
     view.dispose();
+    shownRead.dispose();
   }
 
   Future<void> _loop() async {
@@ -100,6 +109,7 @@ class PanePoller {
       return;
     }
     final source = _source;
+    final read = ++_reads;
     try {
       final text = await api.read(
         paneId,
@@ -118,6 +128,7 @@ class PanePoller {
       if (changed || current.error != null) {
         view.value = PaneView(text: text);
       }
+      shownRead.value = read;
     } on HerdrException catch (e) {
       if (_closed) return;
       final gone = e is HerdrApiException && e.code == 'pane_not_found';

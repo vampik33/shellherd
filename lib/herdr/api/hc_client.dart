@@ -10,9 +10,12 @@ export 'hc_models.dart';
 /// Herdr desktop app, which runs its terminals and agents.
 ///
 /// Unlike herdr, herdr-core answers many requests on one connection, so
-/// all requests share one channel and replies find their request by id.
-/// [subscribe] dials a channel of its own: after `events.subscribe` a
-/// connection carries only notifications.
+/// the quick ones share one channel and replies find their request by id.
+/// But it answers them one at a time, and some wait long in the core:
+/// input waits while a person types on the PC, and reading the history of
+/// a full-screen program scrolls it. Those go on a channel of their own,
+/// so they hold up nothing else. [subscribe] dials a channel of its own
+/// too: after `events.subscribe` a connection carries only notifications.
 ///
 /// Errors are the [HerdrException]s of [HerdrClient]. An error `kind` of
 /// herdr-core that the app acts on becomes the herdr code for the same
@@ -55,6 +58,13 @@ class HcClient {
   /// How long to wait for a channel to open, and for each reply.
   final Duration timeout;
 
+  /// How long to wait for the reply to input. herdr-core holds a send up
+  /// to 60 s after the last key of a person's unsent draft on the PC.
+  static const inputTimeout = Duration(seconds: 75);
+
+  /// Channels of single requests on their way.
+  final _alone = <_Rpc>{};
+
   final HcHello hello;
 
   /// Completes when the request channel has ended.
@@ -78,6 +88,14 @@ class HcClient {
     await _rpc.call('terminal.get', {'terminal': terminal}, timeout),
   );
 
+  /// Sets [labels] of [terminal]; others stay.
+  Future<void> label(String terminal, Map<String, String> labels) async {
+    await _rpc.call('terminal.label', {
+      'terminal': terminal,
+      'labels': labels,
+    }, timeout);
+  }
+
   /// The layout of the Herdr app.
   Future<HcLayout> layout() async {
     final r = await _rpc.call('doc.get', {'name': HcLayout.document}, timeout);
@@ -86,29 +104,50 @@ class HcClient {
 
   /// The screen of [terminal] plus [lines] of history, as plain text.
   Future<String> read(String terminal, {required int lines}) async {
-    final r = await _rpc.call('terminal.read', {
+    final r = await _callAlone('terminal.read', {
       'terminal': terminal,
       'lines': lines,
     }, timeout);
     return jsonField<String>(r, 'text');
   }
 
-  /// Presses key names such as `esc`, `enter`, `ctrl+c` or `a`.
+  /// Presses key names such as `esc`, `enter`, `ctrl+c` or `a`, once a
+  /// person on the PC has stopped typing for a moment.
   Future<void> keys(String terminal, List<String> keys) async {
     if (keys.isEmpty) throw ArgumentError('keys needs keys');
-    await _rpc.call('terminal.keys', {
+    await _callAlone('terminal.keys', {
       'terminal': terminal,
       'keys': keys,
-    }, timeout);
+    }, inputTimeout);
   }
 
   /// Pastes [text] and presses Enter. herdr-core refuses a blocked program,
   /// and holds the text while a person on the PC has an unsent draft.
   Future<void> send(String terminal, String text) async {
-    await _rpc.call('terminal.send', {
+    await _callAlone('terminal.send', {
       'terminal': terminal,
       'text': text,
-    }, timeout);
+    }, inputTimeout);
+  }
+
+  /// Sends one request on a channel of its own, and closes the channel
+  /// after the reply or the timeout. Closing it also calls back input that
+  /// herdr-core still holds. herdr-core needs no `hello` first.
+  Future<Map<String, Object?>> _callAlone(
+    String method,
+    Map<String, Object?> params,
+    Duration wait,
+  ) async {
+    final rpc = _Rpc(await openChannel(_dial, timeout, method));
+    _alone.add(rpc);
+    try {
+      if (_rpc.ended) throw HerdrConnectionClosedException(method);
+      return await rpc.call(method, params, wait);
+    } finally {
+      _alone.remove(rpc);
+      // The reply is in; the close need not hold it up.
+      unawaited(rpc.close());
+    }
   }
 
   /// Opens a subscription to every change of every terminal and of the
@@ -126,7 +165,12 @@ class HcClient {
     return HcSubscription._(rpc);
   }
 
-  Future<void> close() => _rpc.close();
+  /// Closes the request channel and the channels of single requests,
+  /// which fail as closed.
+  Future<void> close() => Future.wait([
+    _rpc.close(),
+    for (final rpc in [..._alone]) rpc.close(),
+  ]);
 }
 
 /// A live subscription. [notes] ends when the connection ends, with an
@@ -171,12 +215,14 @@ class _Rpc {
 
   Future<void> get done => _done.future;
 
+  bool get ended => _done.isCompleted;
+
   Future<Map<String, Object?>> call(
     String method,
     Map<String, Object?> params,
     Duration timeout,
   ) {
-    if (_done.isCompleted) {
+    if (ended) {
       return Future.error(HerdrConnectionClosedException(method));
     }
     final id = ++_seq;

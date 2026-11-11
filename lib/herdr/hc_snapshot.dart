@@ -122,6 +122,7 @@ Pane _pane(HcTerminal t, String space, String tab) => Pane(
   label: t.name,
   title: t.title.isEmpty ? null : t.title,
   cwd: t.cwd,
+  turn: t.turn,
 );
 
 /// The state of [t] as herdr names it.
@@ -133,7 +134,7 @@ Pane _pane(HcTerminal t, String space, String tab) => Pane(
 AgentStatus hcAgentStatus(HcTerminal t) {
   final status = t.status;
   if (status == null) return AgentStatus.unknown;
-  final seen = int.tryParse(t.labels[HcTerminal.seenLabel] ?? '');
+  final seen = t.seen;
   return switch (status.state) {
     'working' => AgentStatus.working,
     'blocked' || 'error' => AgentStatus.blocked,

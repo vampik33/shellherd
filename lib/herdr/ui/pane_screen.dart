@@ -9,6 +9,7 @@ import '../../ui/palette.dart';
 import '../api/herdr_client.dart';
 import '../herdr_connection.dart';
 import '../pane_poller.dart';
+import '../seen_marker.dart';
 import '../server_api.dart';
 import 'ansi_text.dart';
 import 'herdr_lists.dart';
@@ -87,6 +88,8 @@ class _PaneScreenState extends State<PaneScreen> {
   /// Message and detail of the last input that failed.
   (String, String?)? _failure;
 
+  late final SeenMarker _seen;
+
   @override
   void initState() {
     super.initState();
@@ -98,6 +101,7 @@ class _PaneScreenState extends State<PaneScreen> {
       onShow: () => _setAppShown(true),
     );
     widget.onShown?.call(true);
+    _seen = SeenMarker(widget.connection, widget.paneId, _poller);
     _changes = Listenable.merge([
       widget.connection.state,
       widget.connection.snapshot,
@@ -129,12 +133,14 @@ class _PaneScreenState extends State<PaneScreen> {
     _shown = shown;
     shown ? _poller.resume() : _poller.pause();
     widget.onShown?.call(shown);
+    _seen.shown = shown;
   }
 
   @override
   void dispose() {
     _uncovered?.removeListener(_followShown);
     _lifecycle.dispose();
+    _seen.dispose();
     widget.onShown?.call(false);
     _sender.cancel();
     _poller.dispose();

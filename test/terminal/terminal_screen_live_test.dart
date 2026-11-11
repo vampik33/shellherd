@@ -22,6 +22,7 @@ import 'package:xterm/xterm.dart';
 import '../support/live_widgets.dart';
 import '../support/memory_secret_store.dart';
 import '../support/mosh_servers.dart';
+import '../support/poll.dart' as poll;
 import '../support/test_sshd.dart';
 
 void main() {
@@ -194,6 +195,35 @@ void main() {
       await runsCommands(tester, 'e');
       await closeScreen(tester);
     });
+
+    testWidgets(
+      'a shell that comes up while the app is away does not judge the link',
+      (tester) async {
+        await knownHosts.trust('127.0.0.1', sshd.port, sshd.hostKey);
+        await pumpScreen(tester);
+        // The app goes to the background before the shell is up.
+        tester.binding
+          ..handleAppLifecycleStateChanged(AppLifecycleState.inactive)
+          ..handleAppLifecycleStateChanged(AppLifecycleState.hidden)
+          ..handleAppLifecycleStateChanged(AppLifecycleState.paused);
+        // A paused app draws no frames: wait on the clock for the prompt.
+        final t = terminal(tester);
+        await poll.until(() => t.buffer.getText().trim().isNotEmpty, 'the prompt');
+        // Android freezes the app; the link gives no replies meanwhile.
+        // Past the first ping (15 s) and its deadline (20 s).
+        await sshd.signalConnections(ProcessSignal.sigstop);
+        await Future<void>.delayed(const Duration(seconds: 37));
+        await sshd.signalConnections(ProcessSignal.sigcont);
+        tester.binding
+          ..handleAppLifecycleStateChanged(AppLifecycleState.hidden)
+          ..handleAppLifecycleStateChanged(AppLifecycleState.inactive)
+          ..handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+        await runsCommands(tester, 'g');
+        expect(find.text('Connection lost.'), findsNothing);
+        await closeScreen(tester);
+      },
+      timeout: const Timeout(Duration(seconds: 90)),
+    );
 
     testWidgets('a declined key stops; retry asks again', (tester) async {
       await pumpScreen(tester);

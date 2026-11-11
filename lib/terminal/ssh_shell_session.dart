@@ -15,6 +15,12 @@ abstract interface class ShellSession {
   /// runs.
   Future<ShellEnd> get done;
 
+  /// The app went to the background: Android may freeze it there.
+  void appPaused();
+
+  /// The app is back in front, maybe on another network.
+  Future<void> appResumed();
+
   /// Ends the shell and closes the connection.
   void close();
 }
@@ -22,14 +28,34 @@ abstract interface class ShellSession {
 /// A login shell on the PC in a PTY, joined to an xterm.dart [Terminal].
 ///
 /// The session owns its [SSHClient] and closes it when the shell ends.
+///
+/// dartssh2 notices a closed connection but not a stalled one: its keepalive
+/// waits for each reply with no deadline. So the session pings every
+/// [pingEvery] itself, and a ping that gets no reply within [pingTimeout]
+/// ends it as lost. While the app is away ([appPaused]) it does not judge:
+/// Android can freeze the app, and a deadline that ran out meanwhile says
+/// nothing about the link.
 class SshShellSession implements ShellSession {
-  SshShellSession._(this._client, this._shell, this.terminal);
+  SshShellSession._(
+    this._client,
+    this._shell,
+    this.terminal,
+    this.pingEvery,
+    this.pingTimeout,
+  );
 
   final SSHClient _client;
   final SSHSession _shell;
   final Terminal terminal;
+  final Duration pingEvery;
+  final Duration pingTimeout;
   final _subs = <StreamSubscription<String>>[];
   final _ended = Completer<ShellEnd>();
+  Timer? _pinger;
+  var _checking = false;
+
+  /// Goes up with each [appPaused]: a ping from before it does not count.
+  var _epoch = 0;
 
   /// Starts a shell with the size of [terminal] and joins the two. The
   /// terminal can come from an earlier session: its text stays, its modes
@@ -41,6 +67,8 @@ class SshShellSession implements ShellSession {
     SSHClient client,
     Terminal terminal, {
     Duration timeout = const Duration(seconds: 15),
+    Duration pingEvery = const Duration(seconds: 15),
+    Duration pingTimeout = const Duration(seconds: 20),
   }) async {
     resetTerminalModes(terminal);
     final SSHSession shell;
@@ -57,7 +85,13 @@ class SshShellSession implements ShellSession {
       client.close();
       rethrow;
     }
-    final session = SshShellSession._(client, shell, terminal);
+    final session = SshShellSession._(
+      client,
+      shell,
+      terminal,
+      pingEvery,
+      pingTimeout,
+    );
     session._attach();
     // The view can change size while the shell starts.
     if (terminal.viewWidth != width || terminal.viewHeight != height) {
@@ -89,6 +123,45 @@ class SshShellSession implements ShellSession {
         lost: _shell.exitCode == null && _client.isClosed,
       )),
     );
+    _startPinger();
+  }
+
+  void _startPinger() {
+    if (_ended.isCompleted) return;
+    _pinger ??= Timer.periodic(pingEvery, (_) => checkLink());
+  }
+
+  /// Stops the pings while the app is in the background, and drops the
+  /// verdict of the one on its way.
+  @override
+  void appPaused() {
+    _pinger?.cancel();
+    _pinger = null;
+    _epoch++;
+    _checking = false;
+  }
+
+  /// Pings at once with a full deadline, and every [pingEvery] again.
+  @override
+  Future<void> appResumed() {
+    _startPinger();
+    return checkLink();
+  }
+
+  /// Pings the PC now, and ends the session as lost if no reply comes
+  /// within [pingTimeout].
+  Future<void> checkLink() async {
+    if (_checking || _ended.isCompleted) return;
+    _checking = true;
+    final epoch = _epoch;
+    try {
+      await _client.ping().timeout(pingTimeout);
+    } catch (_) {
+      // A timeout, or the connection has closed under the ping.
+      if (epoch == _epoch) _end((exitCode: null, lost: true));
+    } finally {
+      if (epoch == _epoch) _checking = false;
+    }
   }
 
   void _onOutput(String data) {
@@ -103,6 +176,7 @@ class SshShellSession implements ShellSession {
 
   void _end(ShellEnd end) {
     if (_ended.isCompleted) return;
+    _pinger?.cancel();
     // A new session can own the terminal by now; leave its callbacks.
     if (terminal.onOutput == _onOutput) terminal.onOutput = null;
     if (terminal.onResize == _onResize) terminal.onResize = null;

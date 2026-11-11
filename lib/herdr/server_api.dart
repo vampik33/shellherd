@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'api/hc_client.dart';
 import 'api/herdr_client.dart';
 
@@ -17,6 +19,23 @@ abstract interface class PaneApi {
 
   /// Submits [text] with Enter: to the agent's prompt when [toAgent].
   Future<void> submit(String paneId, String text, {required bool toAgent});
+
+  /// Tells the server that a person is looking at the agent of [paneId],
+  /// so it stops being done on every client. Only while it is really on
+  /// the screen, with the app in front.
+  ///
+  /// [acked] is the turn this view marked already: it is not marked again,
+  /// so a "mark unread" from another client stays. [looking] is asked
+  /// again right before the write: the pane can go while the server
+  /// answers. [upTo] is the last turn whose text the screen shows: a later
+  /// one stays done. Returns the turn marked, for the next call; null where
+  /// the server has no turns.
+  Future<int?> markSeen(
+    String paneId, {
+    int? acked,
+    int? upTo,
+    required bool Function() looking,
+  });
 }
 
 /// Keeps a copy of the session current over one link.
@@ -58,6 +77,16 @@ class HerdrPaneApi implements PaneApi {
       toAgent
       ? _client.agentPrompt(paneId, text)
       : _client.paneSendInput(paneId, text: text, keys: const ['enter']);
+
+  /// herdr marks a pane seen only when its own client focuses it, which
+  /// would move the focus on the PC.
+  @override
+  Future<int?> markSeen(
+    String paneId, {
+    int? acked,
+    int? upTo,
+    required bool Function() looking,
+  }) async => null;
 }
 
 /// Panes of the Herdr app are terminals of herdr-core, the pane id their
@@ -101,5 +130,28 @@ class HcPaneApi implements PaneApi {
       );
     }
     await _client.send(paneId, text);
+  }
+
+  /// Raises the `herdr.seen` label to the agent's turn, as the Herdr app
+  /// does for the agent a person looks at; also when the label is missing,
+  /// so that terminals started elsewhere join. Never lowers it: that is
+  /// "mark unread" on another client.
+  @override
+  Future<int?> markSeen(
+    String paneId, {
+    int? acked,
+    int? upTo,
+    required bool Function() looking,
+  }) async {
+    final t = await _client.terminal(paneId);
+    if (t.status == null) return acked;
+    final turn = upTo == null ? t.turn : min(upTo, t.turn);
+    final seen = t.seen;
+    final marked = (seen != null && seen >= turn) ||
+        (acked != null && acked >= turn);
+    if (marked) return turn;
+    if (!looking()) return acked;
+    await _client.label(paneId, {HcTerminal.seenLabel: '$turn'});
+    return turn;
   }
 }

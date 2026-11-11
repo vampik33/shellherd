@@ -62,13 +62,23 @@ class _TerminalScreenState extends State<TerminalScreen> {
   /// Counts connection attempts, so a late result of an old one is dropped.
   int _attempt = 0;
 
+  /// The app is in the background: a session that comes up meanwhile
+  /// starts paused.
+  var _paused = false;
+
   @override
   void initState() {
     super.initState();
-    // The network can change while the app is away; mosh moves along.
+    // The network can change while the app is away; mosh moves along, and
+    // an SSH link that died meanwhile shows as lost at once.
     _lifecycle = AppLifecycleListener(
+      onPause: () {
+        _paused = true;
+        _session?.appPaused();
+      },
       onResume: () {
-        if (_session case final MoshShellSession mosh) unawaited(mosh.rehome());
+        _paused = false;
+        if (_session case final session?) unawaited(session.appResumed());
       },
     );
     unawaited(_connect());
@@ -95,6 +105,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
       session.close();
       return;
     }
+    if (_paused) session.appPaused();
     setState(() {
       _session = session;
       _phase = const _Open();

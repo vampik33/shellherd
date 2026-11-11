@@ -15,18 +15,69 @@ void main() {
 
     setUp(() => hc = FakeHc());
 
-    test('says hello once and sends every request on that channel', () async {
+    test('says hello once and sends the quick requests on that channel', () async {
       final client = await hc.connect();
       expect(client.hello.version, '0.1.20');
       expect(hc.requests.first.$1, 'hello');
       expect(hc.requests.first.$2, {'generation': 1});
       await client.terminals();
       await client.layout();
-      await client.read('t1', lines: 0);
+      await client.terminal('t1');
       expect(hc.dialer.channels, hasLength(1));
       final sent = hc.dialer.channels.single.sent;
       expect(sent.map((m) => m['jsonrpc']).toSet(), {'2.0'});
       expect(sent.map((m) => m['id']).toSet(), hasLength(4));
+    });
+
+    test('reads and input go each on a channel of its own, closed after', () async {
+      final client = await hc.connect();
+      expect(await client.read('t1', lines: 400), 'hello');
+      await client.keys('t1', ['esc']);
+      await client.send('t1', 'hi');
+      await pumpEventQueue();
+      expect(hc.dialer.channels, hasLength(4));
+      for (final c in hc.dialer.channels.skip(1)) {
+        expect(c.sent.map((m) => m['method']), isNot(contains('hello')));
+        expect(c.closed, isTrue);
+      }
+      expect(hc.dialer.channels.first.closed, isFalse);
+    });
+
+    test('a send that herdr-core holds back holds up no other request', () async {
+      final client = await hc.connect();
+      hc.holdSends = Completer();
+      var sent = false;
+      final send = client.send('t1', 'hi').then((_) => sent = true);
+      await pumpEventQueue();
+      await client.terminals();
+      expect(await client.read('t1', lines: 0), 'hello');
+      expect(sent, isFalse);
+      hc.holdSends!.complete();
+      await send;
+    });
+
+    test('input waits longer than the other requests', () async {
+      final client = await hc.connect(
+        timeout: const Duration(milliseconds: 50),
+      );
+      hc.holdSends = Completer();
+      final send = client.send('t1', 'hi');
+      await Future<void>.delayed(const Duration(milliseconds: 150));
+      hc.holdSends!.complete();
+      await send;
+    });
+
+    test('close fails a send on its way and releases its channel', () async {
+      final client = await hc.connect();
+      hc.holdSends = Completer();
+      final send = expectLater(
+        client.send('t1', 'hi'),
+        throwsA(isA<HerdrConnectionClosedException>()),
+      );
+      await pumpEventQueue();
+      await client.close();
+      await send;
+      expect(hc.dialer.channels.every((c) => c.closed), isTrue);
     });
 
     test('a core of another generation is a protocol error', () async {
@@ -67,8 +118,8 @@ void main() {
         },
       });
       final client = await connected;
-      final first = client.read('t1', lines: 0);
-      final second = client.read('t2', lines: 0);
+      final first = client.request('a');
+      final second = client.request('b');
       await pumpEventQueue();
       final ids = [for (final m in c.sent.skip(1)) m['id']];
       c.reply({
@@ -81,8 +132,8 @@ void main() {
         'id': ids[0],
         'result': {'text': 'one'},
       });
-      expect(await first, 'one');
-      expect(await second, 'two');
+      expect(await first, {'text': 'one'});
+      expect(await second, {'text': 'two'});
     });
 
     test('error kinds the app acts on become herdr codes', () async {
@@ -101,12 +152,12 @@ void main() {
       final client = await hc.connect(
         timeout: const Duration(milliseconds: 50),
       );
-      hc.silent.add('terminal.keys');
+      hc.silent.add('terminal.list');
       await expectLater(
-        client.keys('t1', ['esc']),
+        client.terminals(),
         throwsA(isA<HerdrTimeoutException>()),
       );
-      expect(await client.read('t1', lines: 0), 'hello');
+      expect((await client.layout()).spaces, hasLength(1));
     });
 
     test('the end of the channel fails what waits, and what comes', () async {
@@ -284,6 +335,96 @@ void main() {
       final api = HcPaneApi(await hc.connect());
       await api.submit('t1', 'ls', toAgent: false);
       expect(hc.methods.skip(1), ['terminal.send']);
+    });
+  });
+  group('HcPaneApi.markSeen', () {
+    late FakeHc hc;
+
+    setUp(() => hc = FakeHc());
+
+    /// The label request of one markSeen, and what it returned.
+    Future<(Map<String, Object?>?, int?)> markSeenWith({
+      Map<String, Object?>? status = const {'state': 'idle', 'app': 'x'},
+      String? seen,
+      int turn = 3,
+      int? acked,
+      int? upTo,
+    }) async {
+      hc.terminals = [
+        hcTerminal(
+          't1',
+          status: status,
+          turn: turn,
+          labels: {'herdr.seen': ?seen},
+        ),
+      ];
+      final before = hc.requests.length;
+      final now = await HcPaneApi(
+        await hc.connect(),
+      ).markSeen('t1', acked: acked, upTo: upTo, looking: () => true);
+      final label = [
+        for (final (m, p) in hc.requests.skip(before))
+          if (m == 'terminal.label') p,
+      ].singleOrNull;
+      return (label, now);
+    }
+
+    Future<Map<String, Object?>?> markSeen({
+      Map<String, Object?>? status = const {'state': 'idle', 'app': 'x'},
+      String? seen,
+    }) async => (await markSeenWith(status: status, seen: seen)).$1;
+
+    test('raises the label to the turn', () async {
+      expect(await markSeen(seen: '1'), {
+        'terminal': 't1',
+        'labels': {'herdr.seen': '3'},
+      });
+    });
+
+    test('writes a missing label', () async {
+      expect(await markSeen(), {
+        'terminal': 't1',
+        'labels': {'herdr.seen': '3'},
+      });
+    });
+
+    test('never lowers it, nor writes it again', () async {
+      expect(await markSeen(seen: '3'), isNull);
+      expect(await markSeen(seen: '5'), isNull);
+    });
+
+    test('leaves a terminal without an agent alone', () async {
+      expect(await markSeen(status: null), isNull);
+    });
+
+    test('returns the turn, and leaves a turn it marked to "unread"', () async {
+      expect((await markSeenWith(seen: '1')).$2, 3);
+      // Another client marked turn 3 unread: seen went back to 2.
+      final (label, turn) = await markSeenWith(seen: '2', acked: 3);
+      expect(label, isNull);
+      expect(turn, 3);
+    });
+
+    test('writes nothing once nobody looks any more', () async {
+      hc.terminals = [
+        hcTerminal('t1', status: {'state': 'idle', 'app': 'x'}, turn: 3),
+      ];
+      final turn = await HcPaneApi(
+        await hc.connect(),
+      ).markSeen('t1', acked: 1, looking: () => false);
+      expect(turn, 1);
+      expect(hc.methods, isNot(contains('terminal.label')));
+    });
+
+    test('marks no later turn than the screen shows', () async {
+      final (label, turn) = await markSeenWith(seen: '1', turn: 4, upTo: 3);
+      expect(label?['labels'], {'herdr.seen': '3'});
+      expect(turn, 3);
+    });
+
+    test('marks the next turn after one it marked', () async {
+      final (label, _) = await markSeenWith(seen: '2', turn: 4, acked: 3);
+      expect(label?['labels'], {'herdr.seen': '4'});
     });
   });
 }

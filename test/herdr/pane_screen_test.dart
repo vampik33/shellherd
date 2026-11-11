@@ -6,12 +6,15 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shellherd/herdr/api/herdr_client.dart';
 import 'package:shellherd/herdr/herdr_connection.dart';
 import 'package:shellherd/herdr/ui/pane_screen.dart';
 
+import '../support/fake_hc.dart';
 import '../support/fake_herdr.dart';
 import '../support/fake_snapshots.dart';
 import '../support/live_widgets.dart';
+import '../support/poll.dart' as poll;
 
 Map<String, Object?> _session({
   String status = 'working',
@@ -451,5 +454,189 @@ void main() {
     await untilFound(tester, paneText('xxxx'));
     expect(tester.takeException(), isNull);
     await close(tester);
+  });
+
+  group('on the Herdr app', () {
+    late FakeHc hc;
+    late HerdrConnection hcConnection;
+
+    /// [hc] with t1 done: turn 2, seen 1. With [failFirst], the first dial
+    /// fails and the link comes a moment later.
+    Future<void> openHc(
+      WidgetTester tester, {
+      bool failFirst = false,
+      bool holdGets = false,
+      bool failReads = false,
+    }) async {
+      hc = FakeHc()
+        ..holdGets = holdGets ? Completer() : null
+        ..terminals = [
+          hcTerminal(
+            't1',
+            status: {'state': 'idle', 'app': 'claude-code'},
+            turn: 2,
+            labels: {
+              'herdr.space': 's1',
+              'herdr.tab': 'b1',
+              'herdr.seen': '1',
+            },
+          ),
+        ];
+      if (failFirst) hc.dialer.failWith = StateError('not yet');
+      if (failReads) hc.errors['terminal.read'] = List.filled(100, 'internal', growable: true);
+      hcConnection = HerdrConnection(
+        () async {
+          final client = await hc.connect();
+          return OpenLink.hc(client, done: client.done, close: client.close);
+        },
+        backoff: (_) => const Duration(milliseconds: 50),
+        debounce: const Duration(milliseconds: 1),
+      )..connect();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: PaneScreen(
+            connection: hcConnection,
+            paneId: 't1',
+            server: 'the Herdr app',
+          ),
+        ),
+      );
+      if (failFirst) {
+        await until(
+          tester,
+          () => hcConnection.state.value is! LinkConnecting,
+          'the failed dial',
+        );
+        hc.dialer.failWith = null;
+      }
+      if (!failReads) await untilFound(tester, paneText('hello'));
+    }
+
+    Future<void> settle(WidgetTester tester) async {
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      await tester.pump();
+    }
+
+    Future<void> closeHc(WidgetTester tester) async {
+      await tester.pumpWidget(const SizedBox());
+      hcConnection.dispose();
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
+
+    List<Map<String, Object?>> labels() => [
+      for (final (m, p) in hc.requests)
+        if (m == 'terminal.label') p,
+    ];
+
+    testWidgets('a done agent on the screen is marked seen once', (
+      tester,
+    ) async {
+      await openHc(tester);
+      await until(tester, () => labels().isNotEmpty, 'the seen label');
+      expect(labels().single['labels'], {'herdr.seen': '2'});
+      // The next turn finishes while it stays on the screen.
+      hc.update('t1', turn: 3);
+      hc.note('event');
+      await until(tester, () => labels().length == 2, 'the next turn');
+      expect(labels().last['labels'], {'herdr.seen': '3'});
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      await tester.pump();
+      expect(labels(), hasLength(2), reason: 'once per turn');
+      await closeHc(tester);
+    });
+
+    testWidgets('a done agent whose text cannot be read stays done', (
+      tester,
+    ) async {
+      await openHc(tester, failReads: true);
+      await until(tester, () => hc.count('terminal.read') >= 2, 'reads');
+      await settle(tester);
+      expect(labels(), isEmpty);
+      hc.errors.clear();
+      await untilFound(tester, paneText('hello'));
+      await until(tester, () => labels().isNotEmpty, 'the seen label');
+      expect(labels().single['labels'], {'herdr.seen': '2'});
+      await closeHc(tester);
+    });
+
+    testWidgets('a "mark unread" from another client stays while shown', (
+      tester,
+    ) async {
+      await openHc(tester);
+      await until(tester, () => labels().isNotEmpty, 'the seen label');
+      hc.update('t1', labels: {'herdr.seen': '1'});
+      hc.note('event');
+      await until(
+        tester,
+        () => hcConnection.snapshot.value?.pane('t1')?.status == AgentStatus.done,
+        'the unread agent',
+      );
+      await settle(tester);
+      expect(labels(), hasLength(1));
+      // Nor does it ask the core again on every change.
+      final gets = hc.count('terminal.get');
+      hc.note('event');
+      await settle(tester);
+      expect(hc.count('terminal.get'), gets);
+
+      // Looking again later marks it again.
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await until(tester, () => labels().length == 2, 'the seen label again');
+      await closeHc(tester);
+    });
+
+    testWidgets('a pane that goes while the core answers is not marked', (
+      tester,
+    ) async {
+      await openHc(tester, holdGets: true);
+      await until(tester, () => hc.count('terminal.get') > 0, 'a mark');
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      hc.update('t1', turn: 3);
+      hc.holdGets!.complete();
+      // A hidden app draws no frames: a pump would wait for one.
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      expect(labels(), isEmpty);
+      // A hidden app draws no frames: the close needs it in front.
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await closeHc(tester);
+    });
+
+    testWidgets('a pane on the screen before the link is marked once it is up', (
+      tester,
+    ) async {
+      await openHc(tester, failFirst: true);
+      await until(tester, () => labels().isNotEmpty, 'the seen label');
+      expect(labels().single['labels'], {'herdr.seen': '2'});
+      await closeHc(tester);
+    });
+
+    testWidgets('an agent behind the app in the background stays done', (
+      tester,
+    ) async {
+      await openHc(tester);
+      await until(tester, () => labels().isNotEmpty, 'the seen label');
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      hc.update('t1', turn: 3);
+      hc.note('event');
+      // A hidden app draws no frames: a pump would wait for one.
+      await poll.until(
+        () => hcConnection.snapshot.value?.pane('t1')?.status == AgentStatus.done,
+        'the next turn',
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      expect(labels(), hasLength(1));
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await until(tester, () => labels().length == 2, 'the seen label');
+      expect(labels().last['labels'], {'herdr.seen': '3'});
+      await closeHc(tester);
+    });
   });
 }
