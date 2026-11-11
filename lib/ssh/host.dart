@@ -1,7 +1,9 @@
 import 'json_file.dart';
 
-/// How a host logs in.
-enum SshAuth { key, password }
+/// How a host logs in. [tailscale] sends no key and no password: Tailscale
+/// SSH on the PC knows the phone by its tailnet identity. The phone needs
+/// the Tailscale app connected.
+enum SshAuth { key, password, tailscale }
 
 /// One saved PC. It holds no secret: the private key lives in the
 /// [KeyStore] under [keyId], a password in the [KeyStore] under [id].
@@ -27,7 +29,7 @@ class Host {
       throw ArgumentError.value(port, 'port', 'not a TCP port');
     }
     if ((auth == SshAuth.key) != (keyId != null)) {
-      throw ArgumentError('a key host needs a keyId, a password host none');
+      throw ArgumentError('a key host needs a keyId, other hosts none');
     }
   }
 
@@ -58,7 +60,7 @@ class Host {
   final String user;
   final SshAuth auth;
 
-  /// The private key of a key host; null for a password host.
+  /// The private key of a key host; null for the others.
   final String? keyId;
 
   /// The herdr session name; null means the default session.

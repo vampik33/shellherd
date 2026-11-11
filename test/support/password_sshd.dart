@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 /// What a [PasswordSshd] offers; see test/support/password_sshd.py.
-enum PasswordMode { password, kbdint, both, otp, two }
+enum PasswordMode { password, kbdint, both, otp, two, none, check, stuck }
 
 /// A throwaway SSH server on 127.0.0.1 that checks only a password, on
 /// paramiko: the OpenSSH of [TestSshd] runs without root and so cannot.

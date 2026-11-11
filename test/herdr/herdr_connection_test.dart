@@ -280,6 +280,10 @@ void main() {
       ('changed key', SshHostKeyChanged(_host, _key, _key)),
       ('declined key', SshHostKeyRejected(_host, _key)),
       ('refused login', SshAuthFailed(_host, 'no')),
+      (
+        'unapproved Tailscale check',
+        SshTailscaleCheckNeeded(_host, Uri.parse('https://login.example/a')),
+      ),
       ('unreadable reply', const HerdrProtocolException('bad')),
     ]) {
       test('$name stops and does not retry', () async {

@@ -14,6 +14,7 @@ import 'ssh/ssh_connector.dart';
 import 'ui/host_key_dialog.dart';
 import 'ui/host_list_screen.dart';
 import 'ui/palette.dart';
+import 'ui/tailscale_check_dialog.dart';
 
 /// The stores and the connector that the screens share.
 class AppServices {
@@ -41,6 +42,18 @@ class AppServices {
         showHostKeyDialog(navigatorKey.currentContext!, host, key),
     // A watcher that stopped on this key can go on now.
     onTrusted: (_) => unawaited(syncNotify()),
+    onTailscaleCheck: (check) {
+      final context = navigatorKey.currentContext;
+      if (context == null) return check.cancel();
+      showTailscaleCheck(context, check);
+      // A watcher that stopped on this check can go on now: Tailscale
+      // remembers an approval for a while.
+      unawaited(
+        check.result.then((passed) {
+          if (passed) unawaited(syncNotify());
+        }),
+      );
+    },
   );
 
   /// [NotifyControl.sync] for callers that cannot show a failure.

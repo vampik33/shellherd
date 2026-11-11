@@ -16,6 +16,7 @@ import 'package:shellherd/notify/notifier.dart';
 import 'package:shellherd/notify/notify_control.dart';
 import 'package:shellherd/ssh/host.dart';
 import 'package:shellherd/ssh/known_hosts.dart';
+import 'package:shellherd/ssh/ssh_connector.dart';
 
 import '../support/live_widgets.dart';
 import '../support/memory_secret_store.dart';
@@ -117,6 +118,14 @@ void main() {
   }
 
   String pemOf(String id) => secrets.values['ssh-key.$id']!;
+
+  Future<void> choose(WidgetTester tester, String login) => tapOn(
+    tester,
+    find.descendant(
+      of: find.byType(SegmentedButton<SshAuth>),
+      matching: find.text(login),
+    ),
+  );
 
   testWidgets('adds a host: a key is required, and the line is shown', (
     tester,
@@ -614,14 +623,6 @@ void main() {
       return host;
     }
 
-    Future<void> choose(WidgetTester tester, String login) => tapOn(
-      tester,
-      find.descendant(
-        of: find.byType(SegmentedButton<SshAuth>),
-        matching: find.text(login),
-      ),
-    );
-
     Future<void> openPasswordEdit(WidgetTester tester, Host host) async {
       await tester.tap(find.byTooltip('Edit ${host.label}'));
       await untilFound(tester, find.text(kept));
@@ -758,6 +759,118 @@ void main() {
       await tapText(tester, 'Remove');
       await untilFound(tester, find.text('No hosts yet. Add your PC.'));
       expect(secrets.values, isEmpty);
+    });
+  });
+
+  group('Tailscale login', () {
+    testWidgets('a new host has no key and no password', (tester) async {
+      await pumpApp(tester);
+      await openAddForm(tester);
+      await fillForm(tester);
+      await choose(tester, 'Tailscale');
+      expect(find.text('Generate key'), findsNothing);
+      expect(hostField('Password'), findsNothing);
+      await tapText(tester, 'Save');
+      await untilGone(tester, hostField('Label'));
+      final saved = (await services.hosts.list()).single;
+      expect(saved.auth, SshAuth.tailscale);
+      expect(saved.keyId, isNull);
+      expect(secrets.values, isEmpty);
+    });
+
+    testWidgets('a key host that moves to Tailscale loses its key', (
+      tester,
+    ) async {
+      final host = await savedHost();
+      await pumpApp(tester);
+      await openEdit(tester, host);
+      await choose(tester, 'Tailscale');
+      await tapText(tester, 'Save');
+      await untilGone(tester, hostField('Label'));
+      expect((await services.hosts.list()).single.auth, SshAuth.tailscale);
+      expect(secrets.values, isEmpty);
+    });
+
+    testWidgets('a password host that moves to Tailscale loses its password', (
+      tester,
+    ) async {
+      final host = Host(
+        id: 'p1',
+        label: 'label-p1',
+        address: 'pc.example',
+        user: 'dev',
+        auth: SshAuth.password,
+      );
+      await services.keys.savePassword(host.id, 'pw');
+      await services.hosts.save(host);
+      await pumpApp(tester);
+      await tester.tap(find.byTooltip('Edit ${host.label}'));
+      await untilFound(tester, find.text('Saved. Leave empty to keep it.'));
+      await choose(tester, 'Tailscale');
+      await tapText(tester, 'Save');
+      await untilGone(tester, hostField('Label'));
+      expect((await services.hosts.list()).single.auth, SshAuth.tailscale);
+      expect(secrets.values, isEmpty);
+    });
+
+    group('check dialog', () {
+      final url = Uri.parse('https://login.tailscale.com/a/test0123');
+
+      Future<(TailscaleCheck, Completer<bool>, List<String>)> showCheck(
+        WidgetTester tester,
+      ) async {
+        await pumpApp(tester);
+        final result = Completer<bool>();
+        final cancels = <String>[];
+        final check = TailscaleCheck(
+          Host(
+            id: 't',
+            label: 'workbox',
+            address: 'workbox',
+            user: 'dev',
+            auth: SshAuth.tailscale,
+          ),
+          url,
+          result.future,
+          () => cancels.add('cancel'),
+        );
+        services.connector.onTailscaleCheck!(check);
+        await untilFound(tester, find.text('Tailscale check: workbox'));
+        expect(find.text('$url'), findsOneWidget);
+        return (check, result, cancels);
+      }
+
+      testWidgets('closes by itself once the login is approved, and then '
+          'updates the watchers', (tester) async {
+        final (_, result, cancels) = await showCheck(tester);
+        result.complete(true);
+        await untilGone(tester, find.text('Tailscale check: workbox'));
+        expect(find.text('No hosts yet. Add your PC.'), findsOneWidget);
+        expect(cancels, isEmpty);
+        expect(notify.syncs, [false], reason: 'no permission prompt');
+      });
+
+      testWidgets('Cancel gives up the login', (tester) async {
+        final (_, result, cancels) = await showCheck(tester);
+        await tapText(tester, 'Cancel');
+        expect(cancels, ['cancel']);
+        result.complete(false); // what the connector does then
+        await untilGone(tester, find.text('Tailscale check: workbox'));
+        expect(notify.syncs, isEmpty);
+      });
+
+      testWidgets('Back closes the dialog and gives up the login', (
+        tester,
+      ) async {
+        final (_, result, cancels) = await showCheck(tester);
+        await tester.binding.handlePopRoute();
+        await untilGone(tester, find.text('Tailscale check: workbox'));
+        expect(cancels, ['cancel']);
+        result.complete(false);
+        await tester.pump();
+        expect(cancels, ['cancel'], reason: 'once');
+        expect(find.text('No hosts yet. Add your PC.'), findsOneWidget);
+      });
     });
   });
 

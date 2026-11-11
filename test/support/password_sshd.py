@@ -12,10 +12,15 @@ MODE is what the server offers:
   both       both methods
   otp        keyboard-interactive: "Password:", then a hidden code prompt
   two        keyboard-interactive: one round with two prompts
+  none       the "none" method, as Tailscale SSH: no credentials
+  check      "none", after a Tailscale check: a banner with a link, then
+             the login waits CHECK_SECONDS before it goes through
+  stuck      "none", after a Tailscale check that no one approves
 
 It prints "PORT <n>", then one line per answer it gets:
   AUTH password ok|bad
   AUTH kbdint <number of answers> ok|bad|more
+  AUTH none ok
 It never prints a password or an answer.
 """
 
@@ -35,6 +40,8 @@ from paramiko.server import InteractiveQuery
 
 PASSWORD = os.environ["SHELLHERD_TEST_PASSWORD"]
 MODE = sys.argv[1]
+CHECK_URL = "https://login.tailscale.com/a/test0123"
+CHECK_SECONDS = 0.5
 
 
 def log(line):
@@ -52,7 +59,30 @@ class Server(ServerInterface):
             "both": "password,keyboard-interactive",
             "otp": "keyboard-interactive",
             "two": "keyboard-interactive",
+            "none": "none",
+            "check": "none",
+            "stuck": "none",
         }[MODE]
+
+    def get_banner(self):
+        if MODE in ("check", "stuck"):
+            return (
+                "# Tailscale SSH requires an additional check.\n"
+                f"# To authenticate, visit: {CHECK_URL}\n",
+                "en-US",
+            )
+        return (None, None)
+
+    def check_auth_none(self, username):
+        if MODE not in ("none", "check", "stuck"):
+            return AUTH_FAILED
+        # Tailscale SSH holds the login until the check is approved.
+        if MODE == "check":
+            time.sleep(CHECK_SECONDS)
+        elif MODE == "stuck":
+            time.sleep(3600)
+        log("AUTH none ok")
+        return AUTH_SUCCESSFUL
 
     def check_auth_password(self, username, password):
         # paramiko asks this even for a method the server did not offer.

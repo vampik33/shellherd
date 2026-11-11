@@ -161,6 +161,33 @@ void main() {
       );
     });
 
+    test('a Tailscale host has no key and round-trips', () async {
+      final store = HostStore(JsonFile(fileNamed('hosts.json')));
+      await store.save(
+        Host(
+          id: 't',
+          label: 'l',
+          address: 'workbox',
+          user: 'u',
+          auth: SshAuth.tailscale,
+        ),
+      );
+      final saved = (await store.list()).single;
+      expect(saved.auth, SshAuth.tailscale);
+      expect(saved.keyId, isNull);
+      expect(
+        () => Host(
+          id: 'x',
+          label: 'l',
+          address: 'a',
+          user: 'u',
+          auth: SshAuth.tailscale,
+          keyId: 'k',
+        ),
+        throwsArgumentError,
+      );
+    });
+
     test('new ids are 32 hex characters and differ', () {
       final a = randomId();
       expect(a, matches(RegExp(r'^[0-9a-f]{32}$')));

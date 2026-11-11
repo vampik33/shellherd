@@ -12,6 +12,28 @@ import 'known_hosts.dart';
 /// Asks the user whether to trust [key], the first key seen for [host].
 typedef TrustPrompt = Future<bool> Function(Host host, HostKey key);
 
+/// Shows the user a [TailscaleCheck]. It must not wait for the user: the
+/// login goes on while the check is open.
+typedef TailscaleCheckPrompt = void Function(TailscaleCheck check);
+
+/// Tailscale SSH in check mode holds the login of a [SshAuth.tailscale]
+/// host until the user approves it at [url] in a browser.
+class TailscaleCheck {
+  TailscaleCheck(this.host, this.url, this.result, this._cancel);
+
+  final Host host;
+  final Uri url;
+
+  /// Completes when the login ends: true if it went through.
+  final Future<bool> result;
+
+  final void Function() _cancel;
+
+  /// Gives up the login; [SshConnector.open] throws
+  /// [SshTailscaleCheckNeeded].
+  void cancel() => _cancel();
+}
+
 /// Opens authenticated SSH connections to saved hosts. The terminal, herdr
 /// and the watcher all connect through it.
 ///
@@ -25,7 +47,9 @@ class SshConnector {
     required this.keys,
     required this.askTrust,
     this.onTrusted,
+    this.onTailscaleCheck,
     this.timeout = const Duration(seconds: 15),
+    this.checkTimeout = const Duration(minutes: 3),
   });
 
   final KnownHosts knownHosts;
@@ -35,8 +59,16 @@ class SshConnector {
   /// Called when the user has trusted the key of a new host.
   final void Function(Host host)? onTrusted;
 
+  /// Shows a Tailscale check to the user. Null where no one can see it,
+  /// as in the watchers: a login that needs a check then fails at once.
+  final TailscaleCheckPrompt? onTailscaleCheck;
+
   /// For each of TCP connect, handshake and login.
   final Duration timeout;
+
+  /// For the login of a [SshAuth.tailscale] host, which may wait for the
+  /// user to approve a check in a browser.
+  final Duration checkTimeout;
 
   /// Throws a [SshConnectException]. The caller closes the client.
   Future<SSHClient> open(Host host) async {
@@ -78,6 +110,8 @@ class SshConnector {
               await keys.password(host.id) ??
               (throw StateError('no saved password')),
         ),
+        // Only the "none" method: Tailscale SSH needs nothing more.
+        SshAuth.tailscale => const _Login(),
       };
     } catch (e) {
       // The saved key or password is gone or unreadable.
@@ -108,7 +142,28 @@ class SshConnector {
       return password;
     }
 
-    final client = SSHClient(
+    // Only on a logging-in connection: the first-use read never gets as
+    // far as the login.
+    final tailscale = host.auth == SshAuth.tailscale && expected != null;
+    Uri? checkUrl;
+    late final SSHClient client;
+    void onBanner(String banner) {
+      if (checkUrl != null) return; // one check per login
+      final url = tailscaleCheckUrl(banner);
+      if (url == null) return;
+      checkUrl = url;
+      if (onTailscaleCheck case final prompt?) {
+        final result = client.authenticated.then(
+          (_) => true,
+          onError: (Object _) => false,
+        );
+        prompt(TailscaleCheck(host, url, result, client.close));
+      } else {
+        client.close(); // no one to approve it
+      }
+    }
+
+    client = SSHClient(
       _NativeSocket(socket),
       username: host.user,
       identities: login.identities,
@@ -121,8 +176,9 @@ class SshConnector {
         seen = HostKey(type, utf8.decode(fp));
         return seen == expected;
       },
+      onUserauthBanner: tailscale ? onBanner : null,
       handshakeTimeout: timeout,
-      authTimeout: timeout,
+      authTimeout: tailscale ? checkTimeout : timeout,
     );
     _peers[client] = socket.remoteAddress;
     try {
@@ -138,6 +194,8 @@ class SshConnector {
             ? _HostKeySeen(key)
             : SshHostKeyChanged(host, expected, key);
       }
+      // Cancelled, timed out, or no one to ask.
+      if (checkUrl case final url?) throw SshTailscaleCheckNeeded(host, url);
       throw SshNetworkException(host, e);
     }
   }
@@ -198,6 +256,15 @@ List<String>? answerPasswordPrompt(
   _ => null,
 };
 
+/// The link in the login banner of a Tailscale SSH check, such as
+/// "# To authenticate, visit: https://login.tailscale.com/a/...". Null
+/// when the banner has no https link.
+Uri? tailscaleCheckUrl(String banner) {
+  final match = RegExp(r'https://\S+').firstMatch(banner);
+  final url = match == null ? null : Uri.tryParse(match[0]!);
+  return url != null && url.host.isNotEmpty ? url : null;
+}
+
 /// The first-use read got the host key; [SshConnector.open] asks about it.
 class _HostKeySeen implements Exception {
   const _HostKeySeen(this.key);
@@ -239,6 +306,17 @@ class SshAuthFailed extends SshConnectException {
 
   @override
   String toString() => 'SshAuthFailed(${host.user}@${host.address}): $cause';
+}
+
+/// Tailscale SSH holds the login for a check at [url] that no one
+/// approved: no one was there to ask, the user cancelled, or the time ran
+/// out.
+class SshTailscaleCheckNeeded extends SshConnectException {
+  const SshTailscaleCheckNeeded(super.host, this.url);
+  final Uri url;
+
+  @override
+  String toString() => 'SshTailscaleCheckNeeded(${host.address}): $url';
 }
 
 /// No connection: DNS, TCP, timeout, or the server closed it.

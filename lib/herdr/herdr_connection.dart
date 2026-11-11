@@ -241,7 +241,8 @@ class HerdrConnection {
   static LinkState? _finalState(Object error) => switch (error) {
     SshHostKeyChanged() ||
     SshHostKeyRejected() ||
-    SshAuthFailed() => LinkFailed(error),
+    SshAuthFailed() ||
+    SshTailscaleCheckNeeded() => LinkFailed(error),
     HerdrProtocolException() => LinkFailed(error),
     HerdrConnectException(cause: SSHChannelOpenError()) => LinkNoServer(error),
     _ => null,

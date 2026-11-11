@@ -10,7 +10,8 @@ import 'confirm_dialog.dart';
 
 /// Adds a host, or edits [host].
 ///
-/// Each host logs in with its own key or with a password. A key made here
+/// Each host logs in with its own key, with a password, or through
+/// Tailscale SSH with neither. A key made here
 /// belongs to the form until Save; leaving the form deletes it. Save
 /// deletes the key or the password that the host no longer uses.
 class HostFormScreen extends StatefulWidget {
@@ -188,6 +189,7 @@ class _HostFormScreenState extends State<HostFormScreen> {
   Future<void> _save() async {
     final valid = _form.currentState!.validate();
     final byKey = _auth == SshAuth.key;
+    final byPassword = _auth == SshAuth.password;
     final keyId = byKey ? _key?.id : null;
     final missingKey = byKey && keyId == null;
     if (missingKey) {
@@ -197,7 +199,7 @@ class _HostFormScreenState extends State<HostFormScreen> {
     await _run('Cannot save the host', () async {
       final old = widget.host;
       final moshServer = _moshServer.text.trim();
-      final password = byKey ? '' : _password.text;
+      final password = byPassword ? _password.text : '';
       // First, so that no saved host lacks its password. A failed save puts
       // the previous one back: the old host must not get the new password.
       String? previous;
@@ -237,7 +239,7 @@ class _HostFormScreenState extends State<HostFormScreen> {
       if (old?.keyId case final oldKey? when oldKey != keyId) {
         await _services.keys.delete(oldKey);
       }
-      if (byKey) await _services.keys.deletePassword(_id);
+      if (!byPassword) await _services.keys.deletePassword(_id);
       await _syncNotify(ask: _notify);
       if (mounted) Navigator.of(context).pop();
     });
@@ -394,6 +396,10 @@ class _HostFormScreenState extends State<HostFormScreen> {
                       value: SshAuth.password,
                       label: Text('Password'),
                     ),
+                    ButtonSegment(
+                      value: SshAuth.tailscale,
+                      label: Text('Tailscale'),
+                    ),
                   ],
                   selected: {_auth},
                   onSelectionChanged: _locked
@@ -401,7 +407,15 @@ class _HostFormScreenState extends State<HostFormScreen> {
                       : (v) => setState(() => _auth = v.single),
                 ),
                 const SizedBox(height: 8),
-                if (_auth == SshAuth.password)
+                if (_auth == SshAuth.tailscale)
+                  const Text(
+                    'Tailscale SSH on the PC logs you in by this device: '
+                    'no key or password. The Tailscale app must be connected '
+                    'on this device, and the address is the name of the PC '
+                    'on the tailnet or its 100.x address. The PC may ask '
+                    'you to approve a login in a browser.',
+                  )
+                else if (_auth == SshAuth.password)
                   TextFormField(
                     controller: _password,
                     obscureText: true,

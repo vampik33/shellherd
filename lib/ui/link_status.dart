@@ -84,7 +84,13 @@ StatusBanner sshFailureBanner(
       'The server refused the ${switch (host.auth) {
         SshAuth.key => 'key',
         SshAuth.password => 'password',
+        SshAuth.tailscale => 'Tailscale login',
       }} for ${host.user}@${host.address}.',
+      action: retry,
+    ),
+    SshTailscaleCheckNeeded(:final url) => StatusBanner(
+      'Tailscale wants you to approve this login in a browser.',
+      detail: '$url',
       action: retry,
     ),
     SshNetworkException(:final cause) => StatusBanner(
