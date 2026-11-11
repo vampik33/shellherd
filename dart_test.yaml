@@ -5,3 +5,7 @@ tags:
   # Tests that start a throwaway sshd (see test/support/test_sshd.dart).
   sshd:
     timeout: 2x
+  # Tests that run OpenSSH in Docker (see test/support/docker_sshd.dart).
+  # The first run builds the image and needs the network.
+  docker:
+    timeout: 2x
