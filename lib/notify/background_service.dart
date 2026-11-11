@@ -18,9 +18,13 @@ const _shown = 'shown';
 
 const _title = 'shellherd watches agents';
 
+/// The button on the service notification that stops the watching.
+const _stopButton = 'stop';
+
 /// Android: the watchers run in a foreground service, in an isolate of
 /// their own, so they go on when the app is closed. The service runs while
 /// a saved host has [Host.notify] on, and starts again only with the app.
+/// The Stop button on its notification ends it until then.
 class ServiceNotify implements NotifyControl {
   ServiceNotify(this._hosts) {
     FlutterForegroundTask.initCommunicationPort();
@@ -69,6 +73,9 @@ class ServiceNotify implements NotifyControl {
           notificationIcon: const NotificationIcon(
             metaDataName: 'io.github.vampik33.shellherd.NOTIFICATION_ICON',
           ),
+          notificationButtons: const [
+            NotificationButton(id: _stopButton, text: 'Stop'),
+          ],
           callback: startWatchService,
         ),
       );
@@ -162,6 +169,12 @@ class _WatchTask extends TaskHandler {
       case [_shown, final String? target]:
         _hub?.shown = PaneTarget.decode(target);
     }
+  }
+
+  /// Stop closes every SSH link of the watchers; [onDestroy] follows.
+  @override
+  void onNotificationButtonPressed(String id) {
+    if (id == _stopButton) unawaited(FlutterForegroundTask.stopService());
   }
 
   @override

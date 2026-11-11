@@ -119,6 +119,7 @@ class _HerdrScreenState extends State<HerdrScreen> {
             onPressed: widget.onTerminal,
           ),
         herdrLinkChip(state),
+        disconnectButton(context),
         const SizedBox(width: 8),
       ],
     ),

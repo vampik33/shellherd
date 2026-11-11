@@ -75,35 +75,50 @@ void main() {
   FakeLink Function() failing(Object error) =>
       () => throw error;
 
+  /// With [below], the screen opens over a first route that shows it, as
+  /// over the host list in the app.
   Future<void> pumpScreen(
     WidgetTester tester, {
     Host? on,
     String? openPane,
     void Function(String paneId, bool shown)? onPaneShown,
-  }) => tester.pumpWidget(
-    MaterialApp(
-      home: HerdrScreen(
-        host: on ?? host,
-        openPane: openPane,
-        onPaneShown: onPaneShown,
-        createConnection: () {
-          connections++;
-          return HerdrConnection(
-            () async {
-              final next = await (script.isNotEmpty
-                  ? script.removeAt(0)
-                  : () => FakeLink(_busySession()))();
-              links.add(next);
-              return next.open;
-            },
-            backoff: (_) => const Duration(minutes: 1),
-            debounce: const Duration(milliseconds: 1),
-          );
-        },
-        onTerminal: () => terminals++,
+    String? below,
+  }) async {
+    final screen = HerdrScreen(
+      host: on ?? host,
+      openPane: openPane,
+      onPaneShown: onPaneShown,
+      createConnection: () {
+        connections++;
+        return HerdrConnection(
+          () async {
+            final next = await (script.isNotEmpty
+                ? script.removeAt(0)
+                : () => FakeLink(_busySession()))();
+            links.add(next);
+            return next.open;
+          },
+          backoff: (_) => const Duration(minutes: 1),
+          debounce: const Duration(milliseconds: 1),
+        );
+      },
+      onTerminal: () => terminals++,
+    );
+    if (below == null) {
+      await tester.pumpWidget(MaterialApp(home: screen));
+      return;
+    }
+    final navigator = GlobalKey<NavigatorState>();
+    await tester.pumpWidget(
+      MaterialApp(navigatorKey: navigator, home: Text(below)),
+    );
+    unawaited(
+      navigator.currentState!.push(
+        MaterialPageRoute<void>(builder: (_) => screen),
       ),
-    ),
-  );
+    );
+    await tester.pump();
+  }
 
   Future<void> close(WidgetTester tester) async {
     await tester.pumpWidget(const SizedBox());
@@ -652,6 +667,51 @@ void main() {
       expect(find.text('No spaces yet.'), findsOneWidget);
       expect(find.text('No agents are running.'), findsOneWidget);
       await close(tester);
+    });
+  });
+
+  group('Disconnect', () {
+    Finder disconnect() => find.byTooltip('Disconnect');
+
+    Future<void> disconnects(WidgetTester tester) async {
+      final link = links.single;
+      await tester.tap(disconnect());
+      await untilGone(tester, find.byType(HerdrScreen));
+      expect(find.text('host list'), findsOneWidget);
+      await until(tester, () => link.closed, 'the link to close');
+      await close(tester);
+    }
+
+    testWidgets('closes the link and goes back to the host list', (
+      tester,
+    ) async {
+      await pumpScreen(tester, below: 'host list');
+      await live(tester);
+      expect(disconnect(), findsOneWidget);
+      await disconnects(tester);
+    });
+
+    testWidgets('works from an open pane, which holds back only Back', (
+      tester,
+    ) async {
+      await pumpScreen(tester, below: 'host list', openPane: 'w1:p2');
+      await untilFound(tester, find.byType(PaneScreen));
+      await live(tester);
+      expect(disconnect(), findsOneWidget);
+      await disconnects(tester);
+    });
+
+    testWidgets('shows once in the wide layout, with a pane open', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(1280, 800);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await pumpScreen(tester, below: 'host list', openPane: 'w1:p2');
+      await untilFound(tester, find.byType(PaneScreen));
+      await live(tester);
+      expect(disconnect(), findsOneWidget);
+      await disconnects(tester);
     });
   });
 

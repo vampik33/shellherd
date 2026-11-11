@@ -54,7 +54,8 @@ class PaneScreen extends StatefulWidget {
   /// herdr screen.
   final VoidCallback? onClose;
 
-  /// The chip of the link; off where the herdr screen shows it already.
+  /// The chip of the link and the Disconnect button; off where the herdr
+  /// screen shows them already.
   final bool showLink;
 
   /// The text being typed, when the screen below keeps it while the pane
@@ -218,6 +219,7 @@ class _PaneScreenState extends State<PaneScreen> {
             ),
             if (widget.showLink) ...[
               herdrLinkChip(state),
+              disconnectButton(context),
               const SizedBox(width: 8),
             ],
           ],

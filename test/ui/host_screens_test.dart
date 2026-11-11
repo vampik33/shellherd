@@ -17,6 +17,8 @@ import 'package:shellherd/notify/notify_control.dart';
 import 'package:shellherd/ssh/host.dart';
 import 'package:shellherd/ssh/known_hosts.dart';
 import 'package:shellherd/ssh/ssh_connector.dart';
+import 'package:shellherd/terminal/terminal_screen.dart';
+import 'package:shellherd/ui/host_list_screen.dart';
 
 import '../support/live_widgets.dart';
 import '../support/memory_secret_store.dart';
@@ -871,6 +873,38 @@ void main() {
         expect(cancels, ['cancel'], reason: 'once');
         expect(find.text('No hosts yet. Add your PC.'), findsOneWidget);
       });
+    });
+  });
+
+  group('Disconnect', () {
+    // Port 1 refuses at once: the screens show no link.
+    Future<Host> unreachable() => savedHost(address: '127.0.0.1', port: 1);
+    Finder disconnect() => find.byTooltip('Disconnect');
+    Finder hostList() => find.byType(HostListScreen);
+
+    testWidgets('the terminal goes back to the host list', (tester) async {
+      final host = await unreachable();
+      await pumpApp(tester);
+      await tester.tap(find.byTooltip('Terminal on ${host.label}'));
+      await untilFound(tester, find.byType(TerminalScreen));
+      await tester.tap(disconnect());
+      await untilGone(tester, find.byType(TerminalScreen));
+      expect(hostList(), findsOneWidget);
+    });
+
+    testWidgets('the terminal over the herdr screen closes both', (
+      tester,
+    ) async {
+      final host = await unreachable();
+      await pumpApp(tester);
+      await tester.tap(find.text(host.label));
+      await untilFound(tester, find.byType(HerdrScreen));
+      await tester.tap(find.widgetWithText(NavigationDestination, 'terminal'));
+      await untilFound(tester, find.byType(TerminalScreen));
+      await tester.tap(disconnect().last);
+      await untilGone(tester, find.byType(TerminalScreen));
+      await untilGone(tester, find.byType(HerdrScreen));
+      expect(hostList(), findsOneWidget);
     });
   });
 

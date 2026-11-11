@@ -101,6 +101,15 @@ StatusBanner sshFailureBanner(
   };
 }
 
+/// Closes the screens of a host, and with them their connections, back
+/// to the host list.
+IconButton disconnectButton(BuildContext context) => IconButton(
+  tooltip: 'Disconnect',
+  icon: const Icon(Icons.link_off),
+  // pop, not maybePop: a herdr screen with a pane open holds back.
+  onPressed: () => Navigator.of(context).popUntil((route) => route.isFirst),
+);
+
 /// The state of a link, for the top bar.
 class LinkChip extends StatelessWidget {
   const LinkChip(this.label, this.color, {super.key});
