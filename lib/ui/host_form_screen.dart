@@ -66,7 +66,9 @@ class _HostFormScreenState extends State<HostFormScreen> {
   /// not trap the host.
   bool _unreadable = false;
 
-  bool get _locked => _busy || _loading || _unreadable;
+  bool get _working => _busy || _loading;
+
+  bool get _locked => _working || _unreadable;
 
   AppServices get _services => widget.services;
 
@@ -341,7 +343,7 @@ class _HostFormScreenState extends State<HostFormScreen> {
               IconButton(
                 icon: const Icon(Icons.delete_outline),
                 tooltip: 'Remove host',
-                onPressed: _busy || _loading ? null : _delete,
+                onPressed: _working ? null : _delete,
               ),
             TextButton(
               onPressed: _locked ? null : _save,

@@ -18,12 +18,13 @@ Future<HcClient> connectHc(
   String? socketPath,
   Duration timeout = const Duration(seconds: 15),
 }) async {
+  final name = socketPath == null ? hcSessionName(session) : null;
   final path =
       socketPath ??
       await remoteValue(
         ssh,
         hcSocketBase,
-        (base) => hcSocketPath(base, hcSessionName(session)),
+        (base) => hcSocketPath(base, name!),
         what: 'socket dir lookup',
         timeout: timeout,
       );
