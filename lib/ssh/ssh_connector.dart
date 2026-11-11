@@ -176,9 +176,10 @@ class SshConnector {
           : (request) => answerPasswordPrompt(request, promptPassword),
       // dartssh2 gives the fingerprint as the text "SHA256:<base64>".
       onVerifyHostKey: (type, fp) {
-        seen = HostKey(type, utf8.decode(fp));
+        seen = HostKey.signedWith(type, utf8.decode(fp));
         return seen == expected;
       },
+      algorithms: SSHAlgorithms(hostkey: hostKeyOrder(expected?.type)),
       onUserauthBanner: tailscale ? onBanner : null,
       handshakeTimeout: timeout,
       authTimeout: tailscale ? checkTimeout : timeout,
@@ -202,6 +203,17 @@ class SshConnector {
       throw SshNetworkException(host, e);
     }
   }
+}
+
+/// The host key algorithms that dartssh2 offers, those of key type
+/// [trusted] first. A server with more than one host key then shows the
+/// trusted one, not the one dartssh2 likes best. With no trusted key, the
+/// default order.
+List<SSHHostkeyType> hostKeyOrder(String? trusted) {
+  final all = const SSHAlgorithms().hostkey;
+  if (trusted == null) return all;
+  bool isTrusted(SSHHostkeyType t) => HostKey.keyTypeOf(t.name) == trusted;
+  return [...all.where(isTrusted), ...all.where((t) => !isTrusted(t))];
 }
 
 /// The address that the connection of [client] went to, when an

@@ -204,6 +204,23 @@ void main() {
       },
     );
 
+    test('a server with two host keys shows the trusted one', () async {
+      final port = sshd.port;
+      await sshd.stop();
+      sshd = started = await TestSshd.start(port: port, rsa: true);
+      await sshd.authorize(await keys.publicLine(keyId));
+
+      // dartssh2 asks for ed25519 first, and signs RSA with rsa-sha2-512:
+      // a trusted RSA key must still match.
+      await knownHosts.trust('127.0.0.1', port, sshd.rsaHostKey);
+      await connect();
+      expect(asked, isEmpty);
+
+      await knownHosts.forget('127.0.0.1', port);
+      await connect();
+      expect(asked, [sshd.hostKey], reason: 'first use prefers ed25519');
+    });
+
     test('a key the server does not accept fails as SshAuthFailed', () async {
       final stranger = await keys.generate();
       await expectLater(

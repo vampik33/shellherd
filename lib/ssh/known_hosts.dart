@@ -1,15 +1,29 @@
 import 'json_file.dart';
 
-/// A host key as dartssh2 shows it: the key type and the SHA256 fingerprint
-/// text, `SHA256:<base64>`, the same text `ssh-keygen -l` prints.
+/// A host key: the key type and the SHA256 fingerprint text,
+/// `SHA256:<base64>`, the same text `ssh-keygen -l` prints.
 ///
 /// dartssh2 gives only the fingerprint, not the key itself, so the store
 /// cannot be an OpenSSH `known_hosts` file.
 class HostKey {
   const HostKey(this.type, this.fingerprint);
 
+  /// The key that [algorithm] signed with, as dartssh2 shows it in the
+  /// handshake.
+  HostKey.signedWith(String algorithm, String fingerprint)
+    : this(keyTypeOf(algorithm), fingerprint);
+
+  /// The key type, such as `ssh-ed25519` or `ssh-rsa`: never a signature
+  /// algorithm such as `rsa-sha2-512`, which one RSA key signs with as well
+  /// as `rsa-sha2-256`.
   final String type;
   final String fingerprint;
+
+  /// The key type that signs with host key [algorithm].
+  static String keyTypeOf(String algorithm) => switch (algorithm) {
+    'rsa-sha2-256' || 'rsa-sha2-512' => 'ssh-rsa',
+    _ => algorithm,
+  };
 
   @override
   bool operator ==(Object other) =>
@@ -43,7 +57,8 @@ class KnownHosts {
       _keyOf((await _file.read())[entryOf(address, port)]);
 
   static HostKey? _keyOf(Object? e) => e is Map<String, Object?>
-      ? HostKey(e['type']! as String, e['fingerprint']! as String)
+      // Entries saved before keyTypeOf may hold an RSA algorithm.
+      ? HostKey.signedWith(e['type']! as String, e['fingerprint']! as String)
       : null;
 
   /// Trusts [key] only if no key is trusted yet for this address and port,

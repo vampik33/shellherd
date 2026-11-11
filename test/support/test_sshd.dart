@@ -11,7 +11,14 @@ import 'package:shellherd/ssh/known_hosts.dart';
 /// It logs in as the current user with the login shell of that user, so
 /// remote commands meet the same shell as a real `ssh localhost`.
 class TestSshd {
-  TestSshd._(this.port, this._dir, this._process, this._log, this._hostFp);
+  TestSshd._(
+    this.port,
+    this._dir,
+    this._process,
+    this._log,
+    this._hostFp,
+    this._rsaFp,
+  );
 
   final int port;
   final Directory _dir;
@@ -24,6 +31,10 @@ class TestSshd {
   /// The host key as the app stores it: type and fingerprint text.
   HostKey get hostKey => HostKey('ssh-ed25519', _hostFp);
 
+  /// The second host key of a server started with `rsa: true`.
+  HostKey get rsaHostKey => HostKey('ssh-rsa', _rsaFp!);
+  final String? _rsaFp;
+
   static const _candidates = ['/usr/bin/sshd', '/usr/sbin/sshd'];
 
   /// The sshd binary, or null. sshd must be started with an absolute path.
@@ -31,8 +42,9 @@ class TestSshd {
       _candidates.where((p) => File(p).existsSync()).firstOrNull;
 
   /// Starts on [port], or on a free port. A restart on the same port with
-  /// a new host key looks to a client like a changed server key.
-  static Future<TestSshd> start({int? port}) async {
+  /// a new host key looks to a client like a changed server key. With
+  /// [rsa] the server also has an RSA host key, after the ed25519 one.
+  static Future<TestSshd> start({int? port, bool rsa = false}) async {
     final sshd = binary ?? (throw StateError('no sshd binary'));
     final dir = await Directory.systemTemp.createTemp('shellherd-sshd-');
     TestSshd? server;
@@ -40,16 +52,21 @@ class TestSshd {
       await Future.wait([
         _keygen('${dir.path}/host_key'),
         _keygen('${dir.path}/client_key'),
+        if (rsa) _keygen('${dir.path}/rsa_host_key', type: 'rsa'),
       ]);
       await File('${dir.path}/client_key.pub')
           .copy('${dir.path}/authorized_keys');
       final hostFp = await _fingerprint('${dir.path}/host_key.pub');
+      final rsaFp = rsa
+          ? await _fingerprint('${dir.path}/rsa_host_key.pub')
+          : null;
 
       port ??= await _freePort();
       await File('${dir.path}/sshd_config').writeAsString('''
 Port $port
 ListenAddress 127.0.0.1
 HostKey ${dir.path}/host_key
+${rsa ? 'HostKey ${dir.path}/rsa_host_key' : ''}
 AuthorizedKeysFile ${dir.path}/authorized_keys
 PidFile ${dir.path}/sshd.pid
 StrictModes no
@@ -74,7 +91,7 @@ AllowStreamLocalForwarding yes
           listening.complete();
         }
       });
-      server = TestSshd._(port, dir, process, log, hostFp);
+      server = TestSshd._(port, dir, process, log, hostFp, rsaFp);
       await Future.any([
         listening.future,
         process.exitCode.then(
@@ -148,11 +165,12 @@ AllowStreamLocalForwarding yes
     if (_dir.existsSync()) await _dir.delete(recursive: true);
   }
 
-  static Future<void> _keygen(String path) async {
+  static Future<void> _keygen(String path, {String type = 'ed25519'}) async {
     final r = await Process.run('ssh-keygen', [
       '-q',
       '-t',
-      'ed25519',
+      type,
+      if (type == 'rsa') ...['-b', '2048'], // quicker; only a throwaway
       '-N',
       '',
       '-C',
