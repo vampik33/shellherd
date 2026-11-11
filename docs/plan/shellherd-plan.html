@@ -338,20 +338,19 @@ reconnecting -ok->      syncing
 reconnecting -close->   offline      : user leaves
 no_server   -retry->    syncing
 failed      -edit->     offline      : edit host
-+ no_server -start->    syncing      : start herdr
 </script>
       <div data-state="offline"><doc-mock frame="none" w="320"><template><div class="sh"><div class="state"><div class="banner"><span class="dot idle"></span><span class="sub">offline · last seen 08:41</span><span style="flex:1"></span><span class="cb">connect</span></div></div></div></template></doc-mock></div>
       <div data-state="connecting"><doc-mock frame="none" w="320"><template><div class="sh"><div class="state"><div class="banner"><span class="dot working"></span><span class="sub">connecting to 10.0.0.5:22…</span></div></div></div></template></doc-mock></div>
       <div data-state="syncing"><doc-mock frame="none" w="320"><template><div class="sh"><div class="state"><div class="banner"><span class="dot working"></span><span class="sub">reading herdr session…</span></div></div></div></template></doc-mock></div>
       <div data-state="live"><doc-mock frame="none" w="320"><template><div class="sh"><div class="state"><div class="banner"><span class="dot done"></span><span class="sub">live · herdr 0.9.5 · protocol 22</span></div></div></div></template></doc-mock></div>
       <div data-state="reconnecting"><doc-mock frame="none" w="320"><template><div class="sh"><div class="state"><div class="banner"><span class="dot working"></span><span class="cy">link lost · retry in 4 s</span><span style="flex:1"></span><span class="cb">now</span></div></div></div></template></doc-mock></div>
-      <div data-state="no_server"><doc-mock frame="none" w="320"><template><div class="sh"><div class="state"><div class="banner"><span class="dot unknown"></span><span class="sub">herdr is not running on workbox</span></div><div class="btns"><span class="pri" style="background:#89b4fa">start herdr</span><span>retry</span><span>terminal</span></div></div></div></template></doc-mock></div>
+      <div data-state="no_server"><doc-mock frame="none" w="320"><template><div class="sh"><div class="state"><div class="banner"><span class="dot unknown"></span><span class="sub">herdr is not running on workbox</span></div><div class="btns"><span class="pri" style="background:#89b4fa">retry</span><span>terminal</span></div></div></div></template></doc-mock></div>
       <div data-state="failed"><doc-mock frame="none" w="320"><template><div class="sh"><div class="state"><div class="banner" style="background:#f38ba822"><span class="dot blocked"></span><span class="cr">host key changed for workbox</span></div><div class="dim">SHA256:Qm4x… was SHA256:8fKd…</div><div class="btns"><span>edit host</span></div></div></div></template></doc-mock></div>
     </doc-machine>
     <doc-ask id="start-server">
       <p>When no herdr server runs, can the app start one?</p>
-      <label><input type="radio" name="startServer" value="confirm" checked> Yes, after the user taps "start herdr" <small>runs herdr server detached over SSH</small></label>
-      <label><input type="radio" name="startServer" value="never"> No, the app only shows the message <small>the user starts it in the terminal</small></label>
+      <label><input type="radio" name="startServer" value="confirm"> Yes, after the user taps "start herdr" <small>runs herdr server detached over SSH</small></label>
+      <label><input type="radio" name="startServer" value="never" checked> No, the app only shows the message <small>the user starts it in the terminal</small></label>
     </doc-ask>
     <div data-if="startServer=never"><doc-note tone="info">Then the dashed "start" arrow goes.</doc-note></div>
   </doc-claim>
