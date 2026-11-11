@@ -65,10 +65,12 @@ class _TerminalScreenState extends State<TerminalScreen> {
   @override
   void initState() {
     super.initState();
-    // The network can change while the app is away; mosh moves along.
+    // The network can change while the app is away; mosh moves along, and
+    // an SSH link that died meanwhile shows as lost at once.
     _lifecycle = AppLifecycleListener(
+      onPause: () => _session?.appPaused(),
       onResume: () {
-        if (_session case final MoshShellSession mosh) unawaited(mosh.rehome());
+        if (_session case final session?) unawaited(session.appResumed());
       },
     );
     unawaited(_connect());

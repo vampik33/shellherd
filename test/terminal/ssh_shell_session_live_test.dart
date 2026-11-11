@@ -102,6 +102,71 @@ void main() {
       expect(end, (exitCode: null, lost: true));
     });
 
+    test('a link that stalls after the start ends the session as lost', () async {
+      session = await SshShellSession.start(
+        client,
+        terminal,
+        pingEvery: const Duration(seconds: 1),
+        pingTimeout: const Duration(seconds: 2),
+      );
+      // The processes stop but the TCP connection stays open, as when the
+      // phone moves to another network: only a missing reply shows it.
+      await sshd.signalConnections(ProcessSignal.sigstop);
+      final started = Stopwatch()..start();
+      final end = await session.done.timeout(const Duration(seconds: 10));
+      expect(end, (exitCode: null, lost: true));
+      expect(started.elapsed, lessThan(const Duration(seconds: 5)));
+      expect(client.isClosed, isTrue);
+    });
+
+    test('checkLink ends a stalled session without waiting for the timer', () async {
+      session = await SshShellSession.start(
+        client,
+        terminal,
+        pingEvery: const Duration(hours: 1),
+        pingTimeout: const Duration(seconds: 1),
+      );
+      await sshd.signalConnections(ProcessSignal.sigstop);
+      await session.checkLink();
+      expect(await session.done, (exitCode: null, lost: true));
+    });
+
+    test('a deadline that runs out while paused does not count', () async {
+      session = await SshShellSession.start(
+        client,
+        terminal,
+        pingEvery: const Duration(hours: 1),
+        pingTimeout: const Duration(seconds: 1),
+      );
+      // A ping on its way when the app goes to the background, with no
+      // reply until after its deadline, as when Android freezes the app.
+      await sshd.signalConnections(ProcessSignal.sigstop);
+      final check = session.checkLink();
+      session.appPaused();
+      await check;
+      await sshd.signalConnections(ProcessSignal.sigcont);
+      await session.appResumed();
+      type("printf 'p%s\\n' aused");
+      await waitFor('paused');
+      session.close();
+      expect(await session.done, (exitCode: null, lost: false));
+    });
+
+    test('a live link survives its pings', () async {
+      session = await SshShellSession.start(
+        client,
+        terminal,
+        pingEvery: const Duration(milliseconds: 100),
+        pingTimeout: const Duration(seconds: 2),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 600));
+      await session.checkLink();
+      type("printf 'l%s\\n' ive");
+      await waitFor('live');
+      session.close();
+      expect(await session.done, (exitCode: null, lost: false));
+    });
+
     test('a stalled connection fails the start after the timeout', () async {
       await sshd.signalConnections(ProcessSignal.sigstop);
       final started = Stopwatch()..start();

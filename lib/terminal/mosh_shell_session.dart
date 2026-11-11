@@ -278,9 +278,14 @@ class MoshShellSession implements ShellSession {
     );
   }
 
+  /// mosh keeps its own link state; nothing to stop while the app is away.
+  @override
+  void appPaused() {}
+
   /// Sends from a new local socket, for a network that changed while the
   /// app was away. The session goes on.
-  Future<void> rehome() async {
+  @override
+  Future<void> appResumed() async {
     if (_ended.isCompleted) return;
     try {
       await _udp.rehome();

@@ -133,7 +133,7 @@ Future<void> main() async {
     test('a session lives through a new local socket', () async {
       final session = await start();
       await runs('old-socket');
-      await session.rehome();
+      await session.appResumed();
       await runs('new-socket');
     });
 
