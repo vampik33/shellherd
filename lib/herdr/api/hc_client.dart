@@ -88,6 +88,14 @@ class HcClient {
     await _rpc.call('terminal.get', {'terminal': terminal}, timeout),
   );
 
+  /// Sets [labels] of [terminal]; others stay.
+  Future<void> label(String terminal, Map<String, String> labels) async {
+    await _rpc.call('terminal.label', {
+      'terminal': terminal,
+      'labels': labels,
+    }, timeout);
+  }
+
   /// The layout of the Herdr app.
   Future<HcLayout> layout() async {
     final r = await _rpc.call('doc.get', {'name': HcLayout.document}, timeout);

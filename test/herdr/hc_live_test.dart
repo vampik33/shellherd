@@ -158,10 +158,7 @@ Future<void> main() async {
       () async {
         final agent = await run(['sh', '-c', _agentScript]);
         await writeLayout([agent]);
-        await client.request('terminal.label', {
-          'terminal': agent,
-          'labels': {'herdr.seen': '0'},
-        });
+        await client.label(agent, {'herdr.seen': '0'});
         final api = HcPaneApi(client);
         await api.submit(agent, report('working'), toAgent: false);
         await api.submit(agent, report('idle'), toAgent: false);
@@ -171,13 +168,27 @@ Future<void> main() async {
           () async => await status() == AgentStatus.done,
           'a done agent',
         );
-        await client.request('terminal.label', {
-          'terminal': agent,
-          'labels': {'herdr.seen': '1'},
-        });
+        await client.label(agent, {'herdr.seen': '1'});
         expect(await status(), AgentStatus.idle);
       },
     );
+
+    test('markSeen raises the seen label to the turn, so done clears', () async {
+      final agent = await run(['sh', '-c', _agentScript]);
+      await writeLayout([agent]);
+      final api = HcPaneApi(client);
+      await api.submit(agent, report('working'), toAgent: false);
+      await api.submit(agent, report('idle'), toAgent: false);
+      await eventually(
+        () async => (await terminal(agent)).turn == 1,
+        'a finished turn',
+      );
+      // No label yet: markSeen writes it, so the terminal joins.
+      await api.markSeen(agent, looking: () => true);
+      final t = await terminal(agent);
+      expect(t.labels[HcTerminal.seenLabel], '1');
+      expect(hcAgentStatus(t), AgentStatus.idle);
+    });
 
     test('a blocked agent refuses text', () async {
       final agent = await run(['sh', '-c', _agentScript]);

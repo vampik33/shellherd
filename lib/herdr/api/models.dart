@@ -144,6 +144,7 @@ class Pane {
     this.label,
     this.cwd,
     this.terminalTitle,
+    this.turn,
   });
 
   factory Pane.fromJson(Map<String, Object?> j) => Pane(
@@ -176,6 +177,10 @@ class Pane {
   final String? label;
   final String? cwd;
   final String? terminalTitle;
+
+  /// Goes up each time the agent stops working. Only the Herdr app counts
+  /// turns; null for herdr.
+  final int? turn;
 
   /// The best name there is for this pane.
   String get displayName =>

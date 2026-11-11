@@ -98,6 +98,8 @@ Future<void> main() async {
           await c.read('t1', lines: 400);
           await c.keys('t1', ['esc', 'shift+tab', '1']);
           await c.send('t1', 'hi');
+          await c.terminal('t1');
+          await c.label('t1', {'herdr.seen': '3'});
           await (await c.subscribe()).close();
         });
         expect(requests.map((r) => r.$1).toSet(), {
@@ -107,6 +109,8 @@ Future<void> main() async {
           'terminal.read',
           'terminal.keys',
           'terminal.send',
+          'terminal.get',
+          'terminal.label',
           'events.subscribe',
         });
         for (final (method, params) in requests) {

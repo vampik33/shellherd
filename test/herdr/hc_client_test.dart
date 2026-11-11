@@ -337,4 +337,87 @@ void main() {
       expect(hc.methods.skip(1), ['terminal.send']);
     });
   });
+  group('HcPaneApi.markSeen', () {
+    late FakeHc hc;
+
+    setUp(() => hc = FakeHc());
+
+    /// The label request of one markSeen, and what it returned.
+    Future<(Map<String, Object?>?, int?)> markSeenWith({
+      Map<String, Object?>? status = const {'state': 'idle', 'app': 'x'},
+      String? seen,
+      int turn = 3,
+      int? acked,
+    }) async {
+      hc.terminals = [
+        hcTerminal(
+          't1',
+          status: status,
+          turn: turn,
+          labels: {'herdr.seen': ?seen},
+        ),
+      ];
+      final before = hc.requests.length;
+      final now = await HcPaneApi(
+        await hc.connect(),
+      ).markSeen('t1', acked: acked, looking: () => true);
+      final label = [
+        for (final (m, p) in hc.requests.skip(before))
+          if (m == 'terminal.label') p,
+      ].singleOrNull;
+      return (label, now);
+    }
+
+    Future<Map<String, Object?>?> markSeen({
+      Map<String, Object?>? status = const {'state': 'idle', 'app': 'x'},
+      String? seen,
+    }) async => (await markSeenWith(status: status, seen: seen)).$1;
+
+    test('raises the label to the turn', () async {
+      expect(await markSeen(seen: '1'), {
+        'terminal': 't1',
+        'labels': {'herdr.seen': '3'},
+      });
+    });
+
+    test('writes a missing label', () async {
+      expect(await markSeen(), {
+        'terminal': 't1',
+        'labels': {'herdr.seen': '3'},
+      });
+    });
+
+    test('never lowers it, nor writes it again', () async {
+      expect(await markSeen(seen: '3'), isNull);
+      expect(await markSeen(seen: '5'), isNull);
+    });
+
+    test('leaves a terminal without an agent alone', () async {
+      expect(await markSeen(status: null), isNull);
+    });
+
+    test('returns the turn, and leaves a turn it marked to "unread"', () async {
+      expect((await markSeenWith(seen: '1')).$2, 3);
+      // Another client marked turn 3 unread: seen went back to 2.
+      final (label, turn) = await markSeenWith(seen: '2', acked: 3);
+      expect(label, isNull);
+      expect(turn, 3);
+    });
+
+    test('writes nothing once nobody looks any more', () async {
+      hc.terminals = [
+        hcTerminal('t1', status: {'state': 'idle', 'app': 'x'}, turn: 3),
+      ];
+      final turn = await HcPaneApi(
+        await hc.connect(),
+      ).markSeen('t1', acked: 1, looking: () => false);
+      expect(turn, 1);
+      expect(hc.methods, isNot(contains('terminal.label')));
+    });
+
+    test('marks the next turn after one it marked', () async {
+      final (label, _) = await markSeenWith(seen: '2', turn: 4, acked: 3);
+      expect(label?['labels'], {'herdr.seen': '4'});
+    });
+  });
 }

@@ -107,6 +107,9 @@ class HcTerminal {
   /// The [turn] that a person last looked at in the Herdr app.
   static const seenLabel = 'herdr.seen';
 
+  /// The turn of [seenLabel]; null without one, which is not 0.
+  int? get seen => int.tryParse(labels[seenLabel] ?? '');
+
   /// "space / tab", as the Herdr app names the place.
   static const whereLabel = 'where';
 }

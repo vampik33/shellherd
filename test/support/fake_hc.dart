@@ -108,12 +108,31 @@ class FakeHc {
   /// While set, `terminal.list` replies wait for it.
   Completer<void>? holdLists;
 
+  /// While set, `terminal.get` replies wait for it.
+  Completer<void>? holdGets;
+
   /// While set, `terminal.send` replies wait for it, as for a person's
   /// draft on the PC.
   Completer<void>? holdSends;
 
   /// Methods that get no reply at all.
   final silent = <String>{};
+
+  /// Changes terminal [address]: its [turn], and [labels] set over its
+  /// own.
+  void update(String address, {int? turn, Map<String, String>? labels}) {
+    terminals = [
+      for (final t in terminals)
+        t['address'] != address
+            ? t
+            : {
+                ...t,
+                'turn': ?turn,
+                if (labels != null)
+                  'labels': {...t['labels']! as Map<String, String>, ...labels},
+              },
+    ];
+  }
 
   int count(String method) => methods.where((m) => m == method).length;
 
@@ -170,6 +189,7 @@ class FakeHc {
         await holdLists?.future;
         result = {'terminals': now, 'hidden_finished': 0};
       case 'terminal.get':
+        await holdGets?.future;
         result = terminals.singleWhere(
           (t) => t['address'] == params['terminal'],
         );
@@ -179,6 +199,13 @@ class FakeHc {
         result = {'text': text, 'complete': true, 'how': 'screen'};
       case 'terminal.keys':
         result = {'turn': 0};
+      case 'terminal.label':
+        final address = params['terminal']! as String;
+        update(
+          address,
+          labels: (params['labels']! as Map).cast<String, String>(),
+        );
+        result = terminals.singleWhere((t) => t['address'] == address);
       case 'terminal.send':
         await holdSends?.future;
         result = {'turn': 0};
