@@ -86,13 +86,15 @@ void main() {
     );
   }
 
-  Future<void> tapText(WidgetTester tester, String text) async {
-    final finder = find.text(text).last;
+  Future<void> tapOn(WidgetTester tester, Finder finder) async {
     await tester.ensureVisible(finder);
     await tester.pump();
     await tester.tap(finder);
     await tester.pump();
   }
+
+  Future<void> tapText(WidgetTester tester, String text) =>
+      tapOn(tester, find.text(text).last);
 
   Future<void> openAddForm(WidgetTester tester) async {
     await tester.tap(find.byTooltip('Add host'));
@@ -138,7 +140,7 @@ void main() {
 
     final saved = (await services.hosts.list()).single;
     expect(saved.port, 2222);
-    expect(await services.keys.identities(saved.keyId), hasLength(1));
+    expect(await services.keys.identities(saved.keyId!), hasLength(1));
     expect(await services.keys.ids(), [saved.keyId]);
   });
 
@@ -528,14 +530,14 @@ void main() {
     await openEdit(tester, host);
     await tapText(tester, 'Copy');
     await untilFound(tester, find.text('Public line copied.'));
-    expect(copied, [await services.keys.publicLine(host.keyId)]);
+    expect(copied, [await services.keys.publicLine(host.keyId!)]);
   });
 
   testWidgets('a host whose key is missing says so and can get a new one', (
     tester,
   ) async {
     final host = await savedHost();
-    await services.keys.delete(host.keyId);
+    await services.keys.delete(host.keyId!);
     await pumpApp(tester);
     await tester.tap(find.byTooltip('Edit ${host.label}'));
     await untilFound(
@@ -593,6 +595,169 @@ void main() {
       await untilGone(tester, find.text('Remove'));
       expect(await services.hosts.list(), hasLength(1));
       expect(await services.keys.ids(), [host.keyId]);
+    });
+  });
+
+  group('password login', () {
+    const kept = 'Saved. Leave empty to keep it.';
+
+    Future<Host> savedPasswordHost({String password = 'old pw'}) async {
+      final host = Host(
+        id: 'p1',
+        label: 'label-p1',
+        address: 'pc.example',
+        user: 'dev',
+        auth: SshAuth.password,
+      );
+      await services.keys.savePassword(host.id, password);
+      await services.hosts.save(host);
+      return host;
+    }
+
+    Future<void> choose(WidgetTester tester, String login) => tapOn(
+      tester,
+      find.descendant(
+        of: find.byType(SegmentedButton<SshAuth>),
+        matching: find.text(login),
+      ),
+    );
+
+    Future<void> openPasswordEdit(WidgetTester tester, Host host) async {
+      await tester.tap(find.byTooltip('Edit ${host.label}'));
+      await untilFound(tester, find.text(kept));
+    }
+
+    testWidgets('a new host: the password goes to the keystore only', (
+      tester,
+    ) async {
+      await pumpApp(tester);
+      await openAddForm(tester);
+      await fillForm(tester);
+      await choose(tester, 'Password');
+      expect(find.text('Generate key'), findsNothing);
+      await tapText(tester, 'Save');
+      await untilFound(tester, find.text('Required'));
+      expect(await services.hosts.list(), isEmpty);
+
+      await tester.enterText(hostField('Password'), 'hunter 2');
+      await tapText(tester, 'Save');
+      await untilGone(tester, hostField('Label'));
+
+      final saved = (await services.hosts.list()).single;
+      expect(saved.auth, SshAuth.password);
+      expect(saved.keyId, isNull);
+      expect(await services.keys.password(saved.id), 'hunter 2');
+      expect(await services.keys.ids(), isEmpty);
+      final file = File('${dir.path}/hosts.json').readAsStringSync();
+      expect(file, isNot(contains('hunter')));
+    });
+
+    testWidgets('an edit keeps the saved password, or takes a new one', (
+      tester,
+    ) async {
+      final host = await savedPasswordHost();
+      await pumpApp(tester);
+      await openPasswordEdit(tester, host);
+      await tester.enterText(hostField('Label'), 'renamed');
+      await tapText(tester, 'Save');
+      await untilGone(tester, hostField('Label'));
+      expect(await services.keys.password(host.id), 'old pw');
+
+      await tester.tap(find.byTooltip('Edit renamed'));
+      await untilFound(tester, find.text(kept));
+      await tester.enterText(hostField('Password'), 'new pw');
+      await tapText(tester, 'Save');
+      await untilGone(tester, hostField('Label'));
+      expect(await services.keys.password(host.id), 'new pw');
+    });
+
+    testWidgets('a failed save keeps the old host and its password', (
+      tester,
+    ) async {
+      final host = await savedPasswordHost();
+      await pumpApp(tester);
+      await openPasswordEdit(tester, host);
+      await tester.enterText(hostField('Address'), 'new.example');
+      await tester.enterText(hostField('Password'), 'new pw');
+      // The write of hosts.json goes through this path, which is now taken.
+      await Directory('${dir.path}/hosts.json.tmp').create();
+      await tapText(tester, 'Save');
+      await untilFound(tester, find.textContaining('Cannot save the host'));
+      expect((await services.hosts.list()).single.address, 'pc.example');
+      expect(await services.keys.password(host.id), 'old pw');
+    });
+
+    testWidgets('a failed save of a new host leaves no password', (
+      tester,
+    ) async {
+      await pumpApp(tester);
+      await openAddForm(tester);
+      await fillForm(tester);
+      await choose(tester, 'Password');
+      await tester.enterText(hostField('Password'), 'pw');
+      await Directory('${dir.path}/hosts.json.tmp').create();
+      await tapText(tester, 'Save');
+      await untilFound(tester, find.textContaining('Cannot save the host'));
+      expect(secrets.values, isEmpty);
+    });
+
+    testWidgets('a missing saved password has to be typed again', (
+      tester,
+    ) async {
+      final host = await savedPasswordHost();
+      await services.keys.deletePassword(host.id);
+      await pumpApp(tester);
+      await tester.tap(find.byTooltip('Edit ${host.label}'));
+      await untilFound(tester, hostField('Password'));
+      expect(find.text(kept), findsNothing);
+      await tapText(tester, 'Save');
+      await untilFound(tester, find.text('Required'));
+    });
+
+    testWidgets('a key host that moves to a password loses its key', (
+      tester,
+    ) async {
+      final host = await savedHost();
+      await pumpApp(tester);
+      await openEdit(tester, host);
+      await choose(tester, 'Password');
+      await tester.enterText(hostField('Password'), 'pw');
+      await tapText(tester, 'Save');
+      await untilGone(tester, hostField('Label'));
+      final saved = (await services.hosts.list()).single;
+      expect(saved.auth, SshAuth.password);
+      expect(await services.keys.ids(), isEmpty);
+      expect(await services.keys.password(host.id), 'pw');
+    });
+
+    testWidgets('a password host that moves to a key loses its password', (
+      tester,
+    ) async {
+      final host = await savedPasswordHost();
+      await pumpApp(tester);
+      await openPasswordEdit(tester, host);
+      await choose(tester, 'SSH key');
+      await tapText(tester, 'Save');
+      await untilFound(tester, find.text('Generate or import a key first.'));
+      await tapText(tester, 'Generate key');
+      await untilFound(tester, publicLine());
+      await tapText(tester, 'Save');
+      await untilGone(tester, hostField('Label'));
+      final saved = (await services.hosts.list()).single;
+      expect(saved.auth, SshAuth.key);
+      expect(await services.keys.ids(), [saved.keyId]);
+      expect(await services.keys.password(host.id), isNull);
+    });
+
+    testWidgets('removing the host deletes its password', (tester) async {
+      final host = await savedPasswordHost();
+      await pumpApp(tester);
+      await openPasswordEdit(tester, host);
+      await tester.tap(find.byTooltip('Remove host'));
+      await untilFound(tester, find.text('Remove'));
+      await tapText(tester, 'Remove');
+      await untilFound(tester, find.text('No hosts yet. Add your PC.'));
+      expect(secrets.values, isEmpty);
     });
   });
 

@@ -9,11 +9,15 @@ import 'secret_store.dart';
 /// The user's SSH private keys, kept in a [SecretStore] as unencrypted
 /// OpenSSH PEM text under `ssh-key.<id>`. The keystore of the platform does
 /// the encryption, so an imported key loses its passphrase once, here.
+///
+/// Also the login passwords of password hosts, under
+/// `ssh-password.<host id>`.
 class KeyStore {
   KeyStore(this._secrets);
   final SecretStore _secrets;
 
   static const _prefix = 'ssh-key.';
+  static const _passwordPrefix = 'ssh-password.';
 
   /// Makes a new ed25519 key and returns its id.
   Future<String> generate({String comment = 'shellherd'}) async {
@@ -65,6 +69,16 @@ class KeyStore {
   }
 
   Future<void> delete(String id) => _secrets.delete('$_prefix$id');
+
+  /// The saved password of host [hostId], or null.
+  Future<String?> password(String hostId) =>
+      _secrets.read('$_passwordPrefix$hostId');
+
+  Future<void> savePassword(String hostId, String password) =>
+      _secrets.write('$_passwordPrefix$hostId', password);
+
+  Future<void> deletePassword(String hostId) =>
+      _secrets.delete('$_passwordPrefix$hostId');
 
   Future<String> _pem(String id) async =>
       await _secrets.read('$_prefix$id') ??

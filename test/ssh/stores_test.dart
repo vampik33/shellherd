@@ -108,6 +108,59 @@ void main() {
       );
     });
 
+    test('a host saved before passwords loads as a key host', () {
+      final old = host('a').toJson()..remove('auth');
+      final loaded = Host.fromJson(old);
+      expect(loaded.auth, SshAuth.key);
+      expect(loaded.keyId, 'k1');
+    });
+
+    test('a password host has no key, and the file holds no secret', () async {
+      final store = HostStore(JsonFile(fileNamed('hosts.json')));
+      await store.save(
+        Host(
+          id: 'p',
+          label: 'l',
+          address: 'a',
+          user: 'u',
+          auth: SshAuth.password,
+        ),
+      );
+      final saved = (await store.list()).single;
+      expect(saved.auth, SshAuth.password);
+      expect(saved.keyId, isNull);
+      final json = jsonDecode(fileNamed('hosts.json').readAsStringSync());
+      expect((json as Map)['hosts'][0], {
+        'id': 'p',
+        'label': 'l',
+        'address': 'a',
+        'port': 22,
+        'user': 'u',
+        'auth': 'password',
+        'mosh': false,
+        'moshServer': 'mosh-server',
+        'notify': false,
+      });
+    });
+
+    test('a key host needs a key, a password host none', () {
+      expect(
+        () => Host(id: 'x', label: 'l', address: 'a', user: 'u'),
+        throwsArgumentError,
+      );
+      expect(
+        () => Host(
+          id: 'x',
+          label: 'l',
+          address: 'a',
+          user: 'u',
+          auth: SshAuth.password,
+          keyId: 'k',
+        ),
+        throwsArgumentError,
+      );
+    });
+
     test('new ids are 32 hex characters and differ', () {
       final a = randomId();
       expect(a, matches(RegExp(r'^[0-9a-f]{32}$')));
@@ -146,6 +199,19 @@ void main() {
   });
 
   group('KeyStore', () {
+    test('keeps a password per host, apart from the keys', () async {
+      final secrets = MemorySecretStore();
+      final keys = KeyStore(secrets);
+      expect(await keys.password('h1'), isNull);
+      await keys.savePassword('h1', 'pw 1');
+      await keys.savePassword('h2', 'pw 2');
+      expect(await keys.password('h1'), 'pw 1');
+      expect(await keys.ids(), isEmpty, reason: 'a password is no key');
+      await keys.deletePassword('h1');
+      expect(await keys.password('h1'), isNull);
+      expect(secrets.values, {'ssh-password.h2': 'pw 2'});
+    });
+
     test('generates distinct ed25519 keys and lists them', () async {
       final secrets = MemorySecretStore()..values['other'] = 'x';
       final keys = KeyStore(secrets);

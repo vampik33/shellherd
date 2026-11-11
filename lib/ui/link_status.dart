@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../ssh/host.dart';
 import '../ssh/ssh_connector.dart';
 
 /// A strip above the content that says what went wrong.
@@ -80,7 +81,10 @@ StatusBanner sshFailureBanner(
       action: retry,
     ),
     SshAuthFailed() => StatusBanner(
-      'The server refused the key for ${host.user}@${host.address}.',
+      'The server refused the ${switch (host.auth) {
+        SshAuth.key => 'key',
+        SshAuth.password => 'password',
+      }} for ${host.user}@${host.address}.',
       action: retry,
     ),
     SshNetworkException(:final cause) => StatusBanner(

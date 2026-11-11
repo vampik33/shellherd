@@ -212,7 +212,7 @@ Future<void> main() async {
 
     test('no herdr server, then one that starts', () async {
       link = HerdrConnection(
-        sshLinkOpener(connector, hostWith(host.keyId, 'shellherd-test-none')),
+        sshLinkOpener(connector, hostWith(host.keyId!, 'shellherd-test-none')),
         backoff: (_) => const Duration(milliseconds: 100),
       );
       link.connect();

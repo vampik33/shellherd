@@ -1,7 +1,10 @@
 import 'json_file.dart';
 
+/// How a host logs in.
+enum SshAuth { key, password }
+
 /// One saved PC. It holds no secret: the private key lives in the
-/// [KeyStore] under [keyId].
+/// [KeyStore] under [keyId], a password in the [KeyStore] under [id].
 class Host {
   Host({
     required this.id,
@@ -9,7 +12,8 @@ class Host {
     required this.address,
     this.port = 22,
     required this.user,
-    required this.keyId,
+    this.auth = SshAuth.key,
+    this.keyId,
     this.herdrSession,
     this.herdrSocket,
     this.mosh = false,
@@ -22,6 +26,9 @@ class Host {
     if (port < 1 || port > 65535) {
       throw ArgumentError.value(port, 'port', 'not a TCP port');
     }
+    if ((auth == SshAuth.key) != (keyId != null)) {
+      throw ArgumentError('a key host needs a keyId, a password host none');
+    }
   }
 
   factory Host.fromJson(Map<String, Object?> j) => Host(
@@ -30,7 +37,9 @@ class Host {
     address: j['address']! as String,
     port: j['port']! as int,
     user: j['user']! as String,
-    keyId: j['keyId']! as String,
+    // Hosts saved before passwords came are key hosts.
+    auth: SshAuth.values.byName(j['auth'] as String? ?? SshAuth.key.name),
+    keyId: j['keyId'] as String?,
     herdrSession: j['herdrSession'] as String?,
     herdrSocket: j['herdrSocket'] as String?,
     mosh: j['mosh']! as bool,
@@ -47,7 +56,10 @@ class Host {
   final String address;
   final int port;
   final String user;
-  final String keyId;
+  final SshAuth auth;
+
+  /// The private key of a key host; null for a password host.
+  final String? keyId;
 
   /// The herdr session name; null means the default session.
   final String? herdrSession;
@@ -71,7 +83,8 @@ class Host {
     'address': address,
     'port': port,
     'user': user,
-    'keyId': keyId,
+    'auth': auth.name,
+    'keyId': ?keyId,
     'herdrSession': ?herdrSession,
     'herdrSocket': ?herdrSocket,
     'mosh': mosh,

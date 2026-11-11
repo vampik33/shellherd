@@ -68,11 +68,12 @@ class AppServices {
     unawaited(navigator.push(herdrRoute(this, host, openPane: target.paneId)));
   }
 
-  /// Removes [host] and what only it uses: its key, and the trusted server
-  /// key unless another host connects to the same server.
+  /// Removes [host] and what only it uses: its key or password, and the
+  /// trusted server key unless another host connects to the same server.
   Future<void> removeHost(Host host) async {
     await hosts.remove(host.id);
-    await keys.delete(host.keyId);
+    if (host.keyId case final keyId?) await keys.delete(keyId);
+    await keys.deletePassword(host.id);
     final entry = KnownHosts.entryOf(host.address, host.port);
     final shared = (await hosts.list()).any(
       (h) => KnownHosts.entryOf(h.address, h.port) == entry,

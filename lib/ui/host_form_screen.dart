@@ -10,8 +10,9 @@ import 'confirm_dialog.dart';
 
 /// Adds a host, or edits [host].
 ///
-/// Each host has its own key. A key made here belongs to the form until
-/// Save; leaving the form deletes it. Save deletes the key it replaced.
+/// Each host logs in with its own key or with a password. A key made here
+/// belongs to the form until Save; leaving the form deletes it. Save
+/// deletes the key or the password that the host no longer uses.
 class HostFormScreen extends StatefulWidget {
   const HostFormScreen(this.services, {super.key, this.host});
 
@@ -33,6 +34,14 @@ class _HostFormScreenState extends State<HostFormScreen> {
   late final _moshServer = TextEditingController(
     text: widget.host?.moshServer ?? Host.defaultMoshServer,
   );
+
+  /// Also where the password is saved, before the host is.
+  late final _id = widget.host?.id ?? randomId();
+  late SshAuth _auth = widget.host?.auth ?? SshAuth.key;
+
+  /// A new password; empty keeps the saved one.
+  final _password = TextEditingController();
+  bool _hasPassword = false;
 
   ({String id, String line})? _key;
 
@@ -60,10 +69,20 @@ class _HostFormScreenState extends State<HostFormScreen> {
 
   Future<void> _loadSaved(Host host) async {
     String? line;
-    try {
-      line = await _services.keys.publicLine(host.keyId);
-    } catch (_) {
-      // The key is gone or damaged: the user makes a new one here.
+    if (host.keyId case final keyId?) {
+      try {
+        line = await _services.keys.publicLine(keyId);
+      } catch (_) {
+        // The key is gone or damaged: the user makes a new one here.
+      }
+    }
+    var hasPassword = false;
+    if (host.auth == SshAuth.password) {
+      try {
+        hasPassword = await _services.keys.password(host.id) != null;
+      } catch (_) {
+        // Unreadable: the user types it again.
+      }
     }
     HostKey? trusted;
     try {
@@ -73,11 +92,14 @@ class _HostFormScreenState extends State<HostFormScreen> {
     }
     if (!mounted) return;
     setState(() {
-      if (line == null) {
-        _keyError = 'The saved key is missing. Make a new one.';
-      } else {
-        _key = (id: host.keyId, line: line);
+      if (host.keyId case final keyId?) {
+        if (line == null) {
+          _keyError = 'The saved key is missing. Make a new one.';
+        } else {
+          _key = (id: keyId, line: line);
+        }
       }
+      _hasPassword = hasPassword;
       _trusted = trusted;
       _loading = false;
     });
@@ -93,6 +115,7 @@ class _HostFormScreenState extends State<HostFormScreen> {
     _port.dispose();
     _user.dispose();
     _moshServer.dispose();
+    _password.dispose();
     super.dispose();
   }
 
@@ -164,33 +187,57 @@ class _HostFormScreenState extends State<HostFormScreen> {
 
   Future<void> _save() async {
     final valid = _form.currentState!.validate();
-    final keyId = _key?.id;
-    if (keyId == null) {
+    final byKey = _auth == SshAuth.key;
+    final keyId = byKey ? _key?.id : null;
+    final missingKey = byKey && keyId == null;
+    if (missingKey) {
       setState(() => _keyError = 'Generate or import a key first.');
     }
-    if (!valid || keyId == null) return;
+    if (!valid || missingKey) return;
     await _run('Cannot save the host', () async {
       final old = widget.host;
       final moshServer = _moshServer.text.trim();
-      await _services.hosts.save(
-        Host(
-          id: old?.id ?? randomId(),
-          label: _label.text.trim(),
-          address: _address.text.trim(),
-          port: int.parse(_port.text.trim()),
-          user: _user.text.trim(),
-          keyId: keyId,
-          herdrSession: old?.herdrSession,
-          herdrSocket: old?.herdrSocket,
-          mosh: _mosh,
-          moshServer: moshServer.isEmpty ? Host.defaultMoshServer : moshServer,
-          notify: _notify,
-        ),
-      );
-      _unsavedKeys.remove(keyId); // the host owns it now
-      if (old != null && old.keyId != keyId) {
-        await _services.keys.delete(old.keyId);
+      final password = byKey ? '' : _password.text;
+      // First, so that no saved host lacks its password. A failed save puts
+      // the previous one back: the old host must not get the new password.
+      String? previous;
+      if (password.isNotEmpty) {
+        if (old != null) previous = await _services.keys.password(_id);
+        await _services.keys.savePassword(_id, password);
       }
+      try {
+        await _services.hosts.save(
+          Host(
+            id: _id,
+            label: _label.text.trim(),
+            address: _address.text.trim(),
+            port: int.parse(_port.text.trim()),
+            user: _user.text.trim(),
+            auth: _auth,
+            keyId: keyId,
+            herdrSession: old?.herdrSession,
+            herdrSocket: old?.herdrSocket,
+            mosh: _mosh,
+            moshServer: moshServer.isEmpty
+                ? Host.defaultMoshServer
+                : moshServer,
+            notify: _notify,
+          ),
+        );
+      } catch (_) {
+        if (password.isNotEmpty) {
+          await (previous == null
+                  ? _services.keys.deletePassword(_id)
+                  : _services.keys.savePassword(_id, previous))
+              .catchError((Object _) {});
+        }
+        rethrow;
+      }
+      _unsavedKeys.remove(keyId); // the host owns it now
+      if (old?.keyId case final oldKey? when oldKey != keyId) {
+        await _services.keys.delete(oldKey);
+      }
+      if (byKey) await _services.keys.deletePassword(_id);
       await _syncNotify(ask: _notify);
       if (mounted) Navigator.of(context).pop();
     });
@@ -338,43 +385,75 @@ class _HostFormScreenState extends State<HostFormScreen> {
                     ),
                   ),
                 const SizedBox(height: 24),
-                Text('SSH key', style: Theme.of(context).textTheme.titleMedium),
+                Text('Login', style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 8),
-                if (_keyError case final error?)
-                  Text(
-                    error,
-                    style: TextStyle(
-                      color: Theme.of(context).colorScheme.error,
-                    ),
-                  ),
-                if (_key?.line case final line?) ...[
-                  const Text(
-                    'Add this line to ~/.ssh/authorized_keys on the PC:',
-                  ),
-                  const SizedBox(height: 8),
-                  SelectableText(line, style: mono),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: TextButton.icon(
-                      icon: const Icon(Icons.copy, size: 18),
-                      label: const Text('Copy'),
-                      onPressed: _copyPublicLine,
-                    ),
-                  ),
-                ],
-                Wrap(
-                  spacing: 8,
-                  children: [
-                    OutlinedButton(
-                      onPressed: _locked ? null : _generate,
-                      child: const Text('Generate key'),
-                    ),
-                    OutlinedButton(
-                      onPressed: _locked ? null : _import,
-                      child: const Text('Import key'),
+                SegmentedButton<SshAuth>(
+                  segments: const [
+                    ButtonSegment(value: SshAuth.key, label: Text('SSH key')),
+                    ButtonSegment(
+                      value: SshAuth.password,
+                      label: Text('Password'),
                     ),
                   ],
+                  selected: {_auth},
+                  onSelectionChanged: _locked
+                      ? null
+                      : (v) => setState(() => _auth = v.single),
                 ),
+                const SizedBox(height: 8),
+                if (_auth == SshAuth.password)
+                  TextFormField(
+                    controller: _password,
+                    obscureText: true,
+                    autocorrect: false,
+                    enableSuggestions: false,
+                    keyboardType: TextInputType.visiblePassword,
+                    validator: (v) =>
+                        (v ?? '').isEmpty && !_hasPassword ? 'Required' : null,
+                    decoration: InputDecoration(
+                      labelText: 'Password',
+                      helperText: _hasPassword
+                          ? 'Saved. Leave empty to keep it.'
+                          : 'Kept in the keystore of this device.',
+                    ),
+                  )
+                else ...[
+                  if (_keyError case final error?)
+                    Text(
+                      error,
+                      style: TextStyle(
+                        color: Theme.of(context).colorScheme.error,
+                      ),
+                    ),
+                  if (_key?.line case final line?) ...[
+                    const Text(
+                      'Add this line to ~/.ssh/authorized_keys on the PC:',
+                    ),
+                    const SizedBox(height: 8),
+                    SelectableText(line, style: mono),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        icon: const Icon(Icons.copy, size: 18),
+                        label: const Text('Copy'),
+                        onPressed: _copyPublicLine,
+                      ),
+                    ),
+                  ],
+                  Wrap(
+                    spacing: 8,
+                    children: [
+                      OutlinedButton(
+                        onPressed: _locked ? null : _generate,
+                        child: const Text('Generate key'),
+                      ),
+                      OutlinedButton(
+                        onPressed: _locked ? null : _import,
+                        child: const Text('Import key'),
+                      ),
+                    ],
+                  ),
+                ],
                 if (_trusted case final trusted?) ...[
                   const SizedBox(height: 24),
                   Text(

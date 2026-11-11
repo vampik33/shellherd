@@ -60,7 +60,7 @@ class SshConnector {
   /// Connects only as far as the host key, then closes.
   Future<HostKey> _readHostKey(Host host) async {
     try {
-      (await _client(host, const [], null)).close(); // never logs in
+      (await _client(host, const _Login(), null)).close(); // never logs in
     } on _HostKeySeen catch (e) {
       return e.key;
     }
@@ -69,22 +69,26 @@ class SshConnector {
 
   /// Connects and logs in, if the server shows [expected].
   Future<SSHClient> _connect(Host host, HostKey expected) async {
-    final List<SSHKeyPair> identities;
+    final _Login login;
     try {
-      identities = await keys.identities(host.keyId);
+      login = switch (host.auth) {
+        SshAuth.key => _Login(identities: await keys.identities(host.keyId!)),
+        SshAuth.password => _Login(
+          password:
+              await keys.password(host.id) ??
+              (throw StateError('no saved password')),
+        ),
+      };
     } catch (e) {
-      throw SshAuthFailed(host, e); // the saved key is gone or unreadable
+      // The saved key or password is gone or unreadable.
+      throw SshAuthFailed(host, e);
     }
-    return _client(host, identities, expected);
+    return _client(host, login, expected);
   }
 
   /// Accepts only the host key [expected]. With [expected] null it rejects
   /// every key and throws [_HostKeySeen] with the key the server showed.
-  Future<SSHClient> _client(
-    Host host,
-    List<SSHKeyPair> identities,
-    HostKey? expected,
-  ) async {
+  Future<SSHClient> _client(Host host, _Login login, HostKey? expected) async {
     final Socket socket;
     try {
       socket = await Socket.connect(host.address, host.port, timeout: timeout);
@@ -92,10 +96,26 @@ class SshConnector {
       throw SshNetworkException(host, e);
     }
     HostKey? seen;
+    final password = login.password;
+    // dartssh2 tries each method once, and the password method first, even
+    // on a server that does not offer it; so it cannot tell whether that
+    // try was checked. A wrong password costs at most two failed logins:
+    // one per method. Keyboard-interactive gets it in one round only.
+    var prompted = false;
+    String? promptPassword() {
+      if (prompted) return null;
+      prompted = true;
+      return password;
+    }
+
     final client = SSHClient(
       _NativeSocket(socket),
       username: host.user,
-      identities: identities,
+      identities: login.identities,
+      onPasswordRequest: password == null ? null : () => password,
+      onUserInfoRequest: password == null
+          ? null
+          : (request) => answerPasswordPrompt(request, promptPassword),
       // dartssh2 gives the fingerprint as the text "SHA256:<base64>".
       onVerifyHostKey: (type, fp) {
         seen = HostKey(type, utf8.decode(fp));
@@ -155,6 +175,29 @@ class _NativeSocket implements SSHSocket {
   Future<void> flush() => _socket.flush();
 }
 
+/// What [SshConnector] logs in with: a key or a password.
+class _Login {
+  const _Login({this.identities = const [], this.password});
+  final List<SSHKeyPair> identities;
+  final String? password;
+}
+
+/// Answers a keyboard-interactive round. A round with no prompts gets an
+/// empty answer; one hidden prompt, the "Password:" of PAM, gets
+/// [password], which gives it only once. Anything else, such as a
+/// second-factor code after the password, gets null: the method gives up.
+List<String>? answerPasswordPrompt(
+  SSHUserInfoRequest request,
+  String? Function() password,
+) => switch (request.prompts) {
+  [] => const [],
+  [SSHUserInfoPrompt(echo: false)] => switch (password()) {
+    final p? => [p],
+    null => null,
+  },
+  _ => null,
+};
+
 /// The first-use read got the host key; [SshConnector.open] asks about it.
 class _HostKeySeen implements Exception {
   const _HostKeySeen(this.key);
@@ -189,7 +232,7 @@ class SshHostKeyRejected extends SshConnectException {
   String toString() => 'SshHostKeyRejected(${host.address}): $presented';
 }
 
-/// The server refused the key.
+/// The server refused the key or the password.
 class SshAuthFailed extends SshConnectException {
   const SshAuthFailed(super.host, this.cause);
   final Object cause;

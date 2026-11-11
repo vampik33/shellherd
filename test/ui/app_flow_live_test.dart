@@ -39,6 +39,8 @@ void main() {
       await tester.enterText(hostField('Port'), '${sshd.port}');
       await tester.enterText(hostField('User'), Platform.environment['USER']!);
 
+      await tester.ensureVisible(find.text('Generate key'));
+      await tester.pump();
       await tester.tap(find.text('Generate key'));
       final line = find.textContaining('ssh-ed25519 AAAA');
       await untilFound(tester, line);
