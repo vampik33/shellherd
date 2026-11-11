@@ -88,6 +88,14 @@ StatusBanner sshFailureBanner(
       }} for ${host.user}@${host.address}.',
       action: retry,
     ),
+    SshSecretsUnreadable(:final cause) => StatusBanner(
+      'The phone could not read the saved ${switch (host.auth) {
+        SshAuth.password => 'password',
+        SshAuth.key || SshAuth.tailscale => 'key',
+      }} for ${host.label}.',
+      detail: 'Nothing was deleted.\n${cause.cause}',
+      action: retry,
+    ),
     SshTailscaleCheckNeeded(:final url) => StatusBanner(
       'Tailscale wants you to approve this login in a browser.',
       detail: '$url',

@@ -8,6 +8,7 @@ import 'package:dartssh2/dartssh2.dart';
 import 'host.dart';
 import 'key_store.dart';
 import 'known_hosts.dart';
+import 'secret_store.dart';
 
 /// Asks the user whether to trust [key], the first key seen for [host].
 typedef TrustPrompt = Future<bool> Function(Host host, HostKey key);
@@ -113,8 +114,10 @@ class SshConnector {
         // Only the "none" method: Tailscale SSH needs nothing more.
         SshAuth.tailscale => const _Login(),
       };
+    } on SecretStoreException catch (e) {
+      throw SshSecretsUnreadable(host, e);
     } catch (e) {
-      // The saved key or password is gone or unreadable.
+      // The saved key or password is gone or does not parse.
       throw SshAuthFailed(host, e);
     }
     return _client(host, login, expected);
@@ -306,6 +309,16 @@ class SshAuthFailed extends SshConnectException {
 
   @override
   String toString() => 'SshAuthFailed(${host.user}@${host.address}): $cause';
+}
+
+/// The platform keystore could not read the saved key or password. Nothing
+/// was deleted: a later try, as after unlocking the phone, may read it.
+class SshSecretsUnreadable extends SshConnectException {
+  const SshSecretsUnreadable(super.host, this.cause);
+  final SecretStoreException cause;
+
+  @override
+  String toString() => 'SshSecretsUnreadable(${host.address}): $cause';
 }
 
 /// Tailscale SSH holds the login for a check at [url] that no one

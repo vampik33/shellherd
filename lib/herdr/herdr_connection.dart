@@ -306,6 +306,7 @@ class HerdrConnection {
     SshHostKeyChanged() ||
     SshHostKeyRejected() ||
     SshAuthFailed() ||
+    SshSecretsUnreadable() ||
     SshTailscaleCheckNeeded() => LinkFailed(error),
     HerdrProtocolException() => LinkFailed(error),
     HerdrConnectException(cause: SSHChannelOpenError()) => LinkNoServer(error),

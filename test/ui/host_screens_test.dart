@@ -16,6 +16,7 @@ import 'package:shellherd/notify/notifier.dart';
 import 'package:shellherd/notify/notify_control.dart';
 import 'package:shellherd/ssh/host.dart';
 import 'package:shellherd/ssh/known_hosts.dart';
+import 'package:shellherd/ssh/secret_store.dart';
 import 'package:shellherd/ssh/ssh_connector.dart';
 import 'package:shellherd/terminal/terminal_screen.dart';
 import 'package:shellherd/ui/host_list_screen.dart';
@@ -599,6 +600,39 @@ void main() {
     expect(find.text('Replace'), findsNothing, reason: 'nothing to replace');
   });
 
+  testWidgets('an unreadable keystore locks the form and deletes nothing', (
+    tester,
+  ) async {
+    final host = await savedHost();
+    final saved = Map.of(secrets.values);
+    secrets
+      ..failReads = true
+      ..readError = const SecretStoreException('locked');
+    await pumpApp(tester);
+    await tester.tap(find.byTooltip('Edit ${host.label}'));
+    await untilFound(tester, find.textContaining('could not read the saved'));
+    expect(find.text('The saved key is missing. Make a new one.'), findsNothing);
+    expect(find.text('Generate key'), findsNothing);
+    expect(
+      tester.widget<TextButton>(find.widgetWithText(TextButton, 'Save')).onPressed,
+      isNull,
+    );
+    expect(
+      tester
+          .widget<IconButton>(
+            find.ancestor(
+              of: find.byTooltip('Remove host'),
+              matching: find.byType(IconButton),
+            ),
+          )
+          .onPressed,
+      isNull,
+    );
+    await tester.pageBack();
+    await untilGone(tester, hostField('Label'));
+    expect(secrets.values, saved);
+  });
+
   group('remove', () {
     Future<void> remove(WidgetTester tester, Host host) async {
       await openEdit(tester, host);
@@ -1002,12 +1036,13 @@ void main() {
 class _ControlledSecrets extends MemorySecretStore {
   Completer<void>? readGate;
   bool failReads = false;
+  Object readError = StateError('read failed');
   bool failDeletes = false;
 
   @override
   Future<String?> read(String key) async {
     await readGate?.future;
-    if (failReads) throw StateError('read failed');
+    if (failReads) throw readError;
     return super.read(key);
   }
 
