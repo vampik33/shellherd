@@ -19,7 +19,8 @@ class AgentAlert {
 
   final String paneId;
 
-  /// One of [alertStatuses].
+  /// One of [alertStatuses]. An agent that finished as idle (see
+  /// [agentChanges]) alerts as done.
   final AgentStatus status;
 
   /// The name of the agent, for example "claude".
@@ -34,31 +35,53 @@ class AgentAlert {
 ///
 /// An agent alerts when its status changes into one of [alertStatuses]. Its
 /// notification goes when it leaves them, or the agent goes away.
-({List<AgentAlert> show, List<String> cancel}) agentChanges(
+///
+/// With [idleFinishes], an agent that goes from working to idle alerts as
+/// done too. herdr 0.9.5 reports a finish in the active tab as idle when no
+/// client watches it, as if a person had seen it. [idleAlerts] are the
+/// panes alerted that way and still idle: their notification goes when
+/// the agent leaves idle or goes away. The result holds the new set.
+({List<AgentAlert> show, List<String> cancel, Set<String> idleAlerts})
+agentChanges(
   Map<String, AgentStatus> before,
-  HerdrSnapshot now,
-) {
+  HerdrSnapshot now, {
+  Set<String> idleAlerts = const {},
+  bool idleFinishes = false,
+}) {
   final show = <AgentAlert>[];
   final current = <String>{};
+  final idle = <String>{};
   for (final agent in now.agents) {
+    final was = before[agent.paneId];
+    final stays = idleAlerts.contains(agent.paneId);
+    if (agent.status == AgentStatus.idle &&
+        (stays || idleFinishes && was == AgentStatus.working)) {
+      idle.add(agent.paneId);
+      if (!stays) show.add(_alert(now, agent, AgentStatus.done));
+      continue;
+    }
     if (!alertStatuses.contains(agent.status)) continue;
     current.add(agent.paneId);
-    if (before[agent.paneId] == agent.status) continue;
-    show.add(
-      AgentAlert(
-        paneId: agent.paneId,
-        status: agent.status,
-        agent: agent.displayName,
-        where: _where(now, agent),
-      ),
-    );
+    if (was == agent.status) continue;
+    show.add(_alert(now, agent, agent.status));
   }
   final cancel = [
     for (final MapEntry(key: paneId, value: status) in before.entries)
-      if (alertStatuses.contains(status) && !current.contains(paneId)) paneId,
+      if ((alertStatuses.contains(status) || idleAlerts.contains(paneId)) &&
+          !current.contains(paneId) &&
+          !idle.contains(paneId))
+        paneId,
   ];
-  return (show: show, cancel: cancel);
+  return (show: show, cancel: cancel, idleAlerts: idle);
 }
+
+AgentAlert _alert(HerdrSnapshot s, Agent agent, AgentStatus status) =>
+    AgentAlert(
+      paneId: agent.paneId,
+      status: status,
+      agent: agent.displayName,
+      where: _where(s, agent),
+    );
 
 String _where(HerdrSnapshot s, Agent agent) {
   final workspace = s.workspace(agent.workspaceId)?.label;
@@ -90,6 +113,7 @@ class AgentWatcher {
   final Duration noServerRetry;
 
   Map<String, AgentStatus>? _last;
+  Set<String> _idleAlerts = const {};
   String? _shown;
   Timer? _retry;
 
@@ -112,7 +136,13 @@ class AgentWatcher {
     final before = _last;
     _last = {for (final a in snapshot.agents) a.paneId: a.status};
     if (before == null) return;
-    final changes = agentChanges(before, snapshot);
+    final changes = agentChanges(
+      before,
+      snapshot,
+      idleAlerts: _idleAlerts,
+      idleFinishes: host.herdrKind == HerdrKind.herdr,
+    );
+    _idleAlerts = changes.idleAlerts;
     for (final paneId in changes.cancel) {
       unawaited(notifier.cancel(host.id, paneId));
     }

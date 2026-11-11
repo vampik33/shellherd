@@ -18,13 +18,19 @@ import '../support/recording_notifier.dart';
 
 const _key = HostKey('ssh-ed25519', 'SHA256:x');
 
-Host _host(String id, {bool notify = true, String? label}) => Host(
+Host _host(
+  String id, {
+  bool notify = true,
+  String? label,
+  HerdrKind kind = HerdrKind.herdr,
+}) => Host(
   id: id,
   label: label ?? 'box-$id',
   address: 'box',
   user: 'me',
   keyId: 'k',
   notify: notify,
+  herdrKind: kind,
 );
 
 /// A session with one workspace "api" and one agent per pane id.
@@ -133,6 +139,82 @@ void main() {
       expect(c.show, isEmpty);
     });
 
+    group('a finish that herdr reports as idle', () {
+      ({List<AgentAlert> show, List<String> cancel, Set<String> idleAlerts})
+      change(
+        Map<String, AgentStatus> before,
+        Map<String, String> now, {
+        Set<String> idleAlerts = const {},
+      }) => agentChanges(
+        before,
+        _snap(now),
+        idleAlerts: idleAlerts,
+        idleFinishes: true,
+      );
+
+      test('working to idle alerts as done', () {
+        final c = change({'w1:p1': AgentStatus.working}, {'w1:p1': 'idle'});
+        expect([for (final a in c.show) (a.paneId, a.status)], [
+          ('w1:p1', AgentStatus.done),
+        ]);
+        expect(c.cancel, isEmpty);
+        expect(c.idleAlerts, {'w1:p1'});
+      });
+
+      test('only for herdr: without idleFinishes it is quiet', () {
+        final c = agentChanges({
+          'w1:p1': AgentStatus.working,
+        }, _snap({'w1:p1': 'idle'}));
+        expect(c.show, isEmpty);
+        expect(c.idleAlerts, isEmpty);
+      });
+
+      test('stays while the agent stays idle, and does not repeat', () {
+        final c = change(
+          {'w1:p1': AgentStatus.idle},
+          {'w1:p1': 'idle'},
+          idleAlerts: {'w1:p1'},
+        );
+        expect(c.show, isEmpty);
+        expect(c.cancel, isEmpty);
+        expect(c.idleAlerts, {'w1:p1'});
+      });
+
+      test('goes when the agent works again, or goes away', () {
+        final c = change(
+          {'w1:p1': AgentStatus.idle, 'w1:p2': AgentStatus.idle},
+          {'w1:p1': 'working'},
+          idleAlerts: {'w1:p1', 'w1:p2'},
+        );
+        expect(c.show, isEmpty);
+        expect(c.cancel, unorderedEquals(['w1:p1', 'w1:p2']));
+        expect(c.idleAlerts, isEmpty);
+      });
+
+      test('a block replaces it', () {
+        final c = change(
+          {'w1:p1': AgentStatus.idle},
+          {'w1:p1': 'blocked'},
+          idleAlerts: {'w1:p1'},
+        );
+        expect([for (final a in c.show) a.status], [AgentStatus.blocked]);
+        expect(c.cancel, isEmpty);
+        expect(c.idleAlerts, isEmpty);
+      });
+
+      test('done to idle still means seen on the PC: it goes', () {
+        final c = change({'w1:p1': AgentStatus.done}, {'w1:p1': 'idle'});
+        expect(c.show, isEmpty);
+        expect(c.cancel, ['w1:p1']);
+      });
+
+      test('blocked to idle does not alert', () {
+        final c = change({'w1:p1': AgentStatus.blocked}, {'w1:p1': 'idle'});
+        expect(c.show, isEmpty);
+        expect(c.cancel, ['w1:p1']);
+      });
+    });
+
     test('a missing workspace or tab leaves only what is known', () {
       final s = HerdrSnapshot.fromJson(
         fakeSnapshot(
@@ -232,6 +314,34 @@ void main() {
         ('h', 'w1:p1', AgentStatus.blocked),
         ('h', 'w1:p2', AgentStatus.done),
       ]);
+    });
+
+    test('herdr: an agent that finishes as idle notifies, and the '
+        'notification goes when it works again', () async {
+      await live();
+      links.change({'w1:p1': 'idle'});
+      await until(() => notifier.shown.isNotEmpty, 'a notification');
+      expect(_shown(notifier), [('h', 'w1:p1', AgentStatus.done)]);
+      links.opened.last.herdr.push('pane_agent_status_changed');
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(notifier.shown, hasLength(1));
+      links.change({'w1:p1': 'working'});
+      await until(() => notifier.cancelled.isNotEmpty, 'a cancel');
+      expect(notifier.cancelled, [('h', 'w1:p1')]);
+    });
+
+    test('the Herdr app: idle is not a finish, its done counts', () async {
+      watcher.dispose();
+      links = _Links({'w1:p1': 'working'});
+      watcher = AgentWatcher(
+        _host('h', kind: HerdrKind.herdrApp),
+        links.connection(),
+        notifier: notifier,
+      )..start();
+      await live();
+      links.change({'w1:p1': 'idle'});
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(notifier.shown, isEmpty);
     });
 
     test('looks again for a herdr server that was not running', () async {
