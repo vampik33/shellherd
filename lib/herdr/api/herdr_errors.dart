@@ -45,6 +45,17 @@ class HerdrConnectException extends HerdrException {
   String toString() => 'HerdrConnectException: $method: $cause';
 }
 
+/// The channel to the herdr socket did not open: nothing listens at
+/// [socketPath], so herdr is not running there. Shows only the path, since
+/// the SSH server's dial error is long and says nothing more.
+class HerdrNoSocketException extends HerdrConnectException {
+  const HerdrNoSocketException(this.socketPath, super.method, super.cause);
+  final String socketPath;
+
+  @override
+  String toString() => 'herdr socket not found at $socketPath';
+}
+
 /// The connection ended before herdr sent a reply.
 class HerdrConnectionClosedException extends HerdrException {
   const HerdrConnectionClosedException(this.method);

@@ -54,7 +54,8 @@ class HerdrLink {
   ///
   /// Throws [HerdrConnectException] when the remote shell does not give the
   /// config directory, or when no herdr socket answers. For a missing
-  /// socket its cause is an [SSHChannelOpenError]. Throws
+  /// socket it is a [HerdrNoSocketException], whose cause is an
+  /// [SSHChannelOpenError]. Throws
   /// [HerdrTimeoutException] when the remote shell or herdr does not answer
   /// within [timeout].
   static Future<HerdrLink> connect(
@@ -67,7 +68,14 @@ class HerdrLink {
         socketPath ??
         herdrSocketPath(await _remoteConfigDir(ssh, timeout), session: session);
     final client = HerdrClient(sshDialer(ssh, path), timeout: timeout);
-    return HerdrLink._(path, client, await client.ping());
+    final HerdrPing server;
+    try {
+      server = await client.ping();
+    } on HerdrConnectException catch (e) {
+      if (e.cause is! SSHChannelOpenError) rethrow;
+      throw HerdrNoSocketException(path, e.method, e.cause);
+    }
+    return HerdrLink._(path, client, server);
   }
 
   static const _marker = 'SHELLHERD_CONFIG_DIR=';

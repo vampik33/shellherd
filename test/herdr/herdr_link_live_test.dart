@@ -140,11 +140,18 @@ Future<void> main() async {
       await expectLater(
         HerdrLink.connect(ssh, session: 'shellherd-test-no-such-session'),
         throwsA(
-          isA<HerdrConnectException>().having(
-            (e) => e.cause,
-            'cause',
-            isA<SSHChannelOpenError>(),
-          ),
+          isA<HerdrNoSocketException>()
+              .having((e) => e.cause, 'cause', isA<SSHChannelOpenError>())
+              .having(
+                (e) => '$e',
+                'text',
+                matches(
+                  RegExp(
+                    r'^herdr socket not found at /\S+/herdr/sessions/'
+                    r'shellherd-test-no-such-session/herdr\.sock$',
+                  ),
+                ),
+              ),
         ),
       );
       // The failed channel does not break the SSH connection.

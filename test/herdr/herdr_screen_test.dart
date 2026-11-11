@@ -250,11 +250,20 @@ void main() {
   testWidgets('no server says so, and Retry finds a later one', (tester) async {
     script.add(
       failing(
-        HerdrConnectException('ping', SSHChannelOpenError(1, 'no socket')),
+        HerdrNoSocketException(
+          '/home/u/.config/herdr/herdr.sock',
+          'ping',
+          SSHChannelOpenError(2, 'dial unix socket: ssh-monitor: dial'),
+        ),
       ),
     );
     await pumpScreen(tester);
     await untilFound(tester, find.text('herdr is not running on box.'));
+    expect(
+      find.text('herdr socket not found at /home/u/.config/herdr/herdr.sock'),
+      findsOneWidget,
+    );
+    expect(find.textContaining('ssh-monitor'), findsNothing);
     expect(chip('no herdr'), findsOneWidget);
     expect(find.byType(CircularProgressIndicator), findsNothing);
     await tester.tap(find.text('Retry'));
