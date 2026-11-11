@@ -272,6 +272,37 @@ void main() {
     await close(tester);
   });
 
+  testWidgets('no Herdr app says so by its name', (tester) async {
+    script.add(
+      failing(
+        HerdrNoSocketException(
+          '/run/user/1000/herdr-core/default.sock',
+          'hello',
+          SSHChannelOpenError(2, 'x'),
+        ),
+      ),
+    );
+    await pumpScreen(
+      tester,
+      on: Host(
+        id: 'h',
+        label: 'box',
+        address: 'pc',
+        user: 'me',
+        keyId: 'k',
+        herdrKind: HerdrKind.herdrApp,
+      ),
+    );
+    await untilFound(tester, find.text('Herdr app is not running on box.'));
+    expect(
+      find.text(
+        'herdr socket not found at /run/user/1000/herdr-core/default.sock',
+      ),
+      findsOneWidget,
+    );
+    await close(tester);
+  });
+
   testWidgets('a changed key shows both keys and offers no retry', (
     tester,
   ) async {

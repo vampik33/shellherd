@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import 'api/herdr_client.dart';
+import 'server_api.dart';
 
 /// Events that can change something in [HerdrSnapshot]. Output and layout
 /// are not here: the lists do not show them.
@@ -46,7 +47,7 @@ const _maxRejections = 5;
 /// a renamed pane or a new working directory. And a stalled network never
 /// ends a subscription, and dartssh2's keepalive has no reply deadline, so
 /// only a request that gets no answer shows the stall.
-class HerdrCache {
+class HerdrCache implements SnapshotCache {
   HerdrCache(
     this._client, {
     required this.onSnapshot,
@@ -79,10 +80,12 @@ class HerdrCache {
 
   /// Completes with the cause when the copy can no longer be kept current.
   /// The owner then calls [close] and starts again on a new link.
+  @override
   Future<Object> get lost => _lost.future;
 
   /// Subscribes and publishes the first snapshot. Throws a [HerdrException]
   /// if that fails; [close] still has to run.
+  @override
   Future<void> start() async {
     await _syncExclusive();
     if (_closed) return;
@@ -166,6 +169,7 @@ class HerdrCache {
 
   /// Stops updates and releases the subscription. Nothing is published
   /// after this.
+  @override
   Future<void> close() async {
     _closed = true;
     _timer?.cancel();

@@ -208,8 +208,8 @@ class FakeLink {
   final done = Completer<void>();
   var closed = false;
 
-  OpenLink get open => OpenLink(
-    client: herdr.client,
+  late final OpenLink open = OpenLink.herdr(
+    herdr.client,
     server: FakeHerdr.ping,
     done: done.future,
     close: () {

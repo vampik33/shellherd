@@ -66,76 +66,98 @@ class HerdrLink {
   }) async {
     final path =
         socketPath ??
-        herdrSocketPath(await _remoteConfigDir(ssh, timeout), session: session);
+        herdrSocketPath(
+          await remoteDir(
+            ssh,
+            r'${XDG_CONFIG_HOME:-$HOME/.config}',
+            what: 'config dir lookup',
+            timeout: timeout,
+          ),
+          session: session,
+        );
     final client = HerdrClient(sshDialer(ssh, path), timeout: timeout);
-    final HerdrPing server;
-    try {
-      server = await client.ping();
-    } on HerdrConnectException catch (e) {
-      if (e.cause is! SSHChannelOpenError) rethrow;
-      throw HerdrNoSocketException(path, e.method, e.cause);
-    }
+    final server = await withSocketPath(path, client.ping);
     return HerdrLink._(path, client, server);
   }
+}
 
-  static const _marker = 'SHELLHERD_CONFIG_DIR=';
-  static const _lookup = 'config dir lookup';
-
-  /// herdr keeps its socket under `${XDG_CONFIG_HOME:-$HOME/.config}/herdr`.
-  ///
-  /// The command runs through `sh -c`, because the login shell of the user
-  /// can be fish. The marker skips any text that shell startup files print.
-  static Future<String> _remoteConfigDir(
-    SSHClient ssh,
-    Duration timeout,
-  ) async {
-    const cmd =
-        r"""sh -c 'printf "\n%s%s\n" """ +
-        _marker +
-        r""" "${XDG_CONFIG_HOME:-$HOME/.config}"'""";
-    final String out;
-    try {
-      out = await _run(ssh, cmd, timeout);
-    } on HerdrException {
-      rethrow;
-    } catch (e) {
-      throw HerdrConnectException(_lookup, e);
-    }
-    final dir =
-        LineSplitter.split(out)
-            .where((l) => l.startsWith(_marker))
-            .map((l) => l.substring(_marker.length))
-            .lastOrNull ??
-        '';
-    if (!dir.startsWith('/')) {
-      throw HerdrConnectException(_lookup, 'unexpected output: ${out.trim()}');
-    }
-    return dir;
+/// Runs [connect], and names [socketPath] when no server listens there:
+/// the channel to it did not open, which is a [HerdrNoSocketException].
+Future<T> withSocketPath<T>(
+  String socketPath,
+  Future<T> Function() connect,
+) async {
+  try {
+    return await connect();
+  } on HerdrConnectException catch (e) {
+    if (e.cause is! SSHChannelOpenError) rethrow;
+    throw HerdrNoSocketException(socketPath, e.method, e.cause);
   }
+}
 
-  /// Runs [cmd] and returns its stdout. Not [SSHClient.run]: that has no
-  /// deadline and leaves stdin open. Here stdin gets EOF at once, so a
-  /// startup file that reads it cannot block, and a shell that hangs anyway
-  /// fails after [timeout].
-  static Future<String> _run(
-    SSHClient ssh,
-    String cmd,
-    Duration timeout,
-  ) async {
-    final session = await openWithin(
-      ssh.execute(cmd),
-      timeout,
-      (s) => s.channel.destroy(),
-      _lookup,
-    );
-    try {
-      await session.stdin.close();
-      return await utf8.decoder.bind(session.stdout).join().timeout(timeout);
-    } on TimeoutException {
-      throw HerdrTimeoutException(_lookup, timeout);
-    } finally {
-      session.channel.destroy();
-    }
+const _marker = 'SHELLHERD_DIR=';
+
+/// The absolute directory that the shell [expression] gives on the remote
+/// host, for example `${XDG_CONFIG_HOME:-$HOME/.config}`. [what] names the
+/// lookup in errors.
+///
+/// The command runs through `sh -c`, because the login shell of the user
+/// can be fish. The marker skips any text that shell startup files print.
+/// Throws [HerdrConnectException] when the shell gives no absolute path,
+/// and [HerdrTimeoutException] when it does not answer within [timeout].
+Future<String> remoteDir(
+  SSHClient ssh,
+  String expression, {
+  required String what,
+  required Duration timeout,
+}) async {
+  if (expression.contains("'")) {
+    throw ArgumentError.value(expression, 'expression', 'holds a quote');
+  }
+  final cmd = 'sh -c \'printf "\\n%s%s\\n" $_marker "$expression"\'';
+  final String out;
+  try {
+    out = await _run(ssh, cmd, what, timeout);
+  } on HerdrException {
+    rethrow;
+  } catch (e) {
+    throw HerdrConnectException(what, e);
+  }
+  final dir =
+      LineSplitter.split(out)
+          .where((l) => l.startsWith(_marker))
+          .map((l) => l.substring(_marker.length))
+          .lastOrNull ??
+      '';
+  if (!dir.startsWith('/')) {
+    throw HerdrConnectException(what, 'unexpected output: ${out.trim()}');
+  }
+  return dir;
+}
+
+/// Runs [cmd] and returns its stdout. Not [SSHClient.run]: that has no
+/// deadline and leaves stdin open. Here stdin gets EOF at once, so a
+/// startup file that reads it cannot block, and a shell that hangs anyway
+/// fails after [timeout].
+Future<String> _run(
+  SSHClient ssh,
+  String cmd,
+  String what,
+  Duration timeout,
+) async {
+  final session = await openWithin(
+    ssh.execute(cmd),
+    timeout,
+    (s) => s.channel.destroy(),
+    what,
+  );
+  try {
+    await session.stdin.close();
+    return await utf8.decoder.bind(session.stdout).join().timeout(timeout);
+  } on TimeoutException {
+    throw HerdrTimeoutException(what, timeout);
+  } finally {
+    session.channel.destroy();
   }
 }
 

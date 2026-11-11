@@ -36,6 +36,7 @@ void main() {
     WidgetTester tester, {
     Map<String, Object?>? session,
     void Function(bool shown)? onShown,
+    String server = 'herdr',
   }) async {
     link = FakeLink(session ?? _session());
     herdr().paneText = '\x1b[31mred line\x1b[0m\r\nlast line';
@@ -50,6 +51,7 @@ void main() {
           connection: connection,
           paneId: 'w1:p1',
           onShown: onShown,
+          server: server,
         ),
       ),
     );
@@ -381,6 +383,21 @@ void main() {
     await tester.tap(find.text('esc'));
     await untilFound(tester, find.text('No link to herdr. Nothing was sent.'));
     expect(herdr().inputs, isEmpty);
+    await close(tester);
+  });
+
+  testWidgets('messages name the server of the host', (tester) async {
+    await open(tester, server: 'Herdr app');
+    link.done.complete();
+    await untilFound(
+      tester,
+      find.text('No link to Herdr app. This text may be old.'),
+    );
+    await tester.tap(find.text('esc'));
+    await untilFound(
+      tester,
+      find.text('No link to Herdr app. Nothing was sent.'),
+    );
     await close(tester);
   });
 

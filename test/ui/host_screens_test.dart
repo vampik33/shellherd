@@ -238,6 +238,30 @@ void main() {
     await untilFound(tester, find.byTooltip('Mosh terminal on ${host.label}'));
   });
 
+  testWidgets('the Herdr app is a choice of the host, kept on edit', (
+    tester,
+  ) async {
+    final host = await savedHost();
+    await pumpApp(tester);
+    await openEdit(tester, host);
+    final choice = find.descendant(
+      of: find.byType(SegmentedButton<HerdrKind>),
+      matching: find.text('Herdr app'),
+    );
+    await tester.ensureVisible(choice);
+    await tapOn(tester, choice);
+    expect(find.textContaining('Herdr desktop app'), findsOneWidget);
+    await tapText(tester, 'Save');
+    await untilGone(tester, hostField('Label'));
+    expect((await services.hosts.list()).single.herdrKind, HerdrKind.herdrApp);
+
+    await openEdit(tester, host);
+    await tester.enterText(hostField('Label'), 'renamed');
+    await tapText(tester, 'Save');
+    await untilGone(tester, hostField('Label'));
+    expect((await services.hosts.list()).single.herdrKind, HerdrKind.herdrApp);
+  });
+
   testWidgets('mosh: an empty server command is the default', (tester) async {
     final host = await savedHost(mosh: true);
     await pumpApp(tester);

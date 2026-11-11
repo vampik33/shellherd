@@ -83,24 +83,24 @@ void main() {
       await until(() => link.snapshot.value != before, 'a new snapshot');
     });
 
-    test('the client exists only while the link is live', () async {
-      expect(link.client, isNull);
+    test('the pane api exists only while the link is live', () async {
+      expect(link.api, isNull);
       link.connect();
       await live();
-      expect(link.client, same(links.single.herdr.client));
+      expect(link.api, same(links.single.open.api));
 
       final next = Completer<FakeLink>();
       script.add(() => next.future);
       links.single.done.complete();
       await until(() => opens == 2, 'the next attempt');
-      expect(link.client, isNull);
+      expect(link.api, isNull);
 
       next.complete(FakeLink());
       await live();
-      expect(link.client, same(links.last.herdr.client));
+      expect(link.api, same(links.last.open.api));
 
       link.close();
-      expect(link.client, isNull);
+      expect(link.api, isNull);
     });
 
     test('a second connect while live does nothing', () async {

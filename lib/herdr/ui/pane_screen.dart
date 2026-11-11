@@ -9,6 +9,7 @@ import '../../ui/palette.dart';
 import '../api/herdr_client.dart';
 import '../herdr_connection.dart';
 import '../pane_poller.dart';
+import '../server_api.dart';
 import 'ansi_text.dart';
 import 'herdr_lists.dart';
 import 'link_chip.dart';
@@ -40,6 +41,7 @@ class PaneScreen extends StatefulWidget {
     this.onClose,
     this.showLink = true,
     this.draft,
+    this.server = 'herdr',
   });
 
   /// Owned by the screen below this one.
@@ -61,6 +63,9 @@ class PaneScreen extends StatefulWidget {
   /// The text being typed, when the screen below keeps it while the pane
   /// is closed. A send that herdr took empties it.
   final TextEditingController? draft;
+
+  /// The server's name in messages: herdr, or the Herdr app.
+  final String server;
 
   @override
   State<PaneScreen> createState() => _PaneScreenState();
@@ -85,9 +90,9 @@ class _PaneScreenState extends State<PaneScreen> {
   @override
   void initState() {
     super.initState();
-    HerdrClient? client() => widget.connection.client;
-    _poller = PanePoller(client, widget.paneId)..start();
-    _sender = PaneSender(client, widget.paneId, onSent: _poller.kick);
+    PaneApi? api() => widget.connection.api;
+    _poller = PanePoller(api, widget.paneId)..start();
+    _sender = PaneSender(api, widget.paneId, onSent: _poller.kick);
     _lifecycle = AppLifecycleListener(
       onHide: () => _setAppShown(false),
       onShow: () => _setAppShown(true),
@@ -151,7 +156,7 @@ class _PaneScreenState extends State<PaneScreen> {
       return true;
     } on PaneInputNotSent catch (e) {
       if (e.noLink && mounted) {
-        setState(() => _failure = ('No link to herdr. Nothing was sent.', null));
+        setState(() => _failure = ('No link to ${widget.server}. Nothing was sent.', null));
       }
     } on HerdrException catch (e) {
       if (mounted) setState(() => _failure = _sendFailure(e));
@@ -171,10 +176,10 @@ class _PaneScreenState extends State<PaneScreen> {
       null,
     ),
     HerdrTimeoutException() || HerdrConnectionClosedException() => (
-      'No answer from herdr. The input may have arrived anyway.',
+      'No answer from ${widget.server}. The input may have arrived anyway.',
       '$e',
     ),
-    _ => ('herdr did not take the input.', '$e'),
+    _ => ('${widget.server} did not take the input.', '$e'),
   };
 
   void _sendKey(String key) => unawaited(_guarded(() => _sender.keys([key])));
@@ -252,7 +257,7 @@ class _PaneScreenState extends State<PaneScreen> {
       );
     }
     if (state is! LinkLive) {
-      return const StatusBanner('No link to herdr. This text may be old.');
+      return StatusBanner('No link to ${widget.server}. This text may be old.');
     }
     if (view.error case final error?) {
       return StatusBanner('Cannot read this pane.', detail: '$error');

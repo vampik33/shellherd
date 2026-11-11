@@ -216,6 +216,7 @@ class _HerdrScreenState extends State<HerdrScreen> {
     onShown: (shown) => widget.onPaneShown?.call(paneId, shown),
     onClose: wide ? null : _closePane,
     showLink: !wide,
+    server: widget.host.herdrKind.label,
   );
 
   void _openPane(String paneId) {
@@ -243,7 +244,7 @@ class _HerdrScreenState extends State<HerdrScreen> {
         onNow: _link.connect,
       ),
       LinkNoServer(:final cause) => StatusBanner(
-        'herdr is not running on ${widget.host.label}.',
+        '${widget.host.herdrKind.label} is not running on ${widget.host.label}.',
         detail: '$cause',
         action: retry,
       ),
@@ -252,7 +253,8 @@ class _HerdrScreenState extends State<HerdrScreen> {
         retry,
       ),
       LinkFailed(:final cause) => StatusBanner(
-        'herdr on ${widget.host.label} sent something this app cannot read.',
+        '${widget.host.herdrKind.label} on ${widget.host.label} sent something '
+        'this app cannot read.',
         detail: '$cause',
         action: retry,
       ),

@@ -9,6 +9,7 @@ class FakeChannel implements HerdrChannel {
   final _input = StreamController<List<int>>();
   final sent = <Map<String, Object?>>[];
   final _firstWrite = Completer<Map<String, Object?>>();
+  final _writes = StreamController<Map<String, Object?>>();
   var closed = false;
 
   /// While set, a write throws it.
@@ -22,8 +23,13 @@ class FakeChannel implements HerdrChannel {
     if (writeError case final error?) throw error;
     final msg = jsonDecode(utf8.decode(bytes)) as Map<String, Object?>;
     sent.add(msg);
+    _writes.add(msg);
     if (!_firstWrite.isCompleted) _firstWrite.complete(msg);
   }
+
+  /// Every request the client writes, for a server that answers several
+  /// on one channel. Single-subscription.
+  Stream<Map<String, Object?>> get writes => _writes.stream;
 
   @override
   Future<void> close() async {

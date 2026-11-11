@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 
 import 'api/herdr_client.dart';
+import 'server_api.dart';
 
 /// What the app knows about the text of a pane.
 class PaneView {
@@ -22,10 +23,10 @@ class PaneView {
 /// reads often while the text changes and rarely while it does not.
 ///
 /// A failed read does not end the polling: the link can come back, with a
-/// new client. [HerdrConnection] notices and repairs a lost link.
+/// new api. [HerdrConnection] notices and repairs a lost link.
 class PanePoller {
   PanePoller(
-    this._client,
+    this._api,
     this.paneId, {
     this.fast = defaultFast,
     this.slow = defaultSlow,
@@ -37,7 +38,7 @@ class PanePoller {
   /// How much of the history one read brings.
   static const historyLines = 400;
 
-  final HerdrClient? Function() _client;
+  final PaneApi? Function() _api;
   final String paneId;
   final Duration fast;
   final Duration slow;
@@ -93,30 +94,29 @@ class PanePoller {
   }
 
   Future<void> _read() async {
-    final client = _client();
-    if (client == null) {
+    final api = _api();
+    if (api == null) {
       _wait = slow;
       return;
     }
     final source = _source;
     try {
-      final read = await client.paneRead(
+      final text = await api.read(
         paneId,
         source: source,
-        format: ReadFormat.ansi,
         lines: source == ReadSource.visible ? null : historyLines,
       );
       // The answer to the old question, after a switch of the source.
       if (_closed || source != _source) return;
       final current = view.value;
-      final changed = read.text != current.text;
+      final changed = text != current.text;
       if (changed) {
         _wait = fast;
       } else if (!_kicked) {
         _wait = _wait * 2 > slow ? slow : _wait * 2;
       }
       if (changed || current.error != null) {
-        view.value = PaneView(text: read.text);
+        view.value = PaneView(text: text);
       }
     } on HerdrException catch (e) {
       if (_closed) return;
@@ -162,9 +162,9 @@ class PaneInputNotSent implements Exception {
 /// When one fails, the input queued behind it is dropped: a key that arrives
 /// late could answer a question that the user no longer sees.
 class PaneSender {
-  PaneSender(this._client, this.paneId, {required this.onSent});
+  PaneSender(this._api, this.paneId, {required this.onSent});
 
-  final HerdrClient? Function() _client;
+  final PaneApi? Function() _api;
   final String paneId;
 
   /// Called after each input that herdr took.
@@ -174,30 +174,27 @@ class PaneSender {
   var _generation = 0;
 
   Future<void> keys(List<String> keys) =>
-      _enqueue((c) => c.paneSendKeys(paneId, keys));
+      _enqueue((api) => api.keys(paneId, keys));
 
   /// Submits [text]. An agent gets it through its prompt, a plain shell as
   /// typed text and Enter. Throws a [HerdrException] or [PaneInputNotSent].
-  Future<void> prompt(String text, {required bool toAgent}) => _enqueue(
-    (c) => toAgent
-        ? c.agentPrompt(paneId, text)
-        : c.paneSendInput(paneId, text: text, keys: const ['enter']),
-  );
+  Future<void> prompt(String text, {required bool toAgent}) =>
+      _enqueue((api) => api.submit(paneId, text, toAgent: toAgent));
 
   /// Drops all queued input, for when the user leaves the pane. A request
   /// that is already on its way cannot be called back.
   void cancel() => _generation++;
 
-  Future<void> _enqueue(Future<void> Function(HerdrClient) send) {
+  Future<void> _enqueue(Future<void> Function(PaneApi) send) {
     final generation = _generation;
     final result = _last.then((_) async {
       if (generation != _generation) {
         throw const PaneInputNotSent(noLink: false);
       }
       try {
-        final client = _client();
-        if (client == null) throw const PaneInputNotSent(noLink: true);
-        await send(client);
+        final api = _api();
+        if (api == null) throw const PaneInputNotSent(noLink: true);
+        await send(api);
       } catch (_) {
         _generation++;
         rethrow;

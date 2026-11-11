@@ -115,6 +115,26 @@ void main() {
       expect(loaded.keyId, 'k1');
     });
 
+    test('a host saved before the Herdr app loads as a herdr host', () {
+      final old = host('a').toJson()..remove('herdrKind');
+      expect(Host.fromJson(old).herdrKind, HerdrKind.herdr);
+    });
+
+    test('a Herdr app host round-trips', () async {
+      final store = HostStore(JsonFile(fileNamed('hosts.json')));
+      await store.save(
+        Host(
+          id: 'h',
+          label: 'l',
+          address: 'a',
+          user: 'u',
+          keyId: 'k',
+          herdrKind: HerdrKind.herdrApp,
+        ),
+      );
+      expect((await store.list()).single.herdrKind, HerdrKind.herdrApp);
+    });
+
     test('a password host has no key, and the file holds no secret', () async {
       final store = HostStore(JsonFile(fileNamed('hosts.json')));
       await store.save(
@@ -137,6 +157,7 @@ void main() {
         'port': 22,
         'user': 'u',
         'auth': 'password',
+        'herdrKind': 'herdr',
         'mosh': false,
         'moshServer': 'mosh-server',
         'notify': false,

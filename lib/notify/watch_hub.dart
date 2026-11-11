@@ -114,15 +114,15 @@ class WatchHub {
   void _summarize() {
     summary.value = [
       for (final w in _watchers.values)
-        '${w.host.label}: ${_stateText(w.connection.state.value)}',
+        '${w.host.label}: ${_stateText(w.connection.state.value, w.host)}',
     ].join('\n');
   }
 
-  static String _stateText(LinkState state) => switch (state) {
+  static String _stateText(LinkState state, Host host) => switch (state) {
     LinkLive() => 'watching',
     LinkOffline() || LinkConnecting() || LinkSyncing() => 'connecting',
     LinkReconnecting() => 'no link, retrying',
-    LinkNoServer() => 'herdr is not running',
+    LinkNoServer() => '${host.herdrKind.label} is not running',
     LinkFailed() => 'stopped, open the host in the app',
   };
 

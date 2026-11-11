@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shellherd/herdr/api/herdr_client.dart';
 import 'package:shellherd/herdr/pane_poller.dart';
+import 'package:shellherd/herdr/server_api.dart';
 
 import '../support/fake_herdr.dart';
 import '../support/poll.dart';
@@ -14,10 +15,15 @@ void main() {
   HerdrClient? client;
   late PanePoller poller;
 
+  PaneApi? api() => switch (client) {
+    final c? => HerdrPaneApi(c),
+    null => null,
+  };
+
   PanePoller build({
     Duration fast = const Duration(milliseconds: 5),
     Duration slow = const Duration(milliseconds: 20),
-  }) => PanePoller(() => client, 'w1:p1', fast: fast, slow: slow);
+  }) => PanePoller(api, 'w1:p1', fast: fast, slow: slow);
 
   int reads() => herdr.count('pane.read');
 
@@ -210,7 +216,7 @@ void main() {
 
     setUp(() {
       sent = 0;
-      sender = PaneSender(() => client, 'w1:p1', onSent: () => sent++);
+      sender = PaneSender(api, 'w1:p1', onSent: () => sent++);
     });
 
     List<String?> methods() => [for (final (m, _) in herdr.inputs) m];

@@ -5,6 +5,20 @@ import 'json_file.dart';
 /// the Tailscale app connected.
 enum SshAuth { key, password, tailscale }
 
+/// Which server runs the agents of a PC.
+enum HerdrKind {
+  /// The `herdr` terminal multiplexer.
+  herdr('herdr'),
+
+  /// The Herdr desktop app, through its core, herdr-core.
+  herdrApp('Herdr app');
+
+  const HerdrKind(this.label);
+
+  /// The name the user knows it by.
+  final String label;
+}
+
 /// One saved PC. It holds no secret: the private key lives in the
 /// [KeyStore] under [keyId], a password in the [KeyStore] under [id].
 class Host {
@@ -16,6 +30,7 @@ class Host {
     required this.user,
     this.auth = SshAuth.key,
     this.keyId,
+    this.herdrKind = HerdrKind.herdr,
     this.herdrSession,
     this.herdrSocket,
     this.mosh = false,
@@ -42,6 +57,10 @@ class Host {
     // Hosts saved before passwords came are key hosts.
     auth: SshAuth.values.byName(j['auth'] as String? ?? SshAuth.key.name),
     keyId: j['keyId'] as String?,
+    // Hosts saved before the Herdr app came use herdr.
+    herdrKind: HerdrKind.values.byName(
+      j['herdrKind'] as String? ?? HerdrKind.herdr.name,
+    ),
     herdrSession: j['herdrSession'] as String?,
     herdrSocket: j['herdrSocket'] as String?,
     mosh: j['mosh']! as bool,
@@ -63,10 +82,13 @@ class Host {
   /// The private key of a key host; null for the others.
   final String? keyId;
 
-  /// The herdr session name; null means the default session.
+  final HerdrKind herdrKind;
+
+  /// The session name of herdr or of herdr-core; null means the default
+  /// session.
   final String? herdrSession;
 
-  /// Overrides the herdr socket path that the link finds by itself.
+  /// Overrides the socket path that the link finds by itself.
   final String? herdrSocket;
 
   /// Show the mosh button for the plain terminal.
@@ -87,6 +109,7 @@ class Host {
     'user': user,
     'auth': auth.name,
     'keyId': ?keyId,
+    'herdrKind': herdrKind.name,
     'herdrSession': ?herdrSession,
     'herdrSocket': ?herdrSocket,
     'mosh': mosh,

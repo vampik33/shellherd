@@ -6,6 +6,7 @@
 library;
 
 import 'herdr_errors.dart';
+import 'json_fields.dart';
 
 enum AgentStatus {
   idle,
@@ -56,9 +57,9 @@ class HerdrPing {
   });
 
   factory HerdrPing.fromJson(Map<String, Object?> j) => HerdrPing(
-    version: _req<String>(j, 'version'),
-    protocol: _req<int>(j, 'protocol'),
-    capabilities: _opt<Map<String, Object?>>(j, 'capabilities') ?? const {},
+    version: jsonField<String>(j, 'version'),
+    protocol: jsonField<int>(j, 'protocol'),
+    capabilities: jsonOptional<Map<String, Object?>>(j, 'capabilities') ?? const {},
   );
 
   final String version;
@@ -79,13 +80,13 @@ class Workspace {
   });
 
   factory Workspace.fromJson(Map<String, Object?> j) => Workspace(
-    id: _req<String>(j, 'workspace_id'),
-    number: _req<int>(j, 'number'),
-    label: _req<String>(j, 'label'),
-    focused: _req<bool>(j, 'focused'),
-    paneCount: _req<int>(j, 'pane_count'),
-    tabCount: _req<int>(j, 'tab_count'),
-    activeTabId: _req<String>(j, 'active_tab_id'),
+    id: jsonField<String>(j, 'workspace_id'),
+    number: jsonField<int>(j, 'number'),
+    label: jsonField<String>(j, 'label'),
+    focused: jsonField<bool>(j, 'focused'),
+    paneCount: jsonField<int>(j, 'pane_count'),
+    tabCount: jsonField<int>(j, 'tab_count'),
+    activeTabId: jsonField<String>(j, 'active_tab_id'),
     status: AgentStatus.fromWire(j['agent_status']),
   );
 
@@ -111,12 +112,12 @@ class Tab {
   });
 
   factory Tab.fromJson(Map<String, Object?> j) => Tab(
-    id: _req<String>(j, 'tab_id'),
-    workspaceId: _req<String>(j, 'workspace_id'),
-    number: _req<int>(j, 'number'),
-    label: _req<String>(j, 'label'),
-    focused: _req<bool>(j, 'focused'),
-    paneCount: _req<int>(j, 'pane_count'),
+    id: jsonField<String>(j, 'tab_id'),
+    workspaceId: jsonField<String>(j, 'workspace_id'),
+    number: jsonField<int>(j, 'number'),
+    label: jsonField<String>(j, 'label'),
+    focused: jsonField<bool>(j, 'focused'),
+    paneCount: jsonField<int>(j, 'pane_count'),
     status: AgentStatus.fromWire(j['agent_status']),
   );
 
@@ -146,18 +147,18 @@ class Pane {
   });
 
   factory Pane.fromJson(Map<String, Object?> j) => Pane(
-    id: _req<String>(j, 'pane_id'),
-    workspaceId: _req<String>(j, 'workspace_id'),
-    tabId: _req<String>(j, 'tab_id'),
-    focused: _req<bool>(j, 'focused'),
+    id: jsonField<String>(j, 'pane_id'),
+    workspaceId: jsonField<String>(j, 'workspace_id'),
+    tabId: jsonField<String>(j, 'tab_id'),
+    focused: jsonField<bool>(j, 'focused'),
     status: AgentStatus.fromWire(j['agent_status']),
-    revision: _req<int>(j, 'revision'),
-    agent: _opt<String>(j, 'agent'),
-    displayAgent: _opt<String>(j, 'display_agent'),
-    title: _opt<String>(j, 'title'),
-    label: _opt<String>(j, 'label'),
-    cwd: _opt<String>(j, 'cwd'),
-    terminalTitle: _opt<String>(j, 'terminal_title_stripped'),
+    revision: jsonField<int>(j, 'revision'),
+    agent: jsonOptional<String>(j, 'agent'),
+    displayAgent: jsonOptional<String>(j, 'display_agent'),
+    title: jsonOptional<String>(j, 'title'),
+    label: jsonOptional<String>(j, 'label'),
+    cwd: jsonOptional<String>(j, 'cwd'),
+    terminalTitle: jsonOptional<String>(j, 'terminal_title_stripped'),
   );
 
   /// Public pane id such as `w1:p2`.
@@ -194,14 +195,14 @@ class Agent {
   });
 
   factory Agent.fromJson(Map<String, Object?> j) => Agent(
-    paneId: _req<String>(j, 'pane_id'),
-    workspaceId: _req<String>(j, 'workspace_id'),
-    tabId: _req<String>(j, 'tab_id'),
+    paneId: jsonField<String>(j, 'pane_id'),
+    workspaceId: jsonField<String>(j, 'workspace_id'),
+    tabId: jsonField<String>(j, 'tab_id'),
     status: AgentStatus.fromWire(j['agent_status']),
-    name: _opt<String>(j, 'name'),
-    agent: _opt<String>(j, 'agent'),
-    displayAgent: _opt<String>(j, 'display_agent'),
-    title: _opt<String>(j, 'title'),
+    name: jsonOptional<String>(j, 'name'),
+    agent: jsonOptional<String>(j, 'agent'),
+    displayAgent: jsonOptional<String>(j, 'display_agent'),
+    title: jsonOptional<String>(j, 'title'),
   );
 
   final String paneId;
@@ -233,15 +234,15 @@ class HerdrSnapshot {
   });
 
   factory HerdrSnapshot.fromJson(Map<String, Object?> j) => HerdrSnapshot(
-    version: _req<String>(j, 'version'),
-    protocol: _req<int>(j, 'protocol'),
-    focusedWorkspaceId: _opt<String>(j, 'focused_workspace_id'),
-    focusedTabId: _opt<String>(j, 'focused_tab_id'),
-    focusedPaneId: _opt<String>(j, 'focused_pane_id'),
-    workspaces: _list(j, 'workspaces', Workspace.fromJson),
-    tabs: _list(j, 'tabs', Tab.fromJson),
-    panes: _list(j, 'panes', Pane.fromJson),
-    agents: _list(j, 'agents', Agent.fromJson),
+    version: jsonField<String>(j, 'version'),
+    protocol: jsonField<int>(j, 'protocol'),
+    focusedWorkspaceId: jsonOptional<String>(j, 'focused_workspace_id'),
+    focusedTabId: jsonOptional<String>(j, 'focused_tab_id'),
+    focusedPaneId: jsonOptional<String>(j, 'focused_pane_id'),
+    workspaces: jsonList(j, 'workspaces', Workspace.fromJson),
+    tabs: jsonList(j, 'tabs', Tab.fromJson),
+    panes: jsonList(j, 'panes', Pane.fromJson),
+    agents: jsonList(j, 'agents', Agent.fromJson),
   );
 
   final String version;
@@ -275,14 +276,14 @@ class PaneRead {
   });
 
   factory PaneRead.fromJson(Map<String, Object?> j) => PaneRead(
-    paneId: _req<String>(j, 'pane_id'),
-    workspaceId: _req<String>(j, 'workspace_id'),
-    tabId: _req<String>(j, 'tab_id'),
+    paneId: jsonField<String>(j, 'pane_id'),
+    workspaceId: jsonField<String>(j, 'workspace_id'),
+    tabId: jsonField<String>(j, 'tab_id'),
     source: ReadSource.fromWire(j['source']),
     format: ReadFormat.fromWire(j['format']),
-    text: _req<String>(j, 'text'),
-    revision: _req<int>(j, 'revision'),
-    truncated: _req<bool>(j, 'truncated'),
+    text: jsonField<String>(j, 'text'),
+    revision: jsonField<int>(j, 'revision'),
+    truncated: jsonField<bool>(j, 'truncated'),
   );
 
   final String paneId;
@@ -320,7 +321,7 @@ class HerdrEvent {
   const HerdrEvent(this.kind, this.data);
 
   factory HerdrEvent.fromJson(Map<String, Object?> j) =>
-      HerdrEvent(_req<String>(j, 'event'), _req<Map<String, Object?>>(j, 'data'));
+      HerdrEvent(jsonField<String>(j, 'event'), jsonField<Map<String, Object?>>(j, 'data'));
 
   /// Wire kind with underscores, for example `pane_agent_status_changed`.
   final String kind;
@@ -332,43 +333,11 @@ class HerdrEvent {
 
   /// `<kind>_id` on the event itself, or inside its nested `<kind>` record.
   String? _idOf(String kind) =>
-      _opt<String>(data, '${kind}_id') ??
-      _opt<String>(_opt<Map<String, Object?>>(data, kind) ?? const {}, '${kind}_id');
+      jsonOptional<String>(data, '${kind}_id') ??
+      jsonOptional<String>(jsonOptional<Map<String, Object?>>(data, kind) ?? const {}, '${kind}_id');
 
   /// Present on `pane_agent_status_changed`.
   AgentStatus? get agentStatus => data.containsKey('agent_status')
       ? AgentStatus.fromWire(data['agent_status'])
       : null;
-}
-
-T _req<T>(Map<String, Object?> j, String key) {
-  final v = j[key];
-  if (v is T) return v;
-  throw HerdrProtocolException(
-    'field "$key": expected $T, got ${v == null ? 'nothing' : v.runtimeType}',
-  );
-}
-
-T? _opt<T>(Map<String, Object?> j, String key) {
-  final v = j[key];
-  if (v == null) return null;
-  if (v is T) return v as T;
-  throw HerdrProtocolException(
-    'field "$key": expected $T or null, got ${v.runtimeType}',
-  );
-}
-
-List<T> _list<T>(
-  Map<String, Object?> j,
-  String key,
-  T Function(Map<String, Object?>) parse,
-) {
-  final raw = _opt<List<Object?>>(j, key) ?? const [];
-  return [
-    for (final item in raw)
-      if (item is Map<String, Object?>)
-        parse(item)
-      else
-        throw HerdrProtocolException('"$key" holds a non-object item'),
-  ];
 }

@@ -171,20 +171,8 @@ class HerdrClient {
     }
   }
 
-  Future<HerdrChannel> _open(String method, Duration wait) async {
-    try {
-      return await openWithin(
-        _dial(),
-        wait,
-        (c) => unawaited(c.close()),
-        method,
-      );
-    } on HerdrException {
-      rethrow;
-    } catch (e) {
-      throw HerdrConnectException(method, e);
-    }
-  }
+  Future<HerdrChannel> _open(String method, Duration wait) =>
+      openChannel(_dial, wait, method);
 
   static Future<Map<String, Object?>> _next(
     StreamIterator<Map<String, Object?>> lines,
@@ -303,6 +291,23 @@ class HerdrSubscription {
     _closed = true;
     await _lines.cancel();
     await _channel.close();
+  }
+}
+
+/// Dials a channel for [method] within [wait]. A dial that fails is a
+/// [HerdrConnectException]; one that takes too long a
+/// [HerdrTimeoutException].
+Future<HerdrChannel> openChannel(
+  HerdrDialer dial,
+  Duration wait,
+  String method,
+) async {
+  try {
+    return await openWithin(dial(), wait, (c) => unawaited(c.close()), method);
+  } on HerdrException {
+    rethrow;
+  } catch (e) {
+    throw HerdrConnectException(method, e);
   }
 }
 

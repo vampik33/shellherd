@@ -32,6 +32,7 @@ class _HostFormScreenState extends State<HostFormScreen> {
   late final _user = TextEditingController(text: widget.host?.user);
   late bool _notify = widget.host?.notify ?? false;
   late bool _mosh = widget.host?.mosh ?? false;
+  late HerdrKind _herdrKind = widget.host?.herdrKind ?? HerdrKind.herdr;
   late final _moshServer = TextEditingController(
     text: widget.host?.moshServer ?? Host.defaultMoshServer,
   );
@@ -217,6 +218,7 @@ class _HostFormScreenState extends State<HostFormScreen> {
             user: _user.text.trim(),
             auth: _auth,
             keyId: keyId,
+            herdrKind: _herdrKind,
             herdrSession: old?.herdrSession,
             herdrSocket: old?.herdrSocket,
             mosh: _mosh,
@@ -357,6 +359,26 @@ class _HostFormScreenState extends State<HostFormScreen> {
                   keyboard: TextInputType.number,
                 ),
                 _field('User', _user, _required),
+                const SizedBox(height: 24),
+                Text('Agents', style: Theme.of(context).textTheme.titleMedium),
+                const SizedBox(height: 8),
+                SegmentedButton<HerdrKind>(
+                  segments: [
+                    for (final kind in HerdrKind.values)
+                      ButtonSegment(value: kind, label: Text(kind.label)),
+                  ],
+                  selected: {_herdrKind},
+                  onSelectionChanged: _locked
+                      ? null
+                      : (v) => setState(() => _herdrKind = v.single),
+                ),
+                const SizedBox(height: 8),
+                Text(switch (_herdrKind) {
+                  HerdrKind.herdr => 'Agents in the herdr terminal app.',
+                  HerdrKind.herdrApp =>
+                    'Agents in the Herdr desktop app. It must be running on '
+                        'the PC.',
+                }),
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   title: const Text('Notify'),
