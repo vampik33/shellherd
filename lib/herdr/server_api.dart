@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'api/hc_client.dart';
 import 'api/herdr_client.dart';
 
@@ -143,7 +145,7 @@ class HcPaneApi implements PaneApi {
   }) async {
     final t = await _client.terminal(paneId);
     if (t.status == null) return acked;
-    final turn = upTo != null && upTo < t.turn ? upTo : t.turn;
+    final turn = upTo == null ? t.turn : min(upTo, t.turn);
     final seen = t.seen;
     final marked = (seen != null && seen >= turn) ||
         (acked != null && acked >= turn);

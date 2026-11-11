@@ -14,6 +14,7 @@ import '../support/fake_hc.dart';
 import '../support/fake_herdr.dart';
 import '../support/fake_snapshots.dart';
 import '../support/live_widgets.dart';
+import '../support/poll.dart' as poll;
 
 Map<String, Object?> _session({
   String status = 'working',
@@ -624,16 +625,9 @@ void main() {
       hc.update('t1', turn: 3);
       hc.note('event');
       // A hidden app draws no frames: a pump would wait for one.
-      for (var i = 0; i < 500; i++) {
-        if (hcConnection.snapshot.value?.pane('t1')?.status ==
-            AgentStatus.done) {
-          break;
-        }
-        await Future<void>.delayed(const Duration(milliseconds: 20));
-      }
-      expect(
-        hcConnection.snapshot.value?.pane('t1')?.status,
-        AgentStatus.done,
+      await poll.until(
+        () => hcConnection.snapshot.value?.pane('t1')?.status == AgentStatus.done,
+        'the next turn',
       );
       await Future<void>.delayed(const Duration(milliseconds: 200));
       expect(labels(), hasLength(1));

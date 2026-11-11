@@ -22,6 +22,7 @@ import 'package:xterm/xterm.dart';
 import '../support/live_widgets.dart';
 import '../support/memory_secret_store.dart';
 import '../support/mosh_servers.dart';
+import '../support/poll.dart' as poll;
 import '../support/test_sshd.dart';
 
 void main() {
@@ -207,10 +208,7 @@ void main() {
           ..handleAppLifecycleStateChanged(AppLifecycleState.paused);
         // A paused app draws no frames: wait on the clock for the prompt.
         final t = terminal(tester);
-        for (var i = 0; i < 500 && t.buffer.getText().trim().isEmpty; i++) {
-          await Future<void>.delayed(const Duration(milliseconds: 20));
-        }
-        expect(t.buffer.getText().trim(), isNotEmpty, reason: 'the prompt');
+        await poll.until(() => t.buffer.getText().trim().isNotEmpty, 'the prompt');
         // Android freezes the app; the link gives no replies meanwhile.
         // Past the first ping (15 s) and its deadline (20 s).
         await sshd.signalConnections(ProcessSignal.sigstop);
