@@ -99,15 +99,31 @@ const _marker = 'SHELLHERD_DIR=';
 
 /// The absolute directory that the shell [expression] gives on the remote
 /// host, for example `${XDG_CONFIG_HOME:-$HOME/.config}`. [what] names the
-/// lookup in errors.
-///
-/// The command runs through `sh -c`, because the login shell of the user
-/// can be fish. The marker skips any text that shell startup files print.
-/// Throws [HerdrConnectException] when the shell gives no absolute path,
-/// and [HerdrTimeoutException] when it does not answer within [timeout].
+/// lookup in errors. Throws as [remoteValue] does.
 Future<String> remoteDir(
   SSHClient ssh,
   String expression, {
+  required String what,
+  required Duration timeout,
+}) => remoteValue(
+  ssh,
+  expression,
+  (v) => v.startsWith('/') ? v : null,
+  what: what,
+  timeout: timeout,
+);
+
+/// What [parse] makes of the text that the shell [expression] gives on the
+/// remote host. [what] names the lookup in errors.
+///
+/// The command runs through `sh -c`, because the login shell of the user
+/// can be fish. The marker skips any text that shell startup files print.
+/// Throws [HerdrConnectException] when [parse] returns null, and
+/// [HerdrTimeoutException] when the shell does not answer within [timeout].
+Future<T> remoteValue<T extends Object>(
+  SSHClient ssh,
+  String expression,
+  T? Function(String value) parse, {
   required String what,
   required Duration timeout,
 }) async {
@@ -123,16 +139,15 @@ Future<String> remoteDir(
   } catch (e) {
     throw HerdrConnectException(what, e);
   }
-  final dir =
-      LineSplitter.split(out)
-          .where((l) => l.startsWith(_marker))
-          .map((l) => l.substring(_marker.length))
-          .lastOrNull ??
-      '';
-  if (!dir.startsWith('/')) {
+  final value = LineSplitter.split(out)
+      .where((l) => l.startsWith(_marker))
+      .map((l) => l.substring(_marker.length))
+      .lastOrNull;
+  final parsed = value == null ? null : parse(value);
+  if (parsed == null) {
     throw HerdrConnectException(what, 'unexpected output: ${out.trim()}');
   }
-  return dir;
+  return parsed;
 }
 
 /// Runs [cmd] and returns its stdout. Not [SSHClient.run]: that has no
@@ -161,14 +176,18 @@ Future<String> _run(
   }
 }
 
+/// herdr's validate_name: ASCII letters, digits, . _ -, up to 64 bytes.
+final _herdrSession = RegExp(r'^[A-Za-z0-9._-]{1,64}$');
+
 /// Path of the herdr API socket under the remote [configDir]:
-/// `herdr/herdr.sock`, or `herdr/sessions/<session>/herdr.sock`.
+/// `herdr/herdr.sock` for the default session (null or `default`, as herdr
+/// names it), else `herdr/sessions/<session>/herdr.sock`. Throws
+/// [ArgumentError] for a name herdr refuses.
 String herdrSocketPath(String configDir, {String? session}) {
-  if (session == null) return '$configDir/herdr/herdr.sock';
-  if (session.isEmpty ||
-      session.contains('/') ||
-      session == '.' ||
-      session == '..') {
+  if (session == null || session == 'default') {
+    return '$configDir/herdr/herdr.sock';
+  }
+  if (session == '.' || session == '..' || !_herdrSession.hasMatch(session)) {
     throw ArgumentError.value(session, 'session', 'not a herdr session name');
   }
   return '$configDir/herdr/sessions/$session/herdr.sock';

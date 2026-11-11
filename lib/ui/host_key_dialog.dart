@@ -27,10 +27,21 @@ Future<bool> showHostKeyDialog(BuildContext context, Host host, HostKey key) =>
             style: const TextStyle(fontFamily: 'monospace'),
           ),
           const SizedBox(height: 12),
-          const Text(
+          Text(
             'On the server, ssh-keygen -lf '
-            '/etc/ssh/ssh_host_ed25519_key.pub shows it.',
+            '${hostKeyFile(key.type)} shows it.',
           ),
         ],
       ),
     );
+
+/// Where OpenSSH keeps the public host key of [type] by default.
+String hostKeyFile(String type) {
+  final name = switch (type) {
+    'ssh-rsa' => 'rsa',
+    'ssh-ed25519' => 'ed25519',
+    _ when type.startsWith('ecdsa-') => 'ecdsa',
+    _ => type,
+  };
+  return '/etc/ssh/ssh_host_${name}_key.pub';
+}

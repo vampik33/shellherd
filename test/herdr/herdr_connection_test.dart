@@ -7,6 +7,7 @@ import 'package:shellherd/herdr/api/herdr_client.dart';
 import 'package:shellherd/herdr/herdr_connection.dart';
 import 'package:shellherd/ssh/host.dart';
 import 'package:shellherd/ssh/known_hosts.dart';
+import 'package:shellherd/ssh/secret_store.dart';
 import 'package:shellherd/ssh/ssh_connector.dart';
 
 import '../support/fake_herdr.dart';
@@ -280,6 +281,10 @@ void main() {
       ('changed key', SshHostKeyChanged(_host, _key, _key)),
       ('declined key', SshHostKeyRejected(_host, _key)),
       ('refused login', SshAuthFailed(_host, 'no')),
+      (
+        'unreadable key store',
+        SshSecretsUnreadable(_host, const SecretStoreException('locked')),
+      ),
       (
         'unapproved Tailscale check',
         SshTailscaleCheckNeeded(_host, Uri.parse('https://login.example/a')),

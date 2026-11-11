@@ -6,6 +6,7 @@ import '../ssh/host.dart';
 import '../ssh/ids.dart';
 import '../ssh/key_store.dart';
 import '../ssh/known_hosts.dart';
+import '../ssh/secret_store.dart';
 import 'confirm_dialog.dart';
 
 /// Adds a host, or edits [host].
@@ -59,7 +60,15 @@ class _HostFormScreenState extends State<HostFormScreen> {
   /// run: the load would overwrite a key chosen in the meantime.
   late bool _loading = widget.host != null;
 
-  bool get _locked => _busy || _loading;
+  /// The keystore could not read the saved key or password. The form stays
+  /// locked: a save would replace, and so delete, what is still there.
+  /// Remove host stays open, so that a keystore that never recovers does
+  /// not trap the host.
+  bool _unreadable = false;
+
+  bool get _working => _busy || _loading;
+
+  bool get _locked => _working || _unreadable;
 
   AppServices get _services => widget.services;
 
@@ -70,10 +79,13 @@ class _HostFormScreenState extends State<HostFormScreen> {
   }
 
   Future<void> _loadSaved(Host host) async {
+    var unreadable = false;
     String? line;
     if (host.keyId case final keyId?) {
       try {
         line = await _services.keys.publicLine(keyId);
+      } on SecretStoreException {
+        unreadable = true;
       } catch (_) {
         // The key is gone or damaged: the user makes a new one here.
       }
@@ -82,6 +94,8 @@ class _HostFormScreenState extends State<HostFormScreen> {
     if (host.auth == SshAuth.password) {
       try {
         hasPassword = await _services.keys.password(host.id) != null;
+      } on SecretStoreException {
+        unreadable = true;
       } catch (_) {
         // Unreadable: the user types it again.
       }
@@ -94,7 +108,9 @@ class _HostFormScreenState extends State<HostFormScreen> {
     }
     if (!mounted) return;
     setState(() {
-      if (host.keyId case final keyId?) {
+      if (unreadable) {
+        _unreadable = true;
+      } else if (host.keyId case final keyId?) {
         if (line == null) {
           _keyError = 'The saved key is missing. Make a new one.';
         } else {
@@ -327,7 +343,7 @@ class _HostFormScreenState extends State<HostFormScreen> {
               IconButton(
                 icon: const Icon(Icons.delete_outline),
                 tooltip: 'Remove host',
-                onPressed: _locked ? null : _delete,
+                onPressed: _working ? null : _delete,
               ),
             TextButton(
               onPressed: _locked ? null : _save,
@@ -429,7 +445,16 @@ class _HostFormScreenState extends State<HostFormScreen> {
                       : (v) => setState(() => _auth = v.single),
                 ),
                 const SizedBox(height: 8),
-                if (_auth == SshAuth.tailscale)
+                if (_unreadable)
+                  Text(
+                    'The keystore of this device could not read the saved '
+                    'key or password. Nothing was deleted; leave and try '
+                    'again later, or remove the host.',
+                    style: TextStyle(
+                      color: Theme.of(context).colorScheme.error,
+                    ),
+                  )
+                else if (_auth == SshAuth.tailscale)
                   const Text(
                     'Tailscale SSH on the PC logs you in by this device: '
                     'no key or password. The Tailscale app must be connected '

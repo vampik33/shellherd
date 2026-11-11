@@ -114,22 +114,7 @@ class LocalNotifier implements Notifier {
       title: text.title,
       body: text.body,
       payload: PaneTarget(host.id, alert.paneId).encode(),
-      notificationDetails: const NotificationDetails(
-        android: AndroidNotificationDetails(
-          _channelId,
-          'Agents',
-          channelDescription: 'An agent needs you or is done.',
-          importance: Importance.high,
-          priority: Priority.high,
-          category: AndroidNotificationCategory.status,
-          // The lock screen shows only that shellherd has a notification:
-          // a title can hold code or file names.
-          visibility: NotificationVisibility.secret,
-        ),
-        linux: LinuxNotificationDetails(
-          category: LinuxNotificationCategory.imReceived,
-        ),
-      ),
+      notificationDetails: agentNotificationDetails,
     );
   }
 
@@ -137,3 +122,22 @@ class LocalNotifier implements Notifier {
   Future<void> cancel(String hostId, String paneId) =>
       _plugin.cancel(id: notificationId(hostId, paneId));
 }
+
+/// How an agent alert shows.
+const agentNotificationDetails = NotificationDetails(
+  android: AndroidNotificationDetails(
+    _channelId,
+    'Agents',
+    channelDescription: 'An agent needs you or is done.',
+    importance: Importance.high,
+    priority: Priority.high,
+    category: AndroidNotificationCategory.status,
+    // A secure lock screen shows that shellherd has a notification, and
+    // hides its text (a title can hold code or file names) unless the
+    // phone is set to show sensitive content there.
+    visibility: NotificationVisibility.private,
+  ),
+  linux: LinuxNotificationDetails(
+    category: LinuxNotificationCategory.imReceived,
+  ),
+);

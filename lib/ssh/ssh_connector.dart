@@ -8,6 +8,7 @@ import 'package:dartssh2/dartssh2.dart';
 import 'host.dart';
 import 'key_store.dart';
 import 'known_hosts.dart';
+import 'secret_store.dart';
 
 /// Asks the user whether to trust [key], the first key seen for [host].
 typedef TrustPrompt = Future<bool> Function(Host host, HostKey key);
@@ -113,8 +114,10 @@ class SshConnector {
         // Only the "none" method: Tailscale SSH needs nothing more.
         SshAuth.tailscale => const _Login(),
       };
+    } on SecretStoreException catch (e) {
+      throw SshSecretsUnreadable(host, e);
     } catch (e) {
-      // The saved key or password is gone or unreadable.
+      // The saved key or password is gone or does not parse.
       throw SshAuthFailed(host, e);
     }
     return _client(host, login, expected);
@@ -173,9 +176,10 @@ class SshConnector {
           : (request) => answerPasswordPrompt(request, promptPassword),
       // dartssh2 gives the fingerprint as the text "SHA256:<base64>".
       onVerifyHostKey: (type, fp) {
-        seen = HostKey(type, utf8.decode(fp));
+        seen = HostKey.signedWith(type, utf8.decode(fp));
         return seen == expected;
       },
+      algorithms: SSHAlgorithms(hostkey: hostKeyOrder(expected?.type)),
       onUserauthBanner: tailscale ? onBanner : null,
       handshakeTimeout: timeout,
       authTimeout: tailscale ? checkTimeout : timeout,
@@ -199,6 +203,17 @@ class SshConnector {
       throw SshNetworkException(host, e);
     }
   }
+}
+
+/// The host key algorithms that dartssh2 offers, those of key type
+/// [trusted] first. A server with more than one host key then shows the
+/// trusted one, not the one dartssh2 likes best. With no trusted key, the
+/// default order.
+List<SSHHostkeyType> hostKeyOrder(String? trusted) {
+  final all = const SSHAlgorithms().hostkey;
+  if (trusted == null) return all;
+  bool isTrusted(SSHHostkeyType t) => HostKey.keyTypeOf(t.name) == trusted;
+  return [...all.where(isTrusted), ...all.where((t) => !isTrusted(t))];
 }
 
 /// The address that the connection of [client] went to, when an
@@ -306,6 +321,16 @@ class SshAuthFailed extends SshConnectException {
 
   @override
   String toString() => 'SshAuthFailed(${host.user}@${host.address}): $cause';
+}
+
+/// The platform keystore could not read the saved key or password. Nothing
+/// was deleted: a later try, as after unlocking the phone, may read it.
+class SshSecretsUnreadable extends SshConnectException {
+  const SshSecretsUnreadable(super.host, this.cause);
+  final SecretStoreException cause;
+
+  @override
+  String toString() => 'SshSecretsUnreadable(${host.address}): $cause';
 }
 
 /// Tailscale SSH holds the login for a check at [url] that no one
