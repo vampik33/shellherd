@@ -70,6 +70,19 @@ class ServiceNotify implements NotifyControl {
         ),
       );
     }
+    // Battery optimization (Doze, and the stricter vendor ones) can stop
+    // the service or its network while the phone sleeps. After the start,
+    // so that a failed request cannot keep the service from running; a
+    // refusal by the user leaves it as it is.
+    if (ask) {
+      try {
+        if (!await FlutterForegroundTask.isIgnoringBatteryOptimizations) {
+          await FlutterForegroundTask.requestIgnoreBatteryOptimization();
+        }
+      } catch (e) {
+        debugPrint('shellherd: cannot ask to skip battery optimization: $e');
+      }
+    }
     return permission == NotificationPermission.granted;
   }
 
