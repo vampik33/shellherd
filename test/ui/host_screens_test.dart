@@ -617,17 +617,6 @@ void main() {
       tester.widget<TextButton>(find.widgetWithText(TextButton, 'Save')).onPressed,
       isNull,
     );
-    expect(
-      tester
-          .widget<IconButton>(
-            find.ancestor(
-              of: find.byTooltip('Remove host'),
-              matching: find.byType(IconButton),
-            ),
-          )
-          .onPressed,
-      isNull,
-    );
     await tester.pageBack();
     await untilGone(tester, hostField('Label'));
     expect(secrets.values, saved);
@@ -667,6 +656,24 @@ void main() {
       await untilGone(tester, find.text(host.label));
       expect(await services.knownHosts.lookup(host.address, 22), trusted);
       expect(await services.keys.ids(), [other.keyId]);
+    });
+
+    testWidgets('works while the keystore cannot read the host', (
+      tester,
+    ) async {
+      final host = await savedHost();
+      secrets
+        ..failReads = true
+        ..readError = const SecretStoreException('locked');
+      await pumpApp(tester);
+      await tester.tap(find.byTooltip('Edit ${host.label}'));
+      await untilFound(tester, find.textContaining('could not read the saved'));
+      await tester.tap(find.byTooltip('Remove host'));
+      await untilFound(tester, find.text('Remove'));
+      await tapText(tester, 'Remove');
+      await untilGone(tester, hostField('Label'));
+      expect(await services.hosts.list(), isEmpty);
+      expect(secrets.values, isEmpty, reason: 'its key is deleted too');
     });
 
     testWidgets('Cancel removes nothing', (tester) async {

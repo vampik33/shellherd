@@ -62,6 +62,8 @@ class _HostFormScreenState extends State<HostFormScreen> {
 
   /// The keystore could not read the saved key or password. The form stays
   /// locked: a save would replace, and so delete, what is still there.
+  /// Remove host stays open, so that a keystore that never recovers does
+  /// not trap the host.
   bool _unreadable = false;
 
   bool get _locked => _busy || _loading || _unreadable;
@@ -339,7 +341,7 @@ class _HostFormScreenState extends State<HostFormScreen> {
               IconButton(
                 icon: const Icon(Icons.delete_outline),
                 tooltip: 'Remove host',
-                onPressed: _locked ? null : _delete,
+                onPressed: _busy || _loading ? null : _delete,
               ),
             TextButton(
               onPressed: _locked ? null : _save,
@@ -445,7 +447,7 @@ class _HostFormScreenState extends State<HostFormScreen> {
                   Text(
                     'The keystore of this device could not read the saved '
                     'key or password. Nothing was deleted; leave and try '
-                    'again later.',
+                    'again later, or remove the host.',
                     style: TextStyle(
                       color: Theme.of(context).colorScheme.error,
                     ),
