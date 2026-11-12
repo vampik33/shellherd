@@ -9,6 +9,7 @@ import 'package:xterm/xterm.dart';
 
 import '../ssh/host.dart';
 import '../ssh/ids.dart';
+import '../ssh/ssh_exec.dart';
 import '../ssh/ssh_connector.dart';
 import 'ssh_shell_session.dart';
 
@@ -169,7 +170,7 @@ class MoshShellSession implements ShellSession {
     // resolve to other addresses as well.
     final peer = sshPeerAddress(client);
     try {
-      final (output, exitCode) = await _run(
+      final (output, exitCode) = await sshExec(
         client,
         moshStartCommand(host.moshServer, id),
         timeout,
@@ -187,7 +188,7 @@ class MoshShellSession implements ShellSession {
       if (pid == null) return;
       final client = await ssh();
       try {
-        await _run(client, moshKillCommand(pid, id), timeout);
+        await sshExec(client, moshKillCommand(pid, id), timeout);
       } finally {
         client.close();
       }
@@ -215,26 +216,6 @@ class MoshShellSession implements ShellSession {
     } catch (_) {
       unawaited(kill().catchError((Object _) {}));
       rethrow;
-    }
-  }
-
-  /// Runs [cmd] with stdin closed at once. Returns stdout and the exit code.
-  static Future<(String, int?)> _run(
-    SSHClient ssh,
-    String cmd,
-    Duration timeout,
-  ) async {
-    final session = await ssh.execute(cmd).timeout(timeout);
-    try {
-      await session.stdin.close();
-      final out = await utf8.decoder
-          .bind(session.stdout)
-          .join()
-          .timeout(timeout);
-      await session.done.timeout(timeout, onTimeout: () {});
-      return (out, session.exitCode);
-    } finally {
-      session.channel.destroy();
     }
   }
 
