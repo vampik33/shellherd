@@ -1,4 +1,7 @@
+import 'dart:async';
 import 'dart:math';
+
+import 'package:flutter/foundation.dart';
 
 import 'api/hc_client.dart';
 import 'api/herdr_client.dart';
@@ -49,6 +52,86 @@ abstract interface class SnapshotCache {
 
   /// Stops updates. Nothing is published after this.
   Future<void> close();
+}
+
+/// The read scheduling of a [SnapshotCache]: a change only marks the copy
+/// [stale], and a whole read follows after [debounce]. Reads never overlap;
+/// a change during a read leaves the copy stale, so that another read
+/// follows.
+abstract class DebouncedCache implements SnapshotCache {
+  DebouncedCache({required this.onSnapshot, required this.debounce});
+
+  /// Gets each new state, oldest first.
+  final void Function(HerdrSnapshot) onSnapshot;
+
+  /// How long to collect changes before the next read. It does not restart
+  /// with each change, so busy agents cannot hold the update back.
+  final Duration debounce;
+
+  final _lost = Completer<Object>();
+  Timer? _timer;
+  var _syncing = false;
+  var _closed = false;
+
+  /// Set by a change; [sync] clears it before it reads.
+  @protected
+  var stale = false;
+
+  @protected
+  bool get closed => _closed;
+
+  @override
+  Future<Object> get lost => _lost.future;
+
+  /// Reads the whole state and passes it to [onSnapshot], unless [closed].
+  @protected
+  Future<void> sync();
+
+  @protected
+  void markStale() {
+    stale = true;
+    schedule();
+  }
+
+  /// Runs [sync], with no other read at the same time.
+  @protected
+  Future<void> syncExclusive() async {
+    _syncing = true;
+    try {
+      await sync();
+    } finally {
+      _syncing = false;
+      if (stale) schedule();
+    }
+  }
+
+  /// Reads after [debounce], unless a read is already due or running.
+  @protected
+  void schedule() {
+    if (_closed || _syncing || _timer != null) return;
+    _timer = Timer(debounce, _refresh);
+  }
+
+  Future<void> _refresh() async {
+    _timer = null;
+    try {
+      await syncExclusive();
+    } catch (e) {
+      lose(e);
+    }
+  }
+
+  @protected
+  void lose(Object cause) {
+    if (!_closed && !_lost.isCompleted) _lost.complete(cause);
+  }
+
+  @override
+  @mustCallSuper
+  Future<void> close() async {
+    _closed = true;
+    _timer?.cancel();
+  }
 }
 
 class HerdrPaneApi implements PaneApi {

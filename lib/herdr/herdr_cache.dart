@@ -47,11 +47,11 @@ const _maxRejections = 5;
 /// a renamed pane or a new working directory. And a stalled network never
 /// ends a subscription, and dartssh2's keepalive has no reply deadline, so
 /// only a request that gets no answer shows the stall.
-class HerdrCache implements SnapshotCache {
+class HerdrCache extends DebouncedCache {
   HerdrCache(
     this._client, {
-    required this.onSnapshot,
-    this.debounce = defaultDebounce,
+    required super.onSnapshot,
+    super.debounce = defaultDebounce,
     this.refreshEvery = defaultRefreshEvery,
   });
 
@@ -60,65 +60,28 @@ class HerdrCache implements SnapshotCache {
 
   final HerdrClient _client;
 
-  /// Gets each new state, oldest first.
-  final void Function(HerdrSnapshot) onSnapshot;
-
-  /// How long to collect events before reading a new snapshot. It does not
-  /// restart with each event, so busy agents cannot hold the update back.
-  final Duration debounce;
-
   final Duration refreshEvery;
 
-  final _lost = Completer<Object>();
   StreamSubscription<HerdrEvent>? _events;
   Set<String>? _watched;
-  Timer? _timer;
   Timer? _refreshTimer;
-  var _syncing = false;
-  var _stale = false;
-  var _closed = false;
-
-  /// Completes with the cause when the copy can no longer be kept current.
-  /// The owner then calls [close] and starts again on a new link.
-  @override
-  Future<Object> get lost => _lost.future;
 
   /// Subscribes and publishes the first snapshot. Throws a [HerdrException]
   /// if that fails; [close] still has to run.
   @override
   Future<void> start() async {
-    await _syncExclusive();
-    if (_closed) return;
-    _refreshTimer = Timer.periodic(refreshEvery, (_) => _schedule());
+    await syncExclusive();
+    if (closed) return;
+    _refreshTimer = Timer.periodic(refreshEvery, (_) => schedule());
   }
 
-  Future<void> _refresh() async {
-    _timer = null;
-    try {
-      await _syncExclusive();
-    } catch (e) {
-      _lose(e);
-    }
-  }
-
-  Future<void> _syncExclusive() async {
-    _syncing = true;
-    try {
-      await _sync();
-    } finally {
-      _syncing = false;
-      if (_stale) _schedule();
-    }
-  }
-
-  /// An event during a snapshot leaves [_stale] set, so that another
-  /// snapshot follows.
-  Future<void> _sync() async {
+  @override
+  Future<void> sync() async {
     var rejections = 0;
-    while (!_closed) {
-      _stale = false;
+    while (!closed) {
+      stale = false;
       final snapshot = await _client.snapshot();
-      if (_closed) return;
+      if (closed) return;
       final panes = {for (final p in snapshot.panes) p.id};
       if (setEquals(panes, _watched)) {
         onSnapshot(snapshot);
@@ -141,38 +104,25 @@ class HerdrCache implements SnapshotCache {
       ..._lifecycle,
       for (final id in panes) Subscription.agentStatus(id),
     ]);
-    if (_closed) {
+    if (closed) {
       await subscription.close();
       return;
     }
     final old = _events;
     _events = subscription.events.listen(
-      (_) {
-        _stale = true;
-        _schedule();
-      },
-      onError: _lose,
-      onDone: () => _lose(const HerdrConnectionClosedException('events')),
+      (_) => markStale(),
+      onError: lose,
+      onDone: () => lose(const HerdrConnectionClosedException('events')),
     );
     _watched = panes;
     await old?.cancel();
-  }
-
-  void _schedule() {
-    if (_closed || _syncing || _timer != null) return;
-    _timer = Timer(debounce, _refresh);
-  }
-
-  void _lose(Object cause) {
-    if (!_closed && !_lost.isCompleted) _lost.complete(cause);
   }
 
   /// Stops updates and releases the subscription. Nothing is published
   /// after this.
   @override
   Future<void> close() async {
-    _closed = true;
-    _timer?.cancel();
+    await super.close();
     _refreshTimer?.cancel();
     await _events?.cancel();
   }

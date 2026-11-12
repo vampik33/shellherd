@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:dartssh2/dartssh2.dart';
 
+import '../ssh/ssh_exec.dart';
 import 'api/herdr_client.dart';
 
 /// A [HerdrDialer] that reaches the herdr socket at [socketPath] on the
@@ -133,9 +134,9 @@ Future<T> remoteValue<T extends Object>(
   final cmd = 'sh -c \'printf "\\n%s%s\\n" $_marker "$expression"\'';
   final String out;
   try {
-    out = await _run(ssh, cmd, what, timeout);
-  } on HerdrException {
-    rethrow;
+    (out, _) = await sshExec(ssh, cmd, timeout);
+  } on TimeoutException {
+    throw HerdrTimeoutException(what, timeout);
   } catch (e) {
     throw HerdrConnectException(what, e);
   }
@@ -148,32 +149,6 @@ Future<T> remoteValue<T extends Object>(
     throw HerdrConnectException(what, 'unexpected output: ${out.trim()}');
   }
   return parsed;
-}
-
-/// Runs [cmd] and returns its stdout. Not [SSHClient.run]: that has no
-/// deadline and leaves stdin open. Here stdin gets EOF at once, so a
-/// startup file that reads it cannot block, and a shell that hangs anyway
-/// fails after [timeout].
-Future<String> _run(
-  SSHClient ssh,
-  String cmd,
-  String what,
-  Duration timeout,
-) async {
-  final session = await openWithin(
-    ssh.execute(cmd),
-    timeout,
-    (s) => s.channel.destroy(),
-    what,
-  );
-  try {
-    await session.stdin.close();
-    return await utf8.decoder.bind(session.stdout).join().timeout(timeout);
-  } on TimeoutException {
-    throw HerdrTimeoutException(what, timeout);
-  } finally {
-    session.channel.destroy();
-  }
 }
 
 /// herdr's validate_name: ASCII letters, digits, . _ -, up to 64 bytes.
