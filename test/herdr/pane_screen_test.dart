@@ -12,6 +12,7 @@ import 'package:shellherd/herdr/ui/pane_screen.dart';
 
 import '../support/fake_hc.dart';
 import '../support/fake_herdr.dart';
+import '../support/fake_screens.dart';
 import '../support/fake_snapshots.dart';
 import '../support/live_widgets.dart';
 import '../support/poll.dart' as poll;
@@ -40,8 +41,10 @@ void main() {
     Map<String, Object?>? session,
     void Function(bool shown)? onShown,
     String server = 'herdr',
+    FakeScreens? screens,
+    bool exactFirst = false,
   }) async {
-    link = FakeLink(session ?? _session());
+    link = FakeLink(session ?? _session(), screens?.open);
     herdr().paneText = '\x1b[31mred line\x1b[0m\r\nlast line';
     connection = HerdrConnection(
       () async => link.open,
@@ -55,11 +58,12 @@ void main() {
           paneId: 'w1:p1',
           onShown: onShown,
           server: server,
+          exactFirst: exactFirst,
         ),
       ),
     );
     await untilFound(tester, chip('live'));
-    await untilFound(tester, paneText('last line'));
+    if (!exactFirst) await untilFound(tester, paneText('last line'));
   }
 
   Future<void> close(WidgetTester tester) async {
@@ -351,11 +355,190 @@ void main() {
     await untilFound(tester, paneText('exact'));
     expect(find.byType(InteractiveViewer), findsOneWidget);
     expect(herdr().reads.last['source'], 'visible');
+    await tester.tap(find.byTooltip('Screen read again'));
+    await untilFound(
+      tester,
+      find.text('Read again every few seconds: herdr sends no live screen.'),
+    );
 
     await tester.tap(find.byTooltip('Text view'));
     await untilFound(tester, paneText('last line'));
     expect(find.byType(InteractiveViewer), findsNothing);
+    expect(find.byTooltip('Screen read again'), findsNothing);
     await close(tester);
+  });
+
+  group('with a screen stream', () {
+    late FakeScreens screens;
+
+    Map<String, Object?> sized() => fakeSnapshot(
+      workspaces: [fakeWorkspace('w1', 1, 'api', 'working')],
+      tabs: [fakeTab('w1', 'server', 'working')],
+      panes: [fakePane('w1:p1', 'w1', 'working', {'agent': 'claude'})],
+      layouts: [
+        fakeLayout('w1:t1', {'w1:p1': (12, 3)}),
+      ],
+    );
+
+    Future<FakeScreenChannel> exact(WidgetTester tester) async {
+      screens = FakeScreens();
+      await open(tester, session: sized(), screens: screens);
+      expect(screens.opened, isEmpty, reason: 'the text view reads');
+      await tester.tap(find.byTooltip('Exact screen'));
+      await until(tester, () => screens.opened.isNotEmpty, 'an observer');
+      return screens.last;
+    }
+
+    testWidgets('the exact screen shows it at the pane size', (tester) async {
+      final channel = await exact(tester);
+      expect(channel.size, const PaneSize(12, 3));
+      final reads = herdr().reads.length;
+      channel.frame('\x1b[2J\x1b[1;1H\x1b[32mgreen top\x1b[0m\x1b[3;1Hbottom row');
+      await untilFound(tester, paneText('bottom row'));
+      expect(paneText('green top'), findsOneWidget);
+      await tester.tap(find.byTooltip('Live screen'));
+      await untilFound(
+        tester,
+        find.text(
+          'Live: herdr sends each change of the screen as it happens.',
+        ),
+      );
+      expect(find.byType(InteractiveViewer), findsOneWidget);
+      await tester.pump(const Duration(milliseconds: 50));
+      expect(herdr().reads.length, reads, reason: 'no reads beside it');
+
+      await tester.tap(find.byTooltip('Text view'));
+      await untilFound(tester, paneText('last line'));
+      expect(channel.closed, isTrue);
+      await close(tester);
+    });
+
+    testWidgets('a pane can open on it, without a read', (tester) async {
+      screens = FakeScreens();
+      await open(tester, session: sized(), screens: screens, exactFirst: true);
+      await until(tester, () => screens.opened.isNotEmpty, 'an observer');
+      screens.last.frame('first screen');
+      await untilFound(tester, paneText('first screen'));
+      expect(find.byTooltip('Text view'), findsOneWidget);
+      expect(find.byType(InteractiveViewer), findsOneWidget);
+      expect(herdr().reads, isEmpty);
+      await close(tester);
+    });
+
+    testWidgets('without the pane size the exact screen reads it', (
+      tester,
+    ) async {
+      screens = FakeScreens();
+      await open(tester, screens: screens);
+      herdr().paneTexts['visible'] = 'no layouts';
+      await tester.tap(find.byTooltip('Exact screen'));
+      await untilFound(tester, paneText('no layouts'));
+      expect(herdr().reads.last['source'], 'visible');
+      expect(screens.opened, isEmpty);
+      await close(tester);
+    });
+
+    testWidgets('it stops while the pane is hidden', (tester) async {
+      final channel = await exact(tester);
+      channel.frame('one');
+      await untilFound(tester, paneText('one'));
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.hidden);
+      expect(channel.closed, isTrue);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await until(tester, () => screens.opened.length == 2, 'a new observer');
+      await close(tester);
+    });
+
+    testWidgets('without it the exact screen reads the visible source', (
+      tester,
+    ) async {
+      final channel = await exact(tester);
+      herdr().paneTexts['visible'] = 'read instead';
+      channel.fail(
+        const HerdrConnectException(
+          'terminal session observe',
+          'exit 127: herdr is not on the PATH\nmore detail',
+        ),
+      );
+      await untilFound(tester, paneText('read instead'));
+      expect(herdr().reads.last['source'], 'visible');
+      expect(find.byTooltip('Live screen'), findsNothing);
+      await tester.tap(find.byTooltip('Screen read again'));
+      await untilFound(
+        tester,
+        find.text(
+          'Read again every few seconds: the live screen did not start '
+          '(HerdrConnectException: terminal session observe: exit 127: herdr '
+          'is not on the PATH). It is tried again after the next reconnect.',
+        ),
+      );
+      await close(tester);
+    });
+
+    testWidgets('a pane that closes says so', (tester) async {
+      final channel = await exact(tester);
+      channel.frame('bye');
+      await untilFound(tester, paneText('bye'));
+      channel.closedRecord('terminal attach ended: terminal t1 not found');
+      await untilFound(tester, find.text('This pane is closed.'));
+      expect(find.byType(TextField), findsNothing);
+      await close(tester);
+    });
+
+    testWidgets('a dropped link keeps the last screen, dimmed', (tester) async {
+      final channel = await exact(tester);
+      channel.frame('kept');
+      await untilFound(tester, paneText('kept'));
+      link.done.complete();
+      await untilFound(tester, chip('retrying'));
+      expect(channel.closed, isTrue);
+      final opacity = tester.widget<Opacity>(
+        find.ancestor(of: paneText('kept'), matching: find.byType(Opacity)).first,
+      );
+      expect(opacity.opacity, lessThan(1));
+      await close(tester);
+    });
+
+    /// Drops the link after a streamed frame and reconnects to a new link,
+    /// set up by [prepare], whose snapshot has no pane size.
+    Future<void> reconnectWithoutSize(
+      WidgetTester tester,
+      void Function(FakeHerdr next) prepare,
+    ) async {
+      final channel = await exact(tester);
+      channel.frame('stale');
+      await untilFound(tester, paneText('stale'));
+      link.done.complete();
+      await untilFound(tester, chip('retrying'));
+      link = FakeLink(_session(), screens.open);
+      prepare(herdr());
+      connection.connect();
+      await untilFound(tester, chip('live'));
+    }
+
+    testWidgets('a pane gone over a reconnect says so', (tester) async {
+      await reconnectWithoutSize(
+        tester,
+        (next) => next.errors['pane.read'] = ['pane_not_found'],
+      );
+      await untilFound(tester, find.text('This pane is closed.'));
+      await close(tester);
+    });
+
+    testWidgets('a reconnect without the pane size reads the screen', (
+      tester,
+    ) async {
+      await reconnectWithoutSize(
+        tester,
+        (next) => next.paneTexts['visible'] = 'fresh',
+      );
+      await untilFound(tester, paneText('fresh'));
+      expect(find.byTooltip('Screen read again'), findsOneWidget);
+      expect(find.byTooltip('Live screen'), findsNothing);
+      await close(tester);
+    });
   });
 
   testWidgets('a closed pane says so and offers no input', (tester) async {
@@ -452,6 +635,10 @@ void main() {
     await open(tester, session: session);
     herdr().paneText = 'x' * 500;
     await untilFound(tester, paneText('xxxx'));
+    expect(tester.takeException(), isNull);
+    // The exact screen has one more icon in the top bar.
+    await tester.tap(find.byTooltip('Exact screen'));
+    await untilFound(tester, find.byTooltip('Screen read again'));
     expect(tester.takeException(), isNull);
     await close(tester);
   });

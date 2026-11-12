@@ -4,6 +4,7 @@ import 'dart:convert';
 import 'package:dartssh2/dartssh2.dart';
 import 'package:shellherd/herdr/api/herdr_client.dart';
 import 'package:shellherd/herdr/herdr_connection.dart';
+import 'package:shellherd/herdr/pane_stream.dart';
 
 import 'fake_channel.dart';
 
@@ -200,17 +201,21 @@ class FakeHerdr {
 
 /// One open link to a [FakeHerdr].
 class FakeLink {
-  FakeLink([Map<String, Object?>? snapshot]) {
+  FakeLink([Map<String, Object?>? snapshot, this.screens]) {
     herdr.snapshotJson = snapshot;
   }
 
   final herdr = FakeHerdr();
+
+  /// The screen streams of the link; null for a server without them.
+  final ScreenOpener? screens;
   final done = Completer<void>();
   var closed = false;
 
   late final OpenLink open = OpenLink.herdr(
     herdr.client,
     server: FakeHerdr.ping,
+    screens: screens,
     done: done.future,
     close: () {
       closed = true;

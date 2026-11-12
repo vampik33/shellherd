@@ -15,16 +15,7 @@ Future<(String, int?)> sshExec(
   String cmd,
   Duration timeout,
 ) async {
-  final open = ssh.execute(cmd);
-  final SSHSession session;
-  try {
-    session = await open.timeout(timeout);
-  } on TimeoutException {
-    unawaited(
-      open.then<void>((s) => s.channel.destroy(), onError: (Object _) {}),
-    );
-    rethrow;
-  }
+  final session = await openExec(ssh, cmd, timeout);
   try {
     await session.stdin.close();
     final out = await utf8.decoder.bind(session.stdout).join().timeout(timeout);
@@ -34,3 +25,21 @@ Future<(String, int?)> sshExec(
     session.channel.destroy();
   }
 }
+
+/// Starts [cmd] and returns its session. Throws [TimeoutException] when the
+/// channel does not open within [timeout]; one that opens late is
+/// destroyed.
+Future<SSHSession> openExec(SSHClient ssh, String cmd, Duration timeout) async {
+  final open = ssh.execute(cmd);
+  try {
+    return await open.timeout(timeout);
+  } on TimeoutException {
+    unawaited(
+      open.then<void>((s) => s.channel.destroy(), onError: (Object _) {}),
+    );
+    rethrow;
+  }
+}
+
+/// Quotes [s] for `sh`.
+String shQuote(String s) => "'${s.replaceAll("'", r"'\''")}'";

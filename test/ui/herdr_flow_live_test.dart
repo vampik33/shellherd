@@ -129,15 +129,16 @@ Future<void> main() async {
     await tester.tap(find.text('ctrl+c'));
     await untilFound(tester, text('^C'));
 
-    await tester.tap(find.byTooltip('Exact screen'));
+    // A herdr pane opens on the exact screen, streamed over SSH.
+    expect(find.byType(InteractiveViewer), findsOneWidget);
+    await tester.tap(find.byTooltip('Text view'));
     await until(
       tester,
-      () => find.byType(InteractiveViewer).evaluate().isNotEmpty,
-      'the exact screen',
+      () =>
+          find.byType(InteractiveViewer).evaluate().isEmpty &&
+          text('mark-42').evaluate().isNotEmpty,
+      'the text view',
     );
-    expect(text('mark-42'), findsWidgets);
-    await tester.tap(find.byTooltip('Text view'));
-    await tester.pump();
 
     await submit('${dir.path}/claude');
     await untilFound(tester, find.text('prompt claude…'));

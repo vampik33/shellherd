@@ -29,7 +29,7 @@ Tags (dart_test.yaml): `herdr` starts a throwaway herdr server, `hc` a throwaway
 
 - Bound every SSH channel open/exec yourself: dartssh2 keepalive has no reply deadline, a stalled link hangs forever.
 - Tests must never touch the user's own herdr-core: run `hc` without HC_TERMINAL_* vars and with HC_SESSION=<name> (HcTestSession does).
-- herdr reports no event for rename/cwd change and has no output stream: pane text is polled via pane.read.
+- herdr reports no event for rename/cwd change and its JSON API has no output stream: the exact screen streams over an SSH exec of `herdr terminal session observe` (lib/herdr/pane_stream.dart), the text view and the fallback poll pane.read.
 - dart_mosh is pinned to 0.0.4 and wrapped (ServerOnlyCipher); re-audit before bumping.
 - Don't add a "start herdr" action: a server started over SSH lacks the desktop environment.
 - Repo will be public: no secrets, home paths, emails or IPs in tracked files.

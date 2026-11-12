@@ -5,6 +5,7 @@ import 'package:dartssh2/dartssh2.dart';
 
 import '../ssh/ssh_exec.dart';
 import 'api/herdr_client.dart';
+import 'pane_stream.dart';
 
 /// A [HerdrDialer] that reaches the herdr socket at [socketPath] on the
 /// remote host through [ssh].
@@ -166,4 +167,92 @@ String herdrSocketPath(String configDir, {String? session}) {
     throw ArgumentError.value(session, 'session', 'not a herdr session name');
   }
   return '$configDir/herdr/sessions/$session/herdr.sock';
+}
+
+/// A [ScreenOpener] that runs [observeCommand] on the remote host for the
+/// herdr server at [socketPath], each observer on its own exec channel.
+ScreenOpener sshScreenOpener(
+  SSHClient ssh,
+  String socketPath, {
+  Duration timeout = const Duration(seconds: 15),
+}) => (paneId, size) async => _SshScreenChannel(
+  await openExec(ssh, observeCommand(socketPath, paneId, size), timeout),
+);
+
+class _SshScreenChannel implements ScreenChannel {
+  _SshScreenChannel(this._session) {
+    _stderr = utf8.decoder
+        .bind(_session.stderr)
+        .join()
+        .catchError((Object _) => '');
+  }
+
+  final SSHSession _session;
+  late final Future<String> _stderr;
+
+  /// stdout, then an error that names the exit code and what the command
+  /// wrote to stderr when it failed.
+  @override
+  Stream<List<int>> get output async* {
+    yield* _session.stdout;
+    await _session.done.timeout(const Duration(seconds: 5), onTimeout: () {});
+    final code = _session.exitCode;
+    if (code != null && code != 0) {
+      throw HerdrConnectException(
+        'terminal session observe',
+        'exit $code: ${(await _stderr).trim()}',
+      );
+    }
+  }
+
+  /// Ends stdin first: the command stops herdr when stdin ends, which it
+  /// also does when the SSH connection goes.
+  @override
+  void close() {
+    unawaited(_session.stdin.close().catchError((Object _) {}));
+    _session.channel.destroy();
+  }
+}
+
+/// Characters herdr uses in pane ids. Only these reach the command: a
+/// quote or a backslash would also break the quoting for fish, which reads
+/// both inside single quotes.
+final _paneTarget = RegExp(r'^[A-Za-z0-9:_.-]{1,128}$');
+
+/// Runs `herdr terminal session observe` for [paneId] at [size] on the
+/// remote host, through `sh` because the login shell can be fish. It finds
+/// herdr on the PATH, else in `~/.local/bin`, where its installer puts it.
+///
+/// HERDR_SOCKET_PATH points herdr at the API socket the link uses: herdr
+/// derives the socket of its screen stream from it, so a named session or
+/// a socket set by hand needs no flag.
+///
+/// An observer that loses its reader keeps running until the pane prints
+/// again, maybe never. So the command watches its stdin, which ends when
+/// the app closes the channel or the SSH connection goes, and stops herdr
+/// then.
+String observeCommand(String socketPath, String paneId, PaneSize size) {
+  if (!_paneTarget.hasMatch(paneId)) {
+    throw ArgumentError.value(paneId, 'paneId', 'not a herdr pane id');
+  }
+  final inner = [
+    'HERDR_SOCKET_PATH=${shQuote(socketPath)}',
+    'export HERDR_SOCKET_PATH',
+    'for h in herdr "\$HOME/.local/bin/herdr"; do',
+    '  command -v "\$h" >/dev/null 2>&1 || continue',
+    '  exec 3<&0',
+    '  "\$h" terminal session observe $paneId'
+        ' --cols ${size.cols} --rows ${size.rows} </dev/null 3<&- &',
+    '  p=\$!',
+    '  { cat <&3 >/dev/null 2>&1; kill \$p 2>/dev/null; } >/dev/null 2>&1 &',
+    '  w=\$!',
+    '  exec 3<&-',
+    '  wait \$p; s=\$?',
+    '  kill \$w 2>/dev/null',
+    '  exit \$s',
+    'done',
+    'echo "herdr is not on the PATH or in ~/.local/bin" >&2',
+    'exit 127',
+  ].join('\n');
+  return 'sh -c ${shQuote(inner)}';
 }
