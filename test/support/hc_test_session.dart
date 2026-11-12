@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:shellherd/herdr/api/hc_client.dart';
@@ -16,6 +17,20 @@ class HcTestSession {
 
   final String name;
   final String socketPath;
+
+  /// Reads lines and reports each as OSC 7501, as an agent does. It stays
+  /// in front, so its status holds (a shell prompt clears it).
+  static const agentScript =
+      r'stty -echo; while IFS= read -r l; do printf "\033]7501;%s\007" "$l"; done';
+
+  /// [state] as an OSC 7501 report for [agentScript], `msg` in base64 as
+  /// the core wants it. It goes in as shell text: the script has no status
+  /// until it reports.
+  static String report(String state, {String? msg, String app = 'demo'}) => [
+    'state=$state',
+    'app=$app',
+    if (msg != null) 'msg=${base64.encode(utf8.encode(msg))}',
+  ].join(':');
 
   /// Opens a client on the socket, as the app does over SSH.
   Future<HcClient> connect() => HcClient.connect(
@@ -71,5 +86,64 @@ class HcTestSession {
     if (name.startsWith('shellherd-test-') && state.existsSync()) {
       await state.delete(recursive: true);
     }
+  }
+}
+
+/// Terminals and a layout in a test core, as the Herdr app keeps them: one
+/// space "work" (s1) with one tab (b1).
+extension HcTestLayout on HcClient {
+  /// Starts [argv] in a terminal of space s1, tab [tab], with [labels]
+  /// besides those, and returns its address.
+  Future<String> run(
+    List<String> argv, {
+    String tab = 'b1',
+    Map<String, String> labels = const {},
+  }) async {
+    final r = await request('terminal.run', {
+      'argv': argv,
+      'wait': false,
+      'size': {'cols': 80, 'rows': 24},
+      'labels': {'herdr.space': 's1', 'herdr.tab': tab, ...labels},
+    });
+    return r['address']! as String;
+  }
+
+  /// Lays [terminals] out side by side in tab b1.
+  Future<void> writeLayout(
+    List<String> terminals, {
+    String tabName = '',
+  }) async {
+    final current = await request('doc.get', {'name': 'herdr-app'});
+    await request('doc.set', {
+      'name': 'herdr-app',
+      'version': current['version'],
+      'value': {
+        'spaces': [
+          {
+            'id': 's1',
+            'name': 'work',
+            'folder': '/tmp',
+            'tabs': [
+              {
+                'id': 'b1',
+                'name': tabName,
+                'root': {
+                  'id': 'b1',
+                  'type': 'row',
+                  'children': [
+                    for (final t in terminals)
+                      {
+                        'id': 'p$t',
+                        'type': 'block',
+                        'content': {'terminal': t},
+                      },
+                  ],
+                },
+              },
+            ],
+          },
+        ],
+      },
+    });
   }
 }
