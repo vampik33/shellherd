@@ -500,6 +500,45 @@ void main() {
       expect(opacity.opacity, lessThan(1));
       await close(tester);
     });
+
+    /// Drops the link after a streamed frame and reconnects to a new link,
+    /// set up by [prepare], whose snapshot has no pane size.
+    Future<void> reconnectWithoutSize(
+      WidgetTester tester,
+      void Function(FakeHerdr next) prepare,
+    ) async {
+      final channel = await exact(tester);
+      channel.frame('stale');
+      await untilFound(tester, paneText('stale'));
+      link.done.complete();
+      await untilFound(tester, chip('retrying'));
+      link = FakeLink(_session(), screens.open);
+      prepare(herdr());
+      connection.connect();
+      await untilFound(tester, chip('live'));
+    }
+
+    testWidgets('a pane gone over a reconnect says so', (tester) async {
+      await reconnectWithoutSize(
+        tester,
+        (next) => next.errors['pane.read'] = ['pane_not_found'],
+      );
+      await untilFound(tester, find.text('This pane is closed.'));
+      await close(tester);
+    });
+
+    testWidgets('a reconnect without the pane size reads the screen', (
+      tester,
+    ) async {
+      await reconnectWithoutSize(
+        tester,
+        (next) => next.paneTexts['visible'] = 'fresh',
+      );
+      await untilFound(tester, paneText('fresh'));
+      expect(find.byTooltip('Screen read again'), findsOneWidget);
+      expect(find.byTooltip('Live screen'), findsNothing);
+      await close(tester);
+    });
   });
 
   testWidgets('a closed pane says so and offers no input', (tester) async {

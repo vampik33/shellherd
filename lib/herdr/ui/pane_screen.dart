@@ -162,14 +162,16 @@ class _PaneScreenState extends State<PaneScreen> {
   }
 
   /// The exact screen comes from the stream where the server has one. It
-  /// keeps its last text while the link is down, and the poller takes over
-  /// for good when the stream is unavailable.
-  /// It also needs the pane size, which a snapshot without layouts lacks.
+  /// keeps its last text only while the link is down, and the poller takes
+  /// over for good when the stream is unavailable.
+  /// It also needs the pane size, which a snapshot without layouts lacks:
+  /// a live link without it reads the pane again.
   bool get _streaming =>
       _exact &&
       !_stream.unavailable.value &&
       ((widget.connection.screens != null && _paneSize() != null) ||
-          _stream.view.value.text != null);
+          (widget.connection.state.value is! LinkLive &&
+              _stream.view.value.text != null));
 
   PaneSize? _paneSize() =>
       widget.connection.snapshot.value?.paneSizes[widget.paneId];
