@@ -246,7 +246,7 @@ done
   <doc-mock frame="phone" w="360" caption="The agents tab sorts by attention, as the herdr priority mode does.">
 <template>
 <div class="sh">
-  <div class="bar"><span class="ic">‹</span><span class="t">workbox</span><span class="dim">· default</span><span class="sp"></span><span class="dot working" title="live" style="background:#a6bd91"></span></div>
+  <div class="bar"><span class="ic">‹</span><span class="t">workbox</span><span class="dim">· default</span><span class="sp"></span><span class="dot working" title="live" style="background:var(--green)"></span></div>
   <div class="seg" data-ref="seg"><div class="on">agents</div><div>spaces</div></div>
   <div class="sec"><b>needs you</b><span>1</span></div>
   <div class="row sel" data-ref="blocked">
@@ -350,7 +350,7 @@ failed      -edit->     offline      : edit host
       <div data-state="syncing"><doc-mock frame="none" w="320"><template><div class="sh"><div class="state"><div class="banner"><span class="dot working"></span><span class="sub">reading herdr session…</span></div></div></div></template></doc-mock></div>
       <div data-state="live"><doc-mock frame="none" w="320"><template><div class="sh"><div class="state"><div class="banner"><span class="dot done"></span><span class="sub">live · herdr 0.9.5 · protocol 22</span></div></div></div></template></doc-mock></div>
       <div data-state="reconnecting"><doc-mock frame="none" w="320"><template><div class="sh"><div class="state"><div class="banner"><span class="dot working"></span><span class="cy">link lost · retry in 4 s</span><span style="flex:1"></span><span class="cb">now</span></div></div></div></template></doc-mock></div>
-      <div data-state="no_server"><doc-mock frame="none" w="320"><template><div class="sh"><div class="state"><div class="banner"><span class="dot unknown"></span><span class="sub">herdr is not running on workbox</span></div><div class="btns"><span class="pri" style="background:#96b2d7">retry</span><span>terminal</span></div></div></div></template></doc-mock></div>
+      <div data-state="no_server"><doc-mock frame="none" w="320"><template><div class="sh"><div class="state"><div class="banner"><span class="dot unknown"></span><span class="sub">herdr is not running on workbox</span></div><div class="btns"><span class="pri" style="background:var(--blue)">retry</span><span>terminal</span></div></div></div></template></doc-mock></div>
       <div data-state="failed"><doc-mock frame="none" w="320"><template><div class="sh"><div class="state"><div class="banner" style="background:#f0705f22"><span class="dot blocked"></span><span class="cr">host key changed for workbox</span></div><div class="dim">SHA256:Qm4x… was SHA256:8fKd…</div><div class="btns"><span>edit host</span></div></div></div></template></doc-mock></div>
     </doc-machine>
     <doc-ask id="start-server">
