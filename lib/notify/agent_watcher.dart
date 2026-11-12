@@ -36,17 +36,19 @@ class AgentAlert {
 /// An agent alerts when its status changes into one of [alertStatuses]. Its
 /// notification goes when it leaves them, or the agent goes away.
 ///
-/// With [idleFinishes], an agent that goes from working to idle alerts as
-/// done too. herdr 0.9.5 reports a finish in the active tab as idle when no
-/// client watches it, as if a person had seen it. [idleAlerts] are the
+/// An agent that goes from working to idle alerts as done too: a finish
+/// nobody watched can come as idle. herdr 0.9.5 reports one in the active
+/// tab so when no client is attached; the Herdr app marks one seen while
+/// its window is active with the agent on screen. [idleAlerts] are the
 /// panes alerted that way and still idle: their notification goes when
-/// the agent leaves idle or goes away. The result holds the new set.
+/// the agent leaves idle or goes away, and turning done does not alert
+/// again (the Herdr app's idle can come before its turn goes up). The
+/// result holds the new set.
 ({List<AgentAlert> show, List<String> cancel, Set<String> idleAlerts})
 agentChanges(
   Map<String, AgentStatus> before,
   HerdrSnapshot now, {
   Set<String> idleAlerts = const {},
-  bool idleFinishes = false,
 }) {
   final show = <AgentAlert>[];
   final current = <String>{};
@@ -55,14 +57,16 @@ agentChanges(
     final was = before[agent.paneId];
     final stays = idleAlerts.contains(agent.paneId);
     if (agent.status == AgentStatus.idle &&
-        (stays || idleFinishes && was == AgentStatus.working)) {
+        (stays || was == AgentStatus.working)) {
       idle.add(agent.paneId);
       if (!stays) show.add(_alert(now, agent, AgentStatus.done));
       continue;
     }
     if (!alertStatuses.contains(agent.status)) continue;
     current.add(agent.paneId);
-    if (was == agent.status) continue;
+    if (was == agent.status || (stays && agent.status == AgentStatus.done)) {
+      continue;
+    }
     show.add(_alert(now, agent, agent.status));
   }
   final cancel = [
@@ -136,12 +140,7 @@ class AgentWatcher {
     final before = _last;
     _last = {for (final a in snapshot.agents) a.paneId: a.status};
     if (before == null) return;
-    final changes = agentChanges(
-      before,
-      snapshot,
-      idleAlerts: _idleAlerts,
-      idleFinishes: host.herdrKind == HerdrKind.herdr,
-    );
+    final changes = agentChanges(before, snapshot, idleAlerts: _idleAlerts);
     _idleAlerts = changes.idleAlerts;
     for (final paneId in changes.cancel) {
       unawaited(notifier.cancel(host.id, paneId));

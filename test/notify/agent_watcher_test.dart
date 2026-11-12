@@ -139,7 +139,7 @@ void main() {
       expect(c.show, isEmpty);
     });
 
-    group('a finish that herdr reports as idle', () {
+    group('a finish reported as idle', () {
       ({List<AgentAlert> show, List<String> cancel, Set<String> idleAlerts})
       change(
         Map<String, AgentStatus> before,
@@ -149,7 +149,6 @@ void main() {
         before,
         _snap(now),
         idleAlerts: idleAlerts,
-        idleFinishes: true,
       );
 
       test('working to idle alerts as done', () {
@@ -159,14 +158,6 @@ void main() {
         ]);
         expect(c.cancel, isEmpty);
         expect(c.idleAlerts, {'w1:p1'});
-      });
-
-      test('only for herdr: without idleFinishes it is quiet', () {
-        final c = agentChanges({
-          'w1:p1': AgentStatus.working,
-        }, _snap({'w1:p1': 'idle'}));
-        expect(c.show, isEmpty);
-        expect(c.idleAlerts, isEmpty);
       });
 
       test('stays while the agent stays idle, and does not repeat', () {
@@ -188,6 +179,17 @@ void main() {
         );
         expect(c.show, isEmpty);
         expect(c.cancel, unorderedEquals(['w1:p1', 'w1:p2']));
+        expect(c.idleAlerts, isEmpty);
+      });
+
+      test('turning done does not alert again', () {
+        final c = change(
+          {'w1:p1': AgentStatus.idle},
+          {'w1:p1': 'done'},
+          idleAlerts: {'w1:p1'},
+        );
+        expect(c.show, isEmpty);
+        expect(c.cancel, isEmpty);
         expect(c.idleAlerts, isEmpty);
       });
 
@@ -330,7 +332,8 @@ void main() {
       expect(notifier.cancelled, [('h', 'w1:p1')]);
     });
 
-    test('the Herdr app: idle is not a finish, its done counts', () async {
+    test('the Herdr app: an agent that finishes as idle notifies once, '
+        'also when it turns done after', () async {
       watcher.dispose();
       links = _Links({'w1:p1': 'working'});
       watcher = AgentWatcher(
@@ -340,8 +343,17 @@ void main() {
       )..start();
       await live();
       links.change({'w1:p1': 'idle'});
-      await Future<void>.delayed(const Duration(milliseconds: 100));
-      expect(notifier.shown, isEmpty);
+      await until(() => notifier.shown.isNotEmpty, 'a notification');
+      expect(_shown(notifier), [('h', 'w1:p1', AgentStatus.done)]);
+      links.change({'w1:p1': 'done'});
+      await until(
+        () =>
+            watcher.connection.snapshot.value?.agents.single.status ==
+            AgentStatus.done,
+        'the done snapshot',
+      );
+      expect(notifier.shown, hasLength(1));
+      expect(notifier.cancelled, isEmpty);
     });
 
     test('looks again for a herdr server that was not running', () async {

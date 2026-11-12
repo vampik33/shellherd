@@ -5,8 +5,6 @@
 @Tags(['hc', 'sshd'])
 library;
 
-import 'dart:convert';
-
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shellherd/herdr/api/hc_client.dart';
@@ -19,11 +17,6 @@ import 'package:shellherd/herdr/server_api.dart';
 import '../support/hc_test_session.dart';
 import '../support/poll.dart';
 import '../support/test_sshd.dart';
-
-/// Reads lines and reports each as OSC 7501, as an agent does. It stays in
-/// front, so its status holds (a shell prompt clears it).
-const _agentScript =
-    r'stty -echo; while IFS= read -r l; do printf "\033]7501;%s\007" "$l"; done';
 
 Future<void> main() async {
   final skip = !await HcTestSession.available()
@@ -42,66 +35,8 @@ Future<void> main() async {
   });
   tearDownAll(() async => startedCore?.stop());
 
-  /// Starts [argv] in a terminal of space s1, tab b1 and returns its
-  /// address.
-  Future<String> run(List<String> argv, {String tab = 'b1'}) async {
-    final r = await client.request('terminal.run', {
-      'argv': argv,
-      'wait': false,
-      'size': {'cols': 80, 'rows': 24},
-      'labels': {'herdr.space': 's1', 'herdr.tab': tab},
-    });
-    return r['address']! as String;
-  }
-
-  Future<void> writeLayout(
-    List<String> terminals, {
-    String tabName = '',
-  }) async {
-    final current = await client.request('doc.get', {'name': 'herdr-app'});
-    await client.request('doc.set', {
-      'name': 'herdr-app',
-      'version': current['version'],
-      'value': {
-        'spaces': [
-          {
-            'id': 's1',
-            'name': 'work',
-            'folder': '/tmp',
-            'tabs': [
-              {
-                'id': 'b1',
-                'name': tabName,
-                'root': {
-                  'id': 'b1',
-                  'type': 'row',
-                  'children': [
-                    for (final t in terminals)
-                      {
-                        'id': 'p$t',
-                        'type': 'block',
-                        'content': {'terminal': t},
-                      },
-                  ],
-                },
-              },
-            ],
-          },
-        ],
-      },
-    });
-  }
-
   Future<HcTerminal> terminal(String address) async =>
       (await client.terminals()).singleWhere((t) => t.address == address);
-
-  /// [payload] as an OSC 7501 report, `msg` in base64 as the core wants it.
-  /// It goes in as shell text: the script has no status until it reports.
-  String report(String state, {String? msg}) => [
-    'state=$state',
-    'app=demo',
-    if (msg != null) 'msg=${base64.encode(utf8.encode(msg))}',
-  ].join(':');
 
   group('herdr-core', skip: skip ?? false, () {
     setUp(() async => client = await core.connect());
@@ -121,9 +56,13 @@ Future<void> main() async {
     test(
       'the cache follows the layout, the terminals and their status',
       () async {
-        final shell = await run(['sh']);
-        final agent = await run(['sh', '-c', _agentScript]);
-        await writeLayout([shell, agent]);
+        final shell = await client.run(['sh']);
+        final agent = await client.run([
+        'sh',
+        '-c',
+        HcTestSession.agentScript,
+      ]);
+        await client.writeLayout([shell, agent]);
         final snapshots = <HerdrSnapshot>[];
         final cache = HcCache(client, onSnapshot: snapshots.add);
         addTearDown(cache.close);
@@ -134,16 +73,18 @@ Future<void> main() async {
         expect(last().agents, isEmpty);
 
         // A layout change comes as a doc event.
-        await writeLayout([shell, agent], tabName: 'fix login');
+        await client.writeLayout([shell, agent], tabName: 'fix login');
         await until(
           () => last().tabs.single.label == 'fix login',
           'the rename',
         );
 
         // A status report comes as an event.
-        await HcPaneApi(
-          client,
-        ).submit(agent, report('working', msg: 'reading x.rs'), toAgent: false);
+        await HcPaneApi(client).submit(
+          agent,
+          HcTestSession.report('working', msg: 'reading x.rs'),
+          toAgent: false,
+        );
         await until(
           () => last().agents.singleOrNull?.status == AgentStatus.working,
           'a working agent',
@@ -156,12 +97,20 @@ Future<void> main() async {
     test(
       'a finished turn nobody saw is done, until the app has seen it',
       () async {
-        final agent = await run(['sh', '-c', _agentScript]);
-        await writeLayout([agent]);
+        final agent = await client.run([
+        'sh',
+        '-c',
+        HcTestSession.agentScript,
+      ]);
+        await client.writeLayout([agent]);
         await client.label(agent, {'herdr.seen': '0'});
         final api = HcPaneApi(client);
-        await api.submit(agent, report('working'), toAgent: false);
-        await api.submit(agent, report('idle'), toAgent: false);
+        await api.submit(
+          agent,
+          HcTestSession.report('working'),
+          toAgent: false,
+        );
+        await api.submit(agent, HcTestSession.report('idle'), toAgent: false);
         Future<AgentStatus> status() async =>
             hcAgentStatus(await terminal(agent));
         await eventually(
@@ -174,11 +123,15 @@ Future<void> main() async {
     );
 
     test('markSeen raises the seen label to the turn, so done clears', () async {
-      final agent = await run(['sh', '-c', _agentScript]);
-      await writeLayout([agent]);
+      final agent = await client.run([
+        'sh',
+        '-c',
+        HcTestSession.agentScript,
+      ]);
+      await client.writeLayout([agent]);
       final api = HcPaneApi(client);
-      await api.submit(agent, report('working'), toAgent: false);
-      await api.submit(agent, report('idle'), toAgent: false);
+      await api.submit(agent, HcTestSession.report('working'), toAgent: false);
+      await api.submit(agent, HcTestSession.report('idle'), toAgent: false);
       await eventually(
         () async => (await terminal(agent)).turn == 1,
         'a finished turn',
@@ -191,9 +144,13 @@ Future<void> main() async {
     });
 
     test('a blocked agent refuses text', () async {
-      final agent = await run(['sh', '-c', _agentScript]);
+      final agent = await client.run([
+        'sh',
+        '-c',
+        HcTestSession.agentScript,
+      ]);
       final api = HcPaneApi(client);
-      await api.submit(agent, report('blocked'), toAgent: false);
+      await api.submit(agent, HcTestSession.report('blocked'), toAgent: false);
       await eventually(
         () async => (await terminal(agent)).status?.state == 'blocked',
         'a blocked agent',
@@ -211,10 +168,14 @@ Future<void> main() async {
     });
 
     test('text for an agent that quit to its shell is not sent', () async {
-      final shell = await run(['sh']);
+      final shell = await client.run(['sh']);
       final api = HcPaneApi(client);
-      await api.submit(shell, "sh -c '$_agentScript'", toAgent: false);
-      await api.submit(shell, report('idle'), toAgent: false);
+      await api.submit(
+        shell,
+        "sh -c '${HcTestSession.agentScript}'",
+        toAgent: false,
+      );
+      await api.submit(shell, HcTestSession.report('idle'), toAgent: false);
       await eventually(
         () async => (await terminal(shell)).status?.state == 'idle',
         'an idle agent',
@@ -241,7 +202,7 @@ Future<void> main() async {
     });
 
     test('text and keys reach a shell, and its screen reads back', () async {
-      final shell = await run(['sh']);
+      final shell = await client.run(['sh']);
       final api = HcPaneApi(client);
       Future<String> screen() => api.read(shell, source: ReadSource.visible);
       await api.submit(shell, r'echo HELLO_$((40+2))', toAgent: false);
@@ -297,7 +258,7 @@ Future<void> main() async {
       // settle before it types into it; on one connection that held up
       // every request behind it. This output never settles, so the core
       // gives up after the wait.
-      final shell = await run([
+      final shell = await client.run([
         'sh',
         '-c',
         'while :; do echo y; sleep 0.1; done',
