@@ -105,7 +105,7 @@ class _PaneScreenState extends State<PaneScreen> {
     super.initState();
     PaneApi? api() => widget.connection.api;
     _poller = PanePoller(api, widget.paneId);
-    if (_exact) _poller.source = ReadSource.visible;
+    _poller.source = _readSource;
     _sender = PaneSender(api, widget.paneId, onSent: _poller.kick);
     _lifecycle = AppLifecycleListener(
       onHide: () => _setAppShown(false),
@@ -161,16 +161,14 @@ class _PaneScreenState extends State<PaneScreen> {
     _seen.shown = shown;
   }
 
-  /// The exact screen comes from the stream where the server has one. It
-  /// keeps its last text only while the link is down, and the poller takes
-  /// over for good when the stream is unavailable.
-  /// It also needs the pane size, which a snapshot without layouts lacks:
-  /// a live link without it reads the pane again.
+  /// The exact screen comes from the stream while an observer can run. It
+  /// keeps its last text only while the link is down; a live link that
+  /// cannot observe, for example without the pane size, reads the pane.
   bool get _streaming =>
       _exact &&
-      !_stream.unavailable.value &&
-      ((widget.connection.screens != null && _paneSize() != null) ||
-          (widget.connection.state.value is! LinkLive &&
+      (_stream.canObserve ||
+          (!_stream.unavailable.value &&
+              widget.connection.state.value is! LinkLive &&
               _stream.view.value.text != null));
 
   PaneSize? _paneSize() =>
@@ -204,9 +202,12 @@ class _PaneScreenState extends State<PaneScreen> {
   /// The exact screen, else the text view.
   late var _exact = widget.exactFirst;
 
+  ReadSource get _readSource =>
+      _exact ? ReadSource.visible : ReadSource.recentUnwrapped;
+
   void _toggleExact() => setState(() {
     _exact = !_exact;
-    _poller.source = _exact ? ReadSource.visible : ReadSource.recentUnwrapped;
+    _poller.source = _readSource;
     _applySource();
   });
 
@@ -541,10 +542,25 @@ class _ReflowedTextState extends State<_ReflowedText> {
 }
 
 /// The pane exactly as herdr draws it, scaled to fit. Pinch to zoom.
-class _ExactScreen extends StatelessWidget {
+class _ExactScreen extends StatefulWidget {
   const _ExactScreen(this.text);
 
   final String text;
+
+  @override
+  State<_ExactScreen> createState() => _ExactScreenState();
+}
+
+/// Parses the text only when it changes: the screen also rebuilds for the
+/// link and the snapshot, and a stream draws often.
+class _ExactScreenState extends State<_ExactScreen> {
+  late var _lines = parseAnsi(widget.text);
+
+  @override
+  void didUpdateWidget(_ExactScreen old) {
+    super.didUpdateWidget(old);
+    if (widget.text != old.text) _lines = parseAnsi(widget.text);
+  }
 
   @override
   Widget build(BuildContext context) => InteractiveViewer(
@@ -556,7 +572,7 @@ class _ExactScreen extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          for (final line in parseAnsi(text))
+          for (final line in _lines)
             Text.rich(line, style: _paneStyle, softWrap: false),
         ],
       ),

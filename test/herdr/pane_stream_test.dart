@@ -168,6 +168,22 @@ void main() {
       return screens.opened[n - 1];
     }
 
+    test('can observe with a link and a pane size, until unavailable',
+        () async {
+      expect(stream.canObserve, isTrue);
+      size = null;
+      expect(stream.canObserve, isFalse);
+      size = const PaneSize(10, 3);
+      opener = null;
+      expect(stream.canObserve, isFalse);
+      opener = screens.open;
+      change();
+      stream.running = true;
+      (await opened(1)).end();
+      await until(() => stream.unavailable.value, 'unavailable');
+      expect(stream.canObserve, isFalse);
+    });
+
     test('does nothing until it should run', () async {
       await Future<void>.delayed(_settle);
       expect(screens.opened, isEmpty);

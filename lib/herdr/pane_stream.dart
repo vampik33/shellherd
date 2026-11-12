@@ -209,12 +209,16 @@ class PaneStream {
     if (text != view.value.text) view.value = PaneView(text: text);
   }
 
+  /// Whether an observer can start: the link has an opener, the pane a
+  /// size, and the stream is not [unavailable].
+  bool get canObserve =>
+      !unavailable.value && _opener() != null && _size() != null;
+
   void _start() {
-    if (!_running || _closed || unavailable.value || view.value.gone) return;
+    if (!_running || _closed || view.value.gone || !canObserve) return;
     if (_runSize != null || _retry != null) return;
-    final opener = _opener();
-    final size = _size();
-    if (opener == null || size == null) return;
+    final opener = _opener()!;
+    final size = _size()!;
     _runSize = size;
     unawaited(_observe(opener, size, ++_run));
   }
