@@ -27,7 +27,11 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
-  # Herdr app's fonts (SIL OFL 1.1, licences next to them).
+  # Herdr app's fonts (SIL OFL 1.1, licences next to them). The OFL asks
+  # for its text to go with every copy: these land in the app's NOTICES.
+  licenses:
+    - assets/fonts/OFL-Geist.txt
+    - assets/fonts/OFL-JetBrainsMono.txt
   fonts:
     - family: Geist
       fonts:
