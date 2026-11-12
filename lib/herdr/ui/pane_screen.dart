@@ -15,7 +15,7 @@ import 'ansi_text.dart';
 import 'herdr_lists.dart';
 import 'link_chip.dart';
 
-const _paneStyle = TextStyle(fontFamily: 'monospace', fontSize: 13, height: 1.3);
+const _paneStyle = TextStyle(fontFamily: monoFont, fontSize: 13, height: 1.3);
 
 const _paneKeys = [
   ('esc', 'esc'),
@@ -214,7 +214,6 @@ class _PaneScreenState extends State<PaneScreen> {
       final view = _poller.view.value;
       final pane = snapshot?.pane(widget.paneId);
       return Scaffold(
-        backgroundColor: Mocha.base,
         appBar: AppBar(
           automaticallyImplyLeading: false,
           leading: switch (widget.onClose) {
@@ -290,7 +289,7 @@ class _PaneScreenState extends State<PaneScreen> {
             controller: _composer,
             minLines: 1,
             maxLines: 4,
-            style: const TextStyle(fontFamily: 'monospace', fontSize: 14),
+            style: const TextStyle(fontFamily: monoFont, fontSize: 14),
             decoration: InputDecoration(
               isDense: true,
               border: const OutlineInputBorder(),
@@ -347,7 +346,7 @@ class _Header extends StatelessWidget {
                 pane?.displayName ?? paneId,
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontFamily: 'monospace', fontSize: 16),
+                style: const TextStyle(fontFamily: monoFont, fontSize: 16),
               ),
             ),
           ],
@@ -357,9 +356,9 @@ class _Header extends StatelessWidget {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: const TextStyle(
-            fontFamily: 'monospace',
+            fontFamily: monoFont,
             fontSize: 11,
-            color: Mocha.overlay,
+            color: Graphite.dim,
           ),
         ),
       ],
@@ -383,9 +382,9 @@ class _Answers extends StatelessWidget {
         const Text(
           'needs you',
           style: TextStyle(
-            fontFamily: 'monospace',
+            fontFamily: monoFont,
             fontSize: 12,
-            color: Mocha.red,
+            color: Graphite.blocked,
           ),
         ),
         const SizedBox(width: 8),

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../ssh/ssh_connector.dart';
+import 'palette.dart';
 
 /// Shows [check] until its login ends: it closes by itself once the user
 /// has approved the login in the browser. A [TailscaleCheckPrompt] for
@@ -87,7 +88,7 @@ class _TailscaleCheckDialogState extends State<TailscaleCheckDialog> {
             const SizedBox(height: 12),
             SelectableText(
               '${widget.check.url}',
-              style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+              style: const TextStyle(fontFamily: monoFont, fontSize: 12),
             ),
             if (_error case final error?)
               Padding(

@@ -8,6 +8,7 @@ import '../ssh/key_store.dart';
 import '../ssh/known_hosts.dart';
 import '../ssh/secret_store.dart';
 import 'confirm_dialog.dart';
+import 'palette.dart';
 
 /// Adds a host, or edits [host].
 ///
@@ -332,7 +333,7 @@ class _HostFormScreenState extends State<HostFormScreen> {
 
   @override
   Widget build(BuildContext context) {
-    const mono = TextStyle(fontFamily: 'monospace', fontSize: 12);
+    const mono = TextStyle(fontFamily: monoFont, fontSize: 12);
     return PopScope(
       canPop: !_busy,
       child: Scaffold(
@@ -605,7 +606,7 @@ class _ImportKeyDialogState extends State<_ImportKeyDialog> {
               maxLines: 8,
               autocorrect: false,
               enableSuggestions: false,
-              style: const TextStyle(fontFamily: 'monospace', fontSize: 12),
+              style: const TextStyle(fontFamily: monoFont, fontSize: 12),
               decoration: const InputDecoration(
                 labelText: 'Private key (PEM text)',
               ),

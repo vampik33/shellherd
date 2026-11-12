@@ -163,6 +163,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
               child: TerminalView(
                 _terminal,
                 theme: _theme,
+                textStyle: const TerminalStyle(fontFamily: monoFont),
                 autofocus: true,
                 padding: const EdgeInsets.all(4),
               ),
@@ -239,4 +240,4 @@ class _TerminalScreenState extends State<TerminalScreen> {
   }
 }
 
-const _theme = mochaTerminalTheme;
+const _theme = graphiteTerminalTheme;

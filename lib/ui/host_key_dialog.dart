@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../ssh/host.dart';
 import '../ssh/known_hosts.dart';
 import 'confirm_dialog.dart';
+import 'palette.dart';
 
 /// Asks whether to trust [key], the first key that [host] showed. A
 /// [TrustPrompt] for [SshConnector] calls it.
@@ -24,7 +25,7 @@ Future<bool> showHostKeyDialog(BuildContext context, Host host, HostKey key) =>
           const SizedBox(height: 12),
           SelectableText(
             '${key.type}\n${key.fingerprint}',
-            style: const TextStyle(fontFamily: 'monospace'),
+            style: const TextStyle(fontFamily: monoFont),
           ),
           const SizedBox(height: 12),
           Text(

@@ -7,6 +7,7 @@ import '../notify/notifier.dart';
 import '../ssh/host.dart';
 import '../terminal/terminal_screen.dart';
 import 'host_form_screen.dart';
+import 'palette.dart';
 
 /// The home screen: the saved PCs. A tap opens the herdr session.
 class HostListScreen extends StatefulWidget {
@@ -86,7 +87,7 @@ class _HostListScreenState extends State<HostListScreen> {
             subtitle: Text(
               '${host.user}@${host.address}'
               '${host.port == 22 ? '' : ':${host.port}'}',
-              style: const TextStyle(fontFamily: 'monospace'),
+              style: const TextStyle(fontFamily: monoFont),
             ),
             onTap: () => _openHerdr(host),
             trailing: Row(

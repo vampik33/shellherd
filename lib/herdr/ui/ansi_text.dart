@@ -50,10 +50,10 @@ class _Sgr {
   TextStyle get style => _style ??= _build();
 
   TextStyle _build() {
-    final fg = _inverse ? (_bg ?? Mocha.base) : (_fg ?? Mocha.text);
+    final fg = _inverse ? (_bg ?? _t.background) : (_fg ?? _t.foreground);
     return TextStyle(
       color: _dim ? fg.withValues(alpha: 0.6) : fg,
-      backgroundColor: _inverse ? (_fg ?? Mocha.text) : _bg,
+      backgroundColor: _inverse ? (_fg ?? _t.foreground) : _bg,
       fontWeight: _bold ? FontWeight.w700 : FontWeight.w400,
       fontStyle: _italic ? FontStyle.italic : FontStyle.normal,
       decoration: TextDecoration.combine([
@@ -153,7 +153,7 @@ class _Sgr {
     );
   }
 
-  static const _t = mochaTerminalTheme;
+  static const _t = graphiteTerminalTheme;
   static final _basic = [
     _t.black,
     _t.red,
