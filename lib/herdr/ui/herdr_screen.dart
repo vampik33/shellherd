@@ -118,9 +118,7 @@ class _HerdrScreenState extends State<HerdrScreen> {
             icon: const Icon(Icons.terminal),
             onPressed: widget.onTerminal,
           ),
-        herdrLinkChip(state),
-        disconnectButton(context),
-        const SizedBox(width: 8),
+        ...linkActions(context, herdrLinkChip(state)),
       ],
     ),
     body: SafeArea(

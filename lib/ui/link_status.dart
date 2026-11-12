@@ -118,6 +118,13 @@ IconButton disconnectButton(BuildContext context) => IconButton(
   onPressed: () => Navigator.of(context).popUntil((route) => route.isFirst),
 );
 
+/// The end of a top bar: the link [chip] and [disconnectButton].
+List<Widget> linkActions(BuildContext context, Widget chip) => [
+  chip,
+  disconnectButton(context),
+  const SizedBox(width: 8),
+];
+
 /// The state of a link, for the top bar.
 class LinkChip extends StatelessWidget {
   const LinkChip(this.label, this.color, {super.key});

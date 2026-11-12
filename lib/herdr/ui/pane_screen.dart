@@ -228,11 +228,7 @@ class _PaneScreenState extends State<PaneScreen> {
               icon: Icon(_exact ? Icons.notes : Icons.fit_screen_outlined),
               onPressed: _toggleExact,
             ),
-            if (widget.showLink) ...[
-              herdrLinkChip(state),
-              disconnectButton(context),
-              const SizedBox(width: 8),
-            ],
+            if (widget.showLink) ...linkActions(context, herdrLinkChip(state)),
           ],
         ),
         body: SafeArea(

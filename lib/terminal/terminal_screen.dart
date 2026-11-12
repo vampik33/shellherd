@@ -153,11 +153,7 @@ class _TerminalScreenState extends State<TerminalScreen> {
       backgroundColor: _theme.background,
       appBar: AppBar(
         title: Text(widget.host.label),
-        actions: [
-          _followingLink(_chip),
-          disconnectButton(context),
-          const SizedBox(width: 8),
-        ],
+        actions: linkActions(context, _followingLink(_chip)),
       ),
       body: SafeArea(
         child: Column(
