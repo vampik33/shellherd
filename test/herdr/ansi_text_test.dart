@@ -21,7 +21,7 @@ void main() {
     });
 
     test('plain text has the default colour', () {
-      expect(styleOf('a').color, Mocha.text);
+      expect(styleOf('a').color, Graphite.terminalForeground);
       expect(styleOf('a').backgroundColor, isNull);
     });
 
@@ -34,13 +34,13 @@ void main() {
     });
 
     test('basic colours', () {
-      expect(styleOf('\x1b[31mx').color, Mocha.red);
-      expect(styleOf('\x1b[42mx').backgroundColor, Mocha.green);
-      expect(styleOf('\x1b[91mx').color, mochaTerminalTheme.brightRed);
+      expect(styleOf('\x1b[31mx').color, Graphite.red);
+      expect(styleOf('\x1b[42mx').backgroundColor, Graphite.green);
+      expect(styleOf('\x1b[91mx').color, graphiteTerminalTheme.brightRed);
     });
 
     test('256 colours: palette, cube and grey', () {
-      expect(styleOf('\x1b[38;5;1mx').color, Mocha.red);
+      expect(styleOf('\x1b[38;5;1mx').color, Graphite.red);
       expect(styleOf('\x1b[38;5;208mx').color, const Color(0xFFFF8700));
       expect(styleOf('\x1b[48;5;232mx').backgroundColor, const Color(0xFF080808));
     });
@@ -54,35 +54,38 @@ void main() {
       final s = styleOf('\x1b[1;4;38;5;2;3mx');
       expect(s.fontWeight, FontWeight.w700);
       expect(s.decoration, TextDecoration.underline);
-      expect(s.color, Mocha.green);
+      expect(s.color, Graphite.green);
       expect(s.fontStyle, FontStyle.italic);
     });
 
     test('a cut-off colour changes nothing and does not throw', () {
-      expect(styleOf('\x1b[38;5mx').color, Mocha.text);
-      expect(styleOf('\x1b[38;2;1mx').color, Mocha.text);
-      expect(styleOf('\x1b[38mx').color, Mocha.text);
-      expect(styleOf('\x1b[38;5;999mx').color, Mocha.text);
+      expect(styleOf('\x1b[38;5mx').color, Graphite.terminalForeground);
+      expect(styleOf('\x1b[38;2;1mx').color, Graphite.terminalForeground);
+      expect(styleOf('\x1b[38mx').color, Graphite.terminalForeground);
+      expect(styleOf('\x1b[38;5;999mx').color, Graphite.terminalForeground);
     });
 
     test('reset codes end what they should', () {
-      expect(styleOf('\x1b[31;39mx').color, Mocha.text);
+      expect(styleOf('\x1b[31;39mx').color, Graphite.terminalForeground);
       expect(styleOf('\x1b[41;49mx').backgroundColor, isNull);
       expect(styleOf('\x1b[1;22mx').fontWeight, FontWeight.w400);
-      expect(styleOf('\x1b[31m\x1b[mx').color, Mocha.text);
+      expect(styleOf('\x1b[31m\x1b[mx').color, Graphite.terminalForeground);
     });
 
     test('inverse swaps the colours', () {
       final s = styleOf('\x1b[7mx');
-      expect(s.color, Mocha.base);
-      expect(s.backgroundColor, Mocha.text);
+      expect(s.color, Graphite.background);
+      expect(s.backgroundColor, Graphite.terminalForeground);
       final red = styleOf('\x1b[31;7mx');
-      expect(red.backgroundColor, Mocha.red);
+      expect(red.backgroundColor, Graphite.red);
     });
 
     test('a style goes on over the end of a line', () {
       final lines = parseAnsi('\x1b[31ma\r\nb');
-      expect((lines[1].children!.single as TextSpan).style!.color, Mocha.red);
+      expect(
+        (lines[1].children!.single as TextSpan).style!.color,
+        Graphite.red,
+      );
     });
   });
 }

@@ -560,8 +560,8 @@ void main() {
       );
       expect(find.byType(BackButton), findsNothing);
       expect(chip('live'), findsOneWidget, reason: 'one chip, at the top');
-      expect(rowColor(tester, 'my pane'), Mocha.surface0);
-      expect(rowColor(tester, 'reviewer'), isNot(Mocha.surface0));
+      expect(rowColor(tester, 'my pane'), Graphite.selected);
+      expect(rowColor(tester, 'reviewer'), isNot(Graphite.selected));
       await close(tester);
     });
 
@@ -574,7 +574,7 @@ void main() {
       await tester.pump();
       expect(openPaneId(tester), 'w1:p2');
       expect(shown, [('w1:p3', true), ('w1:p2', true), ('w1:p3', false)]);
-      expect(rowColor(tester, 'reviewer'), isNot(Mocha.surface0));
+      expect(rowColor(tester, 'reviewer'), isNot(Graphite.selected));
       await close(tester);
     });
 

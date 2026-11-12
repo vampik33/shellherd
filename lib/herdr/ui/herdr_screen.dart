@@ -163,7 +163,7 @@ class _HerdrScreenState extends State<HerdrScreen> {
       SizedBox(
         width: 320,
         child: ColoredBox(
-          color: Mocha.mantle,
+          color: Graphite.chrome,
           child: _withSnapshot(
             state,
             (snapshot) =>
@@ -171,7 +171,7 @@ class _HerdrScreenState extends State<HerdrScreen> {
           ),
         ),
       ),
-      const VerticalDivider(width: 1, color: Mocha.surface0),
+      const VerticalDivider(width: 1),
       Expanded(
         child: switch (_pane) {
           final pane? => _paneScreen(pane, wide: true),

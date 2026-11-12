@@ -27,3 +27,13 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+  # Herdr app's fonts (SIL OFL 1.1, licences next to them).
+  fonts:
+    - family: Geist
+      fonts:
+        - asset: assets/fonts/Geist.ttf
+    - family: JetBrains Mono
+      fonts:
+        - asset: assets/fonts/JetBrainsMono-Variable.ttf
+        - asset: assets/fonts/JetBrainsMono-Italic-Variable.ttf
+          style: italic

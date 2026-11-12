@@ -3,9 +3,7 @@ import 'package:flutter/material.dart';
 import '../../ui/palette.dart';
 import '../api/herdr_client.dart';
 
-const _mono = 'monospace';
-
-/// The colour of an agent state, as in herdr. An unknown state is hollow.
+/// The colour of an agent state, as in Herdr app. An unknown state is hollow.
 class StatusDot extends StatelessWidget {
   const StatusDot(this.status, {super.key});
 
@@ -14,10 +12,10 @@ class StatusDot extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final color = switch (status) {
-      AgentStatus.blocked => Mocha.red,
-      AgentStatus.working => Mocha.yellow,
-      AgentStatus.done => Mocha.green,
-      AgentStatus.idle => Mocha.surface1,
+      AgentStatus.blocked => Graphite.blocked,
+      AgentStatus.working => Graphite.working,
+      AgentStatus.done => Graphite.done,
+      AgentStatus.idle => Graphite.idle,
       AgentStatus.unknown => null,
     };
     return Semantics(
@@ -28,7 +26,7 @@ class StatusDot extends StatelessWidget {
         decoration: BoxDecoration(
           shape: BoxShape.circle,
           color: color,
-          border: color == null ? Border.all(color: Mocha.overlay) : null,
+          border: color == null ? Border.all(color: Graphite.dim) : null,
         ),
       ),
     );
@@ -76,7 +74,7 @@ List<Widget> _agentRows(
     title: a.displayName,
     aside: '${workspaces[a.workspaceId]} › ${tabs[a.tabId]}',
     detail: a.title ?? _statusLine(a.status),
-    detailColor: a.status == AgentStatus.blocked ? Mocha.red : null,
+    detailColor: a.status == AgentStatus.blocked ? Graphite.blocked : null,
     selected: a.paneId == selected,
     onTap: () => onOpen(a.paneId),
   );
@@ -193,18 +191,18 @@ class _Section extends StatelessWidget {
         Text(
           title,
           style: const TextStyle(
-            fontFamily: _mono,
+            fontFamily: monoFont,
             fontSize: 12,
             fontWeight: FontWeight.w600,
-            color: Mocha.subtext,
+            color: Graphite.muted,
           ),
         ),
         Text(
           '$count',
           style: const TextStyle(
-            fontFamily: _mono,
+            fontFamily: monoFont,
             fontSize: 12,
-            color: Mocha.overlay,
+            color: Graphite.dim,
           ),
         ),
       ],
@@ -235,9 +233,9 @@ class _Row extends StatelessWidget {
   final VoidCallback? onTap;
 
   static const _dim = TextStyle(
-    fontFamily: _mono,
+    fontFamily: monoFont,
     fontSize: 12,
-    color: Mocha.overlay,
+    color: Graphite.dim,
   );
 
   @override
@@ -246,7 +244,7 @@ class _Row extends StatelessWidget {
     return Semantics(
       selected: selected,
       // Only the selected row gets a Material of its own, for its colour.
-      child: selected ? Material(color: Mocha.surface0, child: row) : row,
+      child: selected ? Material(color: Graphite.selected, child: row) : row,
     );
   }
 
@@ -267,7 +265,7 @@ class _Row extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: TextStyle(
-                    fontFamily: _mono,
+                    fontFamily: monoFont,
                     fontWeight: indent == 0 ? FontWeight.w700 : null,
                   ),
                 ),

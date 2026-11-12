@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:xterm/xterm.dart';
 
+import '../ui/palette.dart';
+
 /// Ctrl and alt from the key bar. A tap turns one on for the next key only.
 class StickyModifiers extends ChangeNotifier {
   bool _ctrl = false;
@@ -171,7 +173,7 @@ class _Key extends StatelessWidget {
             child: Text(
               label,
               style: TextStyle(
-                fontFamily: 'monospace',
+                fontFamily: monoFont,
                 color: on ? scheme.onPrimary : scheme.onSurface,
               ),
             ),

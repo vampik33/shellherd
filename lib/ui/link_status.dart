@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../ssh/host.dart';
 import '../ssh/ssh_connector.dart';
+import 'palette.dart';
 
 /// A strip above the content that says what went wrong.
 class StatusBanner extends StatelessWidget {
@@ -43,7 +44,7 @@ class StatusBanner extends StatelessWidget {
                         child: SelectableText(
                           detail,
                           style: TextStyle(
-                            fontFamily: 'monospace',
+                            fontFamily: monoFont,
                             fontSize: 12,
                             color: scheme.onErrorContainer,
                           ),
