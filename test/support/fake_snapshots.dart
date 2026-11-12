@@ -61,6 +61,7 @@ Map<String, Object?> fakeSnapshot({
   List<Map<String, Object?>> tabs = const [],
   List<Map<String, Object?>> panes = const [],
   List<Map<String, Object?>> agents = const [],
+  List<Map<String, Object?>>? layouts,
 }) => {
   'version': '0.9.5',
   'protocol': 22,
@@ -68,4 +69,26 @@ Map<String, Object?> fakeSnapshot({
   'tabs': tabs,
   'panes': panes,
   'agents': agents,
+  'layouts': ?layouts,
+};
+
+/// One tab's entry in `layouts`, with [panes] as pane id to (cols, rows).
+Map<String, Object?> fakeLayout(
+  String tabId,
+  Map<String, (int, int)> panes,
+) => {
+  'workspace_id': tabId.split(':').first,
+  'tab_id': tabId,
+  'zoomed': false,
+  'area': {'x': 0, 'y': 0, 'width': 120, 'height': 40},
+  'focused_pane_id': panes.keys.first,
+  'panes': [
+    for (final MapEntry(key: id, value: (cols, rows)) in panes.entries)
+      {
+        'pane_id': id,
+        'focused': id == panes.keys.first,
+        'rect': {'x': 0, 'y': 0, 'width': cols, 'height': rows},
+      },
+  ],
+  'splits': const <Object?>[],
 };

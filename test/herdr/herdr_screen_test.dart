@@ -376,8 +376,11 @@ void main() {
       tester.widget<PaneScreen>(find.byType(PaneScreen)).paneId,
       'w1:p3',
     );
+    // A herdr pane opens on the exact screen; without a stream it reads.
+    expect(tester.widget<PaneScreen>(find.byType(PaneScreen)).exactFirst, isTrue);
     await until(tester, () => links.single.herdr.reads.isNotEmpty, 'a read');
     expect(links.single.herdr.reads.first['pane_id'], 'w1:p3');
+    expect(links.single.herdr.reads.first['source'], 'visible');
     await close(tester);
   });
 

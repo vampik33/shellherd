@@ -9,6 +9,7 @@ import '../../ui/palette.dart';
 import '../api/herdr_client.dart';
 import '../herdr_connection.dart';
 import '../pane_poller.dart';
+import '../pane_stream.dart';
 import '../seen_marker.dart';
 import '../server_api.dart';
 import 'ansi_text.dart';
@@ -43,6 +44,7 @@ class PaneScreen extends StatefulWidget {
     this.showLink = true,
     this.draft,
     this.server = 'herdr',
+    this.exactFirst = false,
   });
 
   /// Owned by the screen below this one.
@@ -68,12 +70,17 @@ class PaneScreen extends StatefulWidget {
   /// The server's name in messages: herdr, or the Herdr app.
   final String server;
 
+  /// Opens on the exact screen instead of the text view: where the server
+  /// streams it, that view is live.
+  final bool exactFirst;
+
   @override
   State<PaneScreen> createState() => _PaneScreenState();
 }
 
 class _PaneScreenState extends State<PaneScreen> {
   late final PanePoller _poller;
+  late final PaneStream _stream;
   late final PaneSender _sender;
   late final AppLifecycleListener _lifecycle;
   late final Listenable _changes;
@@ -85,6 +92,9 @@ class _PaneScreenState extends State<PaneScreen> {
   ValueListenable<TickerModeData>? _uncovered;
   var _shown = true;
 
+  /// The poller reads: the pane is shown and the stream does not draw it.
+  var _polling = true;
+
   /// Message and detail of the last input that failed.
   (String, String?)? _failure;
 
@@ -94,7 +104,8 @@ class _PaneScreenState extends State<PaneScreen> {
   void initState() {
     super.initState();
     PaneApi? api() => widget.connection.api;
-    _poller = PanePoller(api, widget.paneId)..start();
+    _poller = PanePoller(api, widget.paneId);
+    if (_exact) _poller.source = ReadSource.visible;
     _sender = PaneSender(api, widget.paneId, onSent: _poller.kick);
     _lifecycle = AppLifecycleListener(
       onHide: () => _setAppShown(false),
@@ -102,11 +113,25 @@ class _PaneScreenState extends State<PaneScreen> {
     );
     widget.onShown?.call(true);
     _seen = SeenMarker(widget.connection, widget.paneId, _poller);
-    _changes = Listenable.merge([
+    final link = Listenable.merge([
       widget.connection.state,
       widget.connection.snapshot,
-      _poller.view,
     ]);
+    _stream = PaneStream(
+      () => widget.connection.screens,
+      widget.paneId,
+      _paneSize,
+      changes: link,
+    );
+    _changes = Listenable.merge([
+      link,
+      _poller.view,
+      _stream.view,
+      _stream.unavailable,
+    ])..addListener(_applySource);
+    // Before the first read: with a stream, the poller does not read.
+    _applySource();
+    _poller.start();
   }
 
   @override
@@ -131,27 +156,56 @@ class _PaneScreenState extends State<PaneScreen> {
     final shown = _appShown && (_uncovered?.value.enabled ?? true);
     if (shown == _shown) return;
     _shown = shown;
-    shown ? _poller.resume() : _poller.pause();
+    _applySource();
     widget.onShown?.call(shown);
     _seen.shown = shown;
   }
 
+  /// The exact screen comes from the stream where the server has one. It
+  /// keeps its last text while the link is down, and the poller takes over
+  /// for good when the stream is unavailable.
+  /// It also needs the pane size, which a snapshot without layouts lacks.
+  bool get _streaming =>
+      _exact &&
+      !_stream.unavailable.value &&
+      ((widget.connection.screens != null && _paneSize() != null) ||
+          _stream.view.value.text != null);
+
+  PaneSize? _paneSize() =>
+      widget.connection.snapshot.value?.paneSizes[widget.paneId];
+
+  /// Runs the stream or the poller, whichever shows the pane, and only
+  /// while it is shown.
+  void _applySource() {
+    final streaming = _streaming;
+    _stream.running = _shown && streaming;
+    final polling = _shown && !streaming;
+    if (polling == _polling) return;
+    _polling = polling;
+    polling ? _poller.resume() : _poller.pause();
+  }
+
   @override
   void dispose() {
+    _changes.removeListener(_applySource);
     _uncovered?.removeListener(_followShown);
     _lifecycle.dispose();
     _seen.dispose();
     widget.onShown?.call(false);
     _sender.cancel();
     _poller.dispose();
+    _stream.dispose();
     if (widget.draft == null) _composer.dispose();
     super.dispose();
   }
 
-  bool get _exact => _poller.source == ReadSource.visible;
+  /// The exact screen, else the text view.
+  late var _exact = widget.exactFirst;
 
   void _toggleExact() => setState(() {
-    _poller.source = _exact ? ReadSource.recentUnwrapped : ReadSource.visible;
+    _exact = !_exact;
+    _poller.source = _exact ? ReadSource.visible : ReadSource.recentUnwrapped;
+    _applySource();
   });
 
   /// Runs [send] and reports its failure. True if it worked.
@@ -211,7 +265,7 @@ class _PaneScreenState extends State<PaneScreen> {
     builder: (context, _) {
       final snapshot = widget.connection.snapshot.value;
       final state = widget.connection.state.value;
-      final view = _poller.view.value;
+      final view = _streaming ? _stream.view.value : _poller.view.value;
       final pane = snapshot?.pane(widget.paneId);
       return Scaffold(
         appBar: AppBar(
@@ -222,6 +276,7 @@ class _PaneScreenState extends State<PaneScreen> {
           },
           title: _Header(paneId: widget.paneId, pane: pane, snapshot: snapshot),
           actions: [
+            if (_exact) _feedIcon(state),
             IconButton(
               tooltip: _exact ? 'Text view' : 'Exact screen',
               icon: Icon(_exact ? Icons.notes : Icons.fit_screen_outlined),
@@ -247,6 +302,34 @@ class _PaneScreenState extends State<PaneScreen> {
       );
     },
   );
+
+  /// How the exact screen gets here: pushed live, or read again and again.
+  /// A tap says why.
+  Widget _feedIcon(LinkState state) {
+    final live = _streaming;
+    final why = _stream.whyUnavailable;
+    final message = live
+        ? 'Live: ${widget.server} sends each change of the screen as it '
+              'happens.'
+        : _stream.unavailable.value
+        ? 'Read again every few seconds: the live screen did not start'
+              '${why == null ? '' : ' ($why)'}. It is tried again after the '
+              'next reconnect.'
+        : state is LinkLive
+        ? 'Read again every few seconds: ${widget.server} sends no live '
+              'screen.'
+        : 'No link to ${widget.server} yet.';
+    return IconButton(
+      tooltip: live ? 'Live screen' : 'Screen read again',
+      icon: Icon(
+        live ? Icons.bolt : Icons.sync,
+        color: live ? Graphite.green : Graphite.dim,
+      ),
+      onPressed: () => ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(SnackBar(content: Text(message))),
+    );
+  }
 
   Widget? _statusBanner(LinkState state, PaneView view) {
     if (view.gone) return const StatusBanner('This pane is closed.');

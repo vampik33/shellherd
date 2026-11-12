@@ -236,6 +236,7 @@ class HerdrSnapshot {
     this.focusedWorkspaceId,
     this.focusedTabId,
     this.focusedPaneId,
+    this.paneSizes = const {},
   });
 
   factory HerdrSnapshot.fromJson(Map<String, Object?> j) => HerdrSnapshot(
@@ -248,6 +249,13 @@ class HerdrSnapshot {
     tabs: jsonList(j, 'tabs', Tab.fromJson),
     panes: jsonList(j, 'panes', Pane.fromJson),
     agents: jsonList(j, 'agents', Agent.fromJson),
+    paneSizes: {
+      for (final layout in jsonList(j, 'layouts', (l) => l))
+        for (final pane in jsonList(layout, 'panes', (p) => p))
+          jsonField<String>(pane, 'pane_id'): PaneSize.fromJson(
+            jsonField<Map<String, Object?>>(pane, 'rect'),
+          ),
+    },
   );
 
   final String version;
@@ -260,12 +268,38 @@ class HerdrSnapshot {
   final List<Pane> panes;
   final List<Agent> agents;
 
+  /// The size of each pane in cells, from herdr's `layouts`: its rect in
+  /// the tab, which is at least the size of its terminal. Empty where the
+  /// server gives no layout.
+  final Map<String, PaneSize> paneSizes;
+
   Pane? pane(String id) => panes.where((p) => p.id == id).firstOrNull;
 
   Workspace? workspace(String id) =>
       workspaces.where((w) => w.id == id).firstOrNull;
 
   Tab? tab(String id) => tabs.where((t) => t.id == id).firstOrNull;
+}
+
+/// A size in terminal cells.
+class PaneSize {
+  const PaneSize(this.cols, this.rows);
+
+  factory PaneSize.fromJson(Map<String, Object?> j) =>
+      PaneSize(jsonField<int>(j, 'width'), jsonField<int>(j, 'height'));
+
+  final int cols;
+  final int rows;
+
+  @override
+  bool operator ==(Object other) =>
+      other is PaneSize && other.cols == cols && other.rows == rows;
+
+  @override
+  int get hashCode => Object.hash(cols, rows);
+
+  @override
+  String toString() => '${cols}x$rows';
 }
 
 class PaneRead {

@@ -12,6 +12,7 @@ import 'hc_cache.dart';
 import 'hc_link.dart';
 import 'herdr_cache.dart';
 import 'herdr_link.dart';
+import 'pane_stream.dart';
 import 'server_api.dart';
 
 /// Where a [HerdrConnection] stands. The top bar of the herdr screens shows
@@ -80,6 +81,7 @@ class OpenLink {
     required this.cache,
     required this.done,
     required this.close,
+    this.screens,
   });
 
   /// A link to herdr.
@@ -88,8 +90,10 @@ class OpenLink {
     required HerdrPing server,
     required Future<void> done,
     required void Function() close,
+    ScreenOpener? screens,
   }) => OpenLink(
     api: HerdrPaneApi(client),
+    screens: screens,
     server: server,
     cache: (onSnapshot, {required debounce, required refreshEvery}) =>
         HerdrCache(
@@ -123,6 +127,9 @@ class OpenLink {
 
   final PaneApi api;
 
+  /// Starts live screen streams of panes; null where the server has none.
+  final ScreenOpener? screens;
+
   /// Who answered: version and protocol.
   final HerdrPing server;
   final CacheFactory cache;
@@ -154,6 +161,7 @@ LinkOpener sshLinkOpener(
         return OpenLink.herdr(
           link.client,
           server: link.server,
+          screens: sshScreenOpener(ssh, link.socketPath, timeout: timeout),
           done: ssh.done,
           close: ssh.close,
         );
@@ -203,11 +211,16 @@ class HerdrConnection {
   /// The last state of the session; null until the first sync.
   final snapshot = ValueNotifier<HerdrSnapshot?>(null);
 
-  PaneApi? _api;
+  /// The live link; null while there is none.
+  OpenLink? _live;
 
   /// The pane requests of the live link, for the open screen; null while
   /// there is none.
-  PaneApi? get api => _api;
+  PaneApi? get api => _live?.api;
+
+  /// The screen streams of the live link, for the open screen; null while
+  /// there is none, or where the server has none.
+  ScreenOpener? get screens => _live?.screens;
 
   /// Identifies the current run of [_run]. An older run sees that it is
   /// over and stops without touching the state.
@@ -231,7 +244,7 @@ class HerdrConnection {
   /// Drops the link and stays offline, keeping the [snapshot].
   void close() {
     _runId++;
-    _api = null;
+    _live = null;
     _endWait();
     if (_stop case final stop? when !stop.isCompleted) stop.complete('closed');
     state.value = const LinkOffline();
@@ -271,7 +284,7 @@ class HerdrConnection {
         await cache.start();
         if (!current()) return;
         failures = 0;
-        _api = link.api;
+        _live = link;
         state.value = LinkLive(link.server);
         // The first of these to complete is the reason the link ended.
         cause = await Future.any([
@@ -285,7 +298,7 @@ class HerdrConnection {
       } catch (e) {
         cause = e;
       } finally {
-        if (identical(_api, link?.api)) _api = null;
+        if (identical(_live, link)) _live = null;
         await cache?.close();
         link?.close();
       }

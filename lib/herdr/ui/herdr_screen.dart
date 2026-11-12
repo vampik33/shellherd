@@ -215,6 +215,7 @@ class _HerdrScreenState extends State<HerdrScreen> {
     onClose: wide ? null : _closePane,
     showLink: !wide,
     server: widget.host.herdrKind.label,
+    exactFirst: widget.host.herdrKind == HerdrKind.herdr,
   );
 
   void _openPane(String paneId) {

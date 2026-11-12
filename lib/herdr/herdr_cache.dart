@@ -5,8 +5,9 @@ import 'package:flutter/foundation.dart';
 import 'api/herdr_client.dart';
 import 'server_api.dart';
 
-/// Events that can change something in [HerdrSnapshot]. Output and layout
-/// are not here: the lists do not show them.
+/// Events that can change something in [HerdrSnapshot]. Output is not
+/// here: the lists do not show it. Layout is, for the pane sizes that the
+/// screen stream asks for.
 const _lifecycle = [
   Subscription.lifecycle('workspace.created'),
   Subscription.lifecycle('workspace.updated'),
@@ -27,6 +28,7 @@ const _lifecycle = [
   Subscription.lifecycle('pane.focused'),
   Subscription.lifecycle('pane.moved'),
   Subscription.lifecycle('pane.agent_detected'),
+  Subscription.lifecycle('layout.updated'),
 ];
 
 /// A pane can close between the snapshot and the subscribe, and herdr then

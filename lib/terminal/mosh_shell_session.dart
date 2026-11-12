@@ -69,9 +69,6 @@ class MoshStart {
 /// session that the app lost (killed, phone gone) does not stay forever.
 const moshServerTimeout = Duration(hours: 24);
 
-/// Quotes [s] for `sh`.
-String _shQuote(String s) => "'${s.replaceAll("'", r"'\''")}'";
-
 /// The environment variable that marks the mosh-server of one session.
 const _idVariable = 'SHELLHERD_MOSH_ID';
 
@@ -81,20 +78,20 @@ const _idVariable = 'SHELLHERD_MOSH_ID';
 /// into its environment, for [moshKillCommand].
 String moshStartCommand(String moshServer, String id) {
   final server = moshServer.startsWith('~/')
-      ? '"\$HOME"/${_shQuote(moshServer.substring(2))}'
-      : _shQuote(moshServer);
+      ? '"\$HOME"/${shQuote(moshServer.substring(2))}'
+      : shQuote(moshServer);
   final inner =
       '$_idVariable=$id '
       'MOSH_SERVER_NETWORK_TMOUT=${moshServerTimeout.inSeconds} '
       'exec $server new -s -c 256 -l LANG=C.UTF-8 2>&1';
-  return 'sh -c ${_shQuote(inner)}';
+  return 'sh -c ${shQuote(inner)}';
 }
 
 /// Ends [pid] only if it is the mosh-server started with [id]: once that
 /// server has exited, another process, even another mosh-server, can have
 /// its pid. It needs /proc, so on a PC without one it ends nothing, and the
 /// server exits after [moshServerTimeout].
-String moshKillCommand(int pid, String id) => 'sh -c ${_shQuote(
+String moshKillCommand(int pid, String id) => 'sh -c ${shQuote(
   "{ tr '\\0' '\\n' < /proc/$pid/environ; } 2>/dev/null "
   '| grep -qxF $_idVariable=$id && kill $pid',
 )}';
