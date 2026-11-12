@@ -79,26 +79,23 @@ class HcClient {
   /// Live terminals.
   Future<List<HcTerminal>> terminals() async {
     const method = 'terminal.list';
-    final r = await _rpc.call(method, const {}, timeout);
+    final r = await request(method);
     return jsonList(r, 'terminals', HcTerminal.fromJson);
   }
 
   /// [terminal] as the core sees it now.
   Future<HcTerminal> terminal(String terminal) async => HcTerminal.fromJson(
-    await _rpc.call('terminal.get', {'terminal': terminal}, timeout),
+    await request('terminal.get', {'terminal': terminal}),
   );
 
   /// Sets [labels] of [terminal]; others stay.
   Future<void> label(String terminal, Map<String, String> labels) async {
-    await _rpc.call('terminal.label', {
-      'terminal': terminal,
-      'labels': labels,
-    }, timeout);
+    await request('terminal.label', {'terminal': terminal, 'labels': labels});
   }
 
   /// The layout of the Herdr app.
   Future<HcLayout> layout() async {
-    final r = await _rpc.call('doc.get', {'name': HcLayout.document}, timeout);
+    final r = await request('doc.get', {'name': HcLayout.document});
     return HcLayout.fromJson(r['value']);
   }
 

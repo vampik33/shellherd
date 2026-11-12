@@ -13,16 +13,9 @@ export 'ndjson_transport.dart';
 /// Each [request] dials its own channel, because herdr closes a connection
 /// after one reply. [subscribe] keeps a dedicated channel open for events.
 class HerdrClient {
-  HerdrClient(
-    this._dial, {
-    this.timeout = const Duration(seconds: 15),
-    this.idPrefix = 'sh',
-  });
+  HerdrClient(this._dial, {this.timeout = const Duration(seconds: 15)});
 
   final HerdrDialer _dial;
-
-  /// Prefix of request ids, so herdr logs show which client sent what.
-  final String idPrefix;
 
   /// Default time to wait for the channel to open, and then again for the
   /// reply. A dialer over a stalled network can hang, so the dial is bounded
@@ -31,7 +24,8 @@ class HerdrClient {
 
   var _seq = 0;
 
-  String _nextId() => '$idPrefix-${++_seq}';
+  /// `sh-` marks this client's requests in herdr logs.
+  String _nextId() => 'sh-${++_seq}';
 
   /// Sends one raw request and returns its `result` object.
   Future<Map<String, Object?>> request(
@@ -146,7 +140,7 @@ class HerdrClient {
   ) async {
     final id = _nextId();
     final wait = timeout ?? this.timeout;
-    final channel = await _open(method, wait);
+    final channel = await openChannel(_dial, wait, method);
     // A channel can fail with an error of the SSH library.
     final lines = StreamIterator(
       decodeNdjson(channel.input).handleError(
@@ -170,9 +164,6 @@ class HerdrClient {
       rethrow;
     }
   }
-
-  Future<HerdrChannel> _open(String method, Duration wait) =>
-      openChannel(_dial, wait, method);
 
   static Future<Map<String, Object?>> _next(
     StreamIterator<Map<String, Object?>> lines,
