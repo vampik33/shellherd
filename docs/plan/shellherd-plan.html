@@ -420,7 +420,7 @@ void _apply(HerdrEvent e) => switch (e) {
   <doc-mock frame="phone" w="360" caption="A blocked agent shows its question above the composer.">
 <template>
 <div class="sh">
-  <div class="bar"><span class="ic">‹</span><span class="dot blocked"></span><span class="t">claude</span><span class="dim">api-server › 1 › w1:p2</span><span class="sp"></span><span class="ic" data-ref="mode">⇄</span></div>
+  <div class="bar"><span class="ic">‹</span><span class="dot blocked"></span><span class="t">claude</span><span class="dim">api-server › 1 › w1:p2</span><span class="sp"></span><span class="cg" data-ref="feed">⚡</span><span class="ic" data-ref="mode">⇄</span></div>
   <div class="term" style="white-space:pre-wrap;height:250px">● I will add the rate limit to the router.
 
 ● Update(src/routes.rs)
@@ -439,13 +439,45 @@ void _apply(HerdrEvent e) => switch (e) {
   <div class="comp" data-ref="comp"><div class="in">prompt claude…</div><div class="go">send</div></div>
 </div>
 </template>
-    <doc-pin ref="mode" anchor="bl" title="View mode">Switch between the text view and the exact screen.</doc-pin>
+    <doc-pin ref="feed" anchor="bl" title="Feed">A green bolt for the stream, grey arrows for the fallback. A tap gives the cause.</doc-pin>
+    <doc-pin ref="mode" anchor="br" title="View mode">Switch between the exact screen and the text view.</doc-pin>
     <doc-pin ref="ask" anchor="tr" title="Quick answers">Each button sends one herdr key.</doc-pin>
     <doc-pin ref="comp" anchor="tl" title="Composer">Sends with agent.prompt. The phone keyboard stays usable.</doc-pin>
   </doc-mock>
 
   <doc-claim>
-    <p>The app reads only the open pane, fast while its text changes.</p>
+    <p>The exact screen of a herdr pane is live: herdr pushes each change.</p>
+    <doc-calls title="Open the exact screen" caption="herdr sends a frame approximately 16 ms after the pane prints.">
+<script type="text/plain">
+~ **PaneScreen.initState**()                            @ lib/herdr/ui/pane_screen.dart:104   -- herdr panes open on the exact screen
++   PaneStream.running = true                           @ lib/herdr/pane_stream.dart:161      -- only while the pane is on the screen
++     PaneStream._observe(opener, size)                 @ lib/herdr/pane_stream.dart:226      -- size from the snapshot layouts
++       sshScreenOpener(ssh, socketPath)                @ lib/herdr/herdr_link.dart:174       -- one exec channel for each observer
++         herdr terminal session observe w1:p2 --cols 120 --rows 40   -- prints terminal.frame records
++       PaneStream._draw()                              @ lib/herdr/pane_stream.dart:206      -- once for the frames of one event-loop turn
++         screenText(terminal)                          @ lib/herdr/pane_stream.dart:301      -- the cells as SGR text for parseAnsi
++       ScreenClosed.paneGone                           @ lib/herdr/pane_stream.dart:82       -- the pane closed
+</script>
+    </doc-calls>
+    <doc-ask id="pane-view">
+      <p>What does the pane view show first?</p>
+      <label><input type="radio" name="paneView" value="text"> Reflowed text, source recent_unwrapped <small>fits the phone width; the Herdr app's panes open here</small></label>
+      <label><input type="radio" name="paneView" value="screen" checked> The exact screen, streamed into xterm.dart <small>keeps the layout; pinch to zoom; herdr panes open here</small></label>
+    </doc-ask>
+    <doc-note tone="info"><strong>Size</strong> An observer shows only the cells that fit its size. The app uses the pane rect from the snapshot <code>layouts</code>. A new size starts a new observer.</doc-note>
+    <doc-note tone="info"><strong>Why the CLI</strong> The JSON API has no output stream. The binary protocol needs the exact server version, but the observe command always matches its own server.</doc-note>
+
+    <doc-claim>
+      <p><code>lib/herdr/herdr_link.dart:234</code> · observeCommand</p>
+      <doc-code src="lib/herdr/herdr_link.dart" lines="234-258" hl="247">
+        <doc-pin line="247" tone="info" title="Stop on the end of stdin">The channel closes or SSH drops: herdr stops.</doc-pin>
+      </doc-code>
+      <doc-note tone="warn"><strong>Cleanup</strong> herdr sees a lost reader only when the pane prints again. So the command stops herdr when its stdin ends.</doc-note>
+    </doc-claim>
+  </doc-claim>
+
+  <doc-claim>
+    <p>The text view, the Herdr app and the fallback read the pane again.</p>
     <doc-code title="lib/herdr/pane_poller.dart · sketch" lang="dart" hl="8-9,14-15">
 <script type="text/plain">
 class PanePoller {
@@ -454,7 +486,7 @@ class PanePoller {
   var _last = '';
 
   Stream<String> watch(String paneId, ReadSource source) async* {
-    while (_active) {                       // false when the screen closes or the app pauses
+    while (_active) {                       // false when the screen closes, the app pauses or the stream draws
       final r = await api.call('pane.read', {'pane_id': paneId, 'source': source.wire,
           'format': 'ansi', 'strip_ansi': false, 'lines': 400});
       final text = (r['read'] as Map)['text'] as String;
@@ -470,12 +502,7 @@ class PanePoller {
 }
 </script>
     </doc-code>
-    <doc-ask id="pane-view">
-      <p>What does the pane view show first?</p>
-      <label><input type="radio" name="paneView" value="text" checked> Reflowed text, source recent_unwrapped <small>fits the phone width; colors kept</small></label>
-      <label><input type="radio" name="paneView" value="screen"> The exact screen, source visible, in xterm.dart <small>keeps the layout; the user pinches to zoom</small></label>
-    </doc-ask>
-    <doc-note tone="warn"><strong>Limit</strong> The JSON API has no output stream. The herdr thin client uses a private binary protocol, and v1 does not use it.</doc-note>
+    <doc-note tone="warn"><strong>Fallback</strong> If an observer fails before its first frame, the exact screen reads <code>pane.read</code> until the next link. Causes: no herdr, a version mismatch, no pane size. The feed icon shows grey arrows, and a tap gives the cause.</doc-note>
   </doc-claim>
 
   <doc-claim>
@@ -577,6 +604,7 @@ shellherd/
   + lib/herdr/herdr_link.dart
   + lib/herdr/herdr_cache.dart
   + lib/herdr/pane_poller.dart
+  + lib/herdr/pane_stream.dart         # live exact screen over herdr terminal session observe
   + lib/herdr/ui/agents_screen.dart
   + lib/herdr/ui/spaces_screen.dart
   + lib/herdr/ui/pane_screen.dart
@@ -665,7 +693,7 @@ test('subscribe, snapshot, then a new workspace shows in the cache', () async {
   <p>Not changing or not in v1: these stay out.</p>
   <ul>
     <li>iOS, macOS, Windows and web builds.</li>
-    <li>The herdr binary client protocol (the thin client screen stream).</li>
+    <li>The herdr binary client protocol. The exact screen uses <code>herdr terminal session observe</code> instead.</li>
     <li>Herdr over mosh. Mosh carries only a terminal screen, so herdr uses SSH.</li>
     <li>Worktree, plugin and integration management.</li>
     <li>SFTP, port forwards, jump hosts and ssh-agent.</li>
