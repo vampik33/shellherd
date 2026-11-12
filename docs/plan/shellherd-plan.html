@@ -5,24 +5,25 @@
 <link rel="stylesheet" href="htmlplan.css">
 <script src="htmlplan.js" defer></script>
 <style data-mock-shared>
-  /* Shellherd mock look: herdr default theme (catppuccin mocha), mono everywhere, phone touch targets. */
-  .sh { --base:#1e1e2e; --mantle:#181825; --crust:#11111b; --s0:#313244; --s1:#45475a; --ov:#6c7086; --sub:#a6adc8; --tx:#cdd6f4;
-        --blue:#89b4fa; --green:#a6e3a1; --yellow:#f9e2af; --red:#f38ba8; --peach:#fab387; --mauve:#cba6f7;
+  /* Shellherd mock look: Herdr app's default theme (graphite, lib/ui/palette.dart), Geist for bars, JetBrains Mono for lists and text, phone touch targets. */
+  .sh { --base:#17191d; --mantle:#101114; --crust:#17191d; --s0:#2c2e31; --s1:#45484f; --ov:#696a6d; --sub:#98999b; --tx:#eeeeef;
+        --blue:#96b2d7; --green:#a6bd91; --yellow:#d8be87; --red:#dc8c95; --peach:#ead2a1; --mauve:#b5a2ce;
+        --working:#e5c07b; --blocked:#f0705f; --done:#76a8ff;
         font: 13px/1.45 "JetBrains Mono", "Fira Code", ui-monospace, monospace; background: var(--base); color: var(--tx); }
   .sh * { box-sizing: border-box; }
   .sh .bar { display:flex; align-items:center; gap:8px; padding:10px 12px; background: var(--mantle); border-bottom:1px solid var(--s0); }
-  .sh .bar .t { font-weight:700; } .sh .bar .sp { flex:1; } .sh .bar .ic { color: var(--sub); }
+  .sh .bar .t, .sh .nav { font-family: Geist, ui-sans-serif, sans-serif; } .sh .bar .t { font-weight:700; } .sh .bar .sp { flex:1; } .sh .bar .ic { color: var(--sub); }
   .sh .sec { display:flex; justify-content:space-between; padding:10px 12px 4px; color: var(--ov); font-size:12px; text-transform:lowercase; }
   .sh .sec b { color: var(--sub); font-weight:600; }
   .sh .row { padding:9px 12px; border-bottom:1px solid var(--mantle); }
   .sh .row .l1 { display:flex; gap:8px; align-items:center; } .sh .row .l2 { color: var(--ov); padding-left:18px; font-size:12px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .sh .row.sel { background: var(--s0); box-shadow: inset 3px 0 0 var(--blue); }
   .sh .dot { width:9px; height:9px; border-radius:50%; display:inline-block; flex:none; }
-  .sh .blocked { background: var(--red); } .sh .working { background: var(--yellow); } .sh .done { background: var(--green); }
-  .sh .idle { background: var(--s1); } .sh .unknown { border:1px solid var(--ov); }
+  .sh .blocked { background: var(--blocked); } .sh .working { background: var(--working); } .sh .done { background: var(--done); }
+  .sh .idle { background: var(--ov); } .sh .unknown { border:1px solid var(--ov); }
   .sh .cr { color: var(--red); } .sh .cy { color: var(--yellow); } .sh .cg { color: var(--green); } .sh .cb { color: var(--blue); } .sh .cm { color: var(--mauve); } .sh .dim { color: var(--ov); } .sh .sub { color: var(--sub); }
   .sh .chip { font-size:11px; padding:2px 7px; border-radius:9px; background: var(--s0); color: var(--sub); white-space:nowrap; }
-  .sh .chip.on { background: #89b4fa22; color: var(--blue); } .sh .chip.warn { background:#f38ba822; color: var(--red); }
+  .sh .chip.on { background: #96b2d722; color: var(--blue); } .sh .chip.warn { background:#dc8c9522; color: var(--red); }
   .sh .nav { display:flex; border-top:1px solid var(--s0); background: var(--mantle); }
   .sh .nav div { flex:1; text-align:center; padding:9px 0 11px; color: var(--ov); font-size:12px; } .sh .nav .on { color: var(--blue); box-shadow: inset 0 2px 0 var(--blue); }
   .sh .seg { display:flex; margin:8px 12px; border:1px solid var(--s1); border-radius:7px; overflow:hidden; }
@@ -34,9 +35,9 @@
   .sh .comp { display:flex; gap:8px; align-items:center; padding:8px 10px; background: var(--mantle); }
   .sh .comp .in { flex:1; padding:9px 10px; border-radius:8px; background: var(--s0); color: var(--ov); }
   .sh .comp .go { padding:8px 12px; border-radius:8px; background: var(--blue); color: var(--crust); font-weight:700; }
-  .sh .card { margin:8px 10px; padding:10px; border:1px solid #f38ba866; border-radius:8px; background:#f38ba812; }
+  .sh .card { margin:8px 10px; padding:10px; border:1px solid #f0705f66; border-radius:8px; background:#f0705f12; }
   .sh .btns { display:flex; gap:6px; margin-top:8px; flex-wrap:wrap; } .sh .btns span { padding:7px 11px; border-radius:6px; background: var(--s0); }
-  .sh .btns span.pri { background: var(--red); color: var(--crust); font-weight:700; }
+  .sh .btns span.pri { background: var(--blocked); color: var(--crust); font-weight:700; }
   .sh .fab { margin:10px 12px 12px; padding:10px; text-align:center; border:1px dashed var(--s1); border-radius:8px; color: var(--sub); }
   .sh .state { padding:12px; display:flex; flex-direction:column; gap:8px; }
   .sh .banner { padding:8px 10px; border-radius:7px; background: var(--s0); display:flex; gap:8px; align-items:center; }
@@ -160,7 +161,7 @@ client:
   version: 0.9.5
 server:
   status: running
-❯ <span style="background:#cdd6f4">&nbsp;</span>
+❯ <span style="background:#d2d4d9">&nbsp;</span>
 
 
 
@@ -245,7 +246,7 @@ done
   <doc-mock frame="phone" w="360" caption="The agents tab sorts by attention, as the herdr priority mode does.">
 <template>
 <div class="sh">
-  <div class="bar"><span class="ic">‹</span><span class="t">workbox</span><span class="dim">· default</span><span class="sp"></span><span class="dot working" title="live" style="background:#a6e3a1"></span></div>
+  <div class="bar"><span class="ic">‹</span><span class="t">workbox</span><span class="dim">· default</span><span class="sp"></span><span class="dot working" title="live" style="background:#a6bd91"></span></div>
   <div class="seg" data-ref="seg"><div class="on">agents</div><div>spaces</div></div>
   <div class="sec"><b>needs you</b><span>1</span></div>
   <div class="row sel" data-ref="blocked">
@@ -349,8 +350,8 @@ failed      -edit->     offline      : edit host
       <div data-state="syncing"><doc-mock frame="none" w="320"><template><div class="sh"><div class="state"><div class="banner"><span class="dot working"></span><span class="sub">reading herdr session…</span></div></div></div></template></doc-mock></div>
       <div data-state="live"><doc-mock frame="none" w="320"><template><div class="sh"><div class="state"><div class="banner"><span class="dot done"></span><span class="sub">live · herdr 0.9.5 · protocol 22</span></div></div></div></template></doc-mock></div>
       <div data-state="reconnecting"><doc-mock frame="none" w="320"><template><div class="sh"><div class="state"><div class="banner"><span class="dot working"></span><span class="cy">link lost · retry in 4 s</span><span style="flex:1"></span><span class="cb">now</span></div></div></div></template></doc-mock></div>
-      <div data-state="no_server"><doc-mock frame="none" w="320"><template><div class="sh"><div class="state"><div class="banner"><span class="dot unknown"></span><span class="sub">herdr is not running on workbox</span></div><div class="btns"><span class="pri" style="background:#89b4fa">retry</span><span>terminal</span></div></div></div></template></doc-mock></div>
-      <div data-state="failed"><doc-mock frame="none" w="320"><template><div class="sh"><div class="state"><div class="banner" style="background:#f38ba822"><span class="dot blocked"></span><span class="cr">host key changed for workbox</span></div><div class="dim">SHA256:Qm4x… was SHA256:8fKd…</div><div class="btns"><span>edit host</span></div></div></div></template></doc-mock></div>
+      <div data-state="no_server"><doc-mock frame="none" w="320"><template><div class="sh"><div class="state"><div class="banner"><span class="dot unknown"></span><span class="sub">herdr is not running on workbox</span></div><div class="btns"><span class="pri" style="background:#96b2d7">retry</span><span>terminal</span></div></div></div></template></doc-mock></div>
+      <div data-state="failed"><doc-mock frame="none" w="320"><template><div class="sh"><div class="state"><div class="banner" style="background:#f0705f22"><span class="dot blocked"></span><span class="cr">host key changed for workbox</span></div><div class="dim">SHA256:Qm4x… was SHA256:8fKd…</div><div class="btns"><span>edit host</span></div></div></div></template></doc-mock></div>
     </doc-machine>
     <doc-ask id="start-server">
       <p>When no herdr server runs, can the app start one?</p>
@@ -388,7 +389,7 @@ void _apply(HerdrEvent e) => switch (e) {
     <doc-mock frame="desktop" w="480" thumbnail title="shellherd — workbox" caption="At 840 dp and wider, the Linux window looks like the herdr TUI.">
 <template>
 <div class="sh" style="display:flex;height:260px">
-  <div style="width:150px;background:#181825;border-right:1px solid #313244;font-size:11px">
+  <div style="width:150px;background:#101114;border-right:1px solid #ffffff18;font-size:11px">
     <div class="sec"><b>spaces</b></div>
     <div class="row"><div class="l1"><span class="dot blocked"></span>api-server</div></div>
     <div class="row sel"><div class="l1"><span class="dot working"></span>shellherd</div></div>
@@ -499,7 +500,7 @@ class PanePoller {
   <p>The phone shows a notification when an agent becomes blocked or done.</p>
   <doc-mock frame="none" w="360" caption="A tap opens that pane.">
 <template>
-<div class="sh" style="border-radius:12px;padding:12px;background:#313244">
+<div class="sh" style="border-radius:12px;padding:12px;background:#2c2e31">
   <div class="dim" style="font-size:11px">shellherd · workbox · now</div>
   <div style="font-weight:700;margin-top:4px"><span class="cr">●</span> claude needs approval</div>
   <div class="sub">api-server › 1 · Do you want to make this edit to routes.rs?</div>
@@ -556,7 +557,7 @@ void onStatus(PaneAgentStatusChanged e) {
 shellherd/
   + pubspec.yaml
   + lib/main.dart
-  + lib/app/theme.dart                 # herdr catppuccin tokens, mono font
+  + lib/app/theme.dart                 # Herdr app graphite tokens, Geist + JetBrains Mono
   + lib/app/router.dart
   + lib/hosts/host.dart
   + lib/hosts/host_store.dart
