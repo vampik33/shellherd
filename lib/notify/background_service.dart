@@ -6,6 +6,7 @@ import 'package:path_provider/path_provider.dart';
 
 import '../app.dart';
 import '../ssh/host.dart';
+import '../ssh/ids.dart';
 import '../ssh/secret_store.dart';
 import 'notifier.dart';
 import 'notify_control.dart';
@@ -18,8 +19,10 @@ const _shown = 'shown';
 
 const _title = 'shellherd watches agents';
 
-/// The button on the service notification that stops the watching.
-const _stopButton = 'stop';
+/// Where the id of the Stop button on the service notification is saved.
+/// The id is random, so that only a press of the button stops the
+/// watching: before Android 13 any app can send the button's broadcast.
+const _stopButtonKey = 'stopButtonId';
 
 /// Android: the watchers run in a foreground service, in an isolate of
 /// their own, so they go on when the app is closed. The service runs while
@@ -46,6 +49,10 @@ class ServiceNotify implements NotifyControl {
   final HostStore _hosts;
   PaneTarget? _target;
 
+  /// Saved as the Stop button id if none is saved yet. One per instance, so
+  /// that syncs at the same time save the same id.
+  final _newStopButtonId = randomId();
+
   @override
   Future<bool> sync({bool ask = false}) async {
     final (hosts, running) = await (
@@ -64,6 +71,7 @@ class ServiceNotify implements NotifyControl {
     if (running) {
       FlutterForegroundTask.sendDataToTask(_reload);
     } else {
+      final stopButton = await _stopButtonId();
       _check(
         await FlutterForegroundTask.startService(
           serviceId: reservedNotificationId,
@@ -73,8 +81,8 @@ class ServiceNotify implements NotifyControl {
           notificationIcon: const NotificationIcon(
             metaDataName: 'io.github.vampik33.shellherd.NOTIFICATION_ICON',
           ),
-          notificationButtons: const [
-            NotificationButton(id: _stopButton, text: 'Stop'),
+          notificationButtons: [
+            NotificationButton(id: stopButton, text: 'Stop'),
           ],
           callback: startWatchService,
         ),
@@ -98,6 +106,21 @@ class ServiceNotify implements NotifyControl {
 
   static void _check(ServiceRequestResult result) {
     if (result case ServiceRequestFailure(:final error)) throw error;
+  }
+
+  /// The saved Stop button id, saved first if there is none. It stays the
+  /// same from then on, so the button on a notification that the system
+  /// builds again after a restart of the service still carries it.
+  Future<String> _stopButtonId() async {
+    final saved = await FlutterForegroundTask.getData<String>(
+      key: _stopButtonKey,
+    );
+    if (saved != null) return saved;
+    final id = _newStopButtonId;
+    if (!await FlutterForegroundTask.saveData(key: _stopButtonKey, value: id)) {
+      throw StateError('cannot save the Stop button id');
+    }
+    return id;
   }
 
   @override
@@ -173,8 +196,14 @@ class _WatchTask extends TaskHandler {
 
   /// Stop closes every SSH link of the watchers; [onDestroy] follows.
   @override
-  void onNotificationButtonPressed(String id) {
-    if (id == _stopButton) unawaited(FlutterForegroundTask.stopService());
+  void onNotificationButtonPressed(String id) => unawaited(_pressed(id));
+
+  /// Only the saved Stop button id counts, see [_stopButtonKey].
+  Future<void> _pressed(String id) async {
+    final stopButton = await FlutterForegroundTask.getData<String>(
+      key: _stopButtonKey,
+    );
+    if (id == stopButton) await FlutterForegroundTask.stopService();
   }
 
   @override
