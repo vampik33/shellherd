@@ -24,6 +24,9 @@ const _title = 'shellherd watches agents';
 /// watching: before Android 13 any app can send the button's broadcast.
 const _stopButtonKey = 'stopButtonId';
 
+Future<String?> _savedStopButtonId() =>
+    FlutterForegroundTask.getData<String>(key: _stopButtonKey);
+
 /// Android: the watchers run in a foreground service, in an isolate of
 /// their own, so they go on when the app is closed. The service runs while
 /// a saved host has [Host.notify] on, and starts again only with the app.
@@ -112,9 +115,7 @@ class ServiceNotify implements NotifyControl {
   /// same from then on, so the button on a notification that the system
   /// builds again after a restart of the service still carries it.
   Future<String> _stopButtonId() async {
-    final saved = await FlutterForegroundTask.getData<String>(
-      key: _stopButtonKey,
-    );
+    final saved = await _savedStopButtonId();
     if (saved != null) return saved;
     final id = _newStopButtonId;
     if (!await FlutterForegroundTask.saveData(key: _stopButtonKey, value: id)) {
@@ -200,10 +201,9 @@ class _WatchTask extends TaskHandler {
 
   /// Only the saved Stop button id counts, see [_stopButtonKey].
   Future<void> _pressed(String id) async {
-    final stopButton = await FlutterForegroundTask.getData<String>(
-      key: _stopButtonKey,
-    );
-    if (id == stopButton) await FlutterForegroundTask.stopService();
+    if (id == await _savedStopButtonId()) {
+      await FlutterForegroundTask.stopService();
+    }
   }
 
   @override
