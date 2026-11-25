@@ -109,25 +109,35 @@ void main() {
 
       test('an end marker in the text cannot end the paste', () {
         bracketed();
-        expect(pasted('echo hi${end}id\r'), 'echo hiid\r');
+        expect(pasted('echo hi${end}id\r'), 'echo hi[201~id\r');
       });
 
-      test('an end marker that taking one out puts together goes too', () {
+      test('the signal characters cannot end the paste', () {
+        // The tty drops the input queued before ^C, ^Z or ^\, start marker
+        // and all, and the rest would run as typed.
         bracketed();
-        expect(pasted('\x1b[20${end}1~id\r'), 'id\r');
-        expect(pasted('\x1b\x1b[201~[201~x'), 'x');
+        for (final c in ['\x03', '\x1a', '\x1c']) {
+          expect(pasted('echo hi${c}id\r'), 'echo hiid\r');
+        }
       });
 
-      test('text without an end marker passes as it is', () {
+      test('ESC, the other C0 controls, DEL and C1 go; tab, LF, CR stay', () {
         bracketed();
-        const text = 'ls -l\r\x1b[A😀$start\x1b[201\x1b[20~';
+        expect(pasted('ls -l\r\x1b[A'), 'ls -l\r[A');
+        expect(pasted('a\x00b\x07c\x08d\x7fe\x80f\x9bg\x9fh'), 'abcdefgh');
+        expect(pasted('a\tb\nc\r'), 'a\tb\nc\r');
+      });
+
+      test('text with no control character passes as it is', () {
+        bracketed();
+        const text = 'ls -l | grep "x" ~ ä €  ÿ😀';
         expect(pasted(text), text);
         expect(pasted(''), '');
       });
 
-      test('without bracketed paste the text goes as typed, markers out', () {
-        terminal.paste('ls$end\r');
-        expect(sent, ['ls\r']);
+      test('without bracketed paste the text goes as typed, unchanged', () {
+        terminal.paste('ls$end\x03\r');
+        expect(sent, ['ls$end\x03\r']);
       });
 
       test('several characters at once from the keyboard go as a paste', () {
@@ -136,11 +146,11 @@ void main() {
         expect(sent, ['${start}ls -l\r$end']);
       });
 
-      test('several characters from the keyboard lose the end marker', () {
-        terminal.textInput('a${end}b\r');
+      test('several characters from the keyboard lose the controls', () {
+        terminal.textInput('a${end}b\x1c\r');
         bracketed();
-        terminal.textInput('a${end}b\r');
-        expect(sent, ['ab\r', '${start}ab\r$end']);
+        terminal.textInput('a${end}b\x1c\r');
+        expect(sent, ['a${end}b\x1c\r', '${start}a[201~b\r$end']);
       });
 
       test(
@@ -187,12 +197,12 @@ void main() {
         // A paste from the keyboard's clipboard comes as one commit.
         tester.testTextInput.updateEditingValue(
           TextEditingValue(
-            text: 'ls$end -l\n',
-            selection: const TextSelection.collapsed(offset: 11),
+            text: 'ls$end -l\x1c\n',
+            selection: const TextSelection.collapsed(offset: 12),
           ),
         );
         await tester.pump();
-        expect(sent, ['${start}ls -l\n$end']);
+        expect(sent, ['${start}ls[201~ -l\n$end']);
         tester.testTextInput.updateEditingValue(
           const TextEditingValue(
             text: 'q',
@@ -203,41 +213,30 @@ void main() {
         expect(sent.last, 'q');
       });
 
-      test('matches taking markers out until none is left', () {
-        String oracle(String s) {
-          var out = s;
-          while (out.contains(end)) {
-            out = out.replaceAll(end, '');
-          }
-          return out;
-        }
+      test('keeps exactly the characters that are no controls, in order', () {
+        // The oracle: the rule spelled out, one code unit at a time.
+        bool dropped(int c) =>
+            (c < 0x20 && c != 0x09 && c != 0x0a && c != 0x0d) ||
+            (c >= 0x7f && c <= 0x9f);
+        String oracle(String s) =>
+            String.fromCharCodes(s.codeUnits.where((c) => !dropped(c)));
 
-        const pieces = [
-          '\x1b',
-          '[',
-          '2',
-          '0',
-          '1',
-          '~',
-          end,
-          '\x1b[20',
-          '01~',
-          '1~',
-          start,
-          'a',
-          '\r',
-          '😀',
-        ];
+        const pieces = [end, start, 'a', ' ', '~', 'ä', '😀', ' '];
         bracketed();
         for (var seed = 0; seed < 3000; seed++) {
           final random = Random(seed);
           final text = [
             for (var i = random.nextInt(24); i > 0; i--)
-              pieces[random.nextInt(pieces.length)],
+              random.nextBool()
+                  ? pieces[random.nextInt(pieces.length)]
+                  // Any code unit up to U+00FF: every control and the
+                  // characters on both sides of each range.
+                  : String.fromCharCode(random.nextInt(0x100)),
           ].join();
           final inner = pasted(text);
           expect(inner, oracle(text), reason: 'seed $seed');
-          expect(inner.contains(end), isFalse, reason: 'seed $seed');
+          expect(inner.codeUnits.where(dropped), isEmpty, reason: 'seed $seed');
+          expect(inner.contains('\x1b'), isFalse, reason: 'seed $seed');
           expect(pasted(inner), inner, reason: 'idempotent, seed $seed');
         }
       });

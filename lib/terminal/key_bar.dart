@@ -96,47 +96,27 @@ class StickyTerminal extends Terminal {
   }
 
   /// xterm.dart puts pasted text between the bracketed paste markers as it
-  /// is: an end marker in the text would end the paste there, and the
+  /// is, and some control characters in it would end the paste early: the
   /// program would take the rest as typed, so a newline in it would run a
-  /// command. The end markers are taken out first.
+  /// command. ESC starts the end marker; the tty's signal characters (^C, ^Z
+  /// and ^\ by default) make it drop the input queued before them, start
+  /// marker and all. So a bracketed paste drops [_pasteControls].
   ///
   /// Without bracketed paste, xterm.dart's paste hands the text to
   /// [textInput], which would hand it back here; it goes out directly.
   @override
   void paste(String text) {
-    final clean = _withoutPasteEnd(text);
     if (bracketedPasteMode) {
-      super.paste(clean);
+      super.paste(text.replaceAll(_pasteControls, ''));
     } else {
-      super.textInput(clean);
+      super.textInput(text);
     }
   }
 }
 
-/// The end marker of a bracketed paste.
-const _pasteEnd = '\x1b[201~';
-
-/// [text] with no [_pasteEnd] left in it. Taking one out can join the text
-/// around it into another, as in `ESC[20 ESC[201~ 1~`, so each one goes as
-/// soon as it is complete, and the text kept never holds one.
-String _withoutPasteEnd(String text) {
-  if (!text.contains(_pasteEnd)) return text;
-  final out = <int>[];
-  for (final unit in text.codeUnits) {
-    out.add(unit);
-    if (_endsWithPasteEnd(out)) out.length -= _pasteEnd.length;
-  }
-  return String.fromCharCodes(out);
-}
-
-bool _endsWithPasteEnd(List<int> units) {
-  final start = units.length - _pasteEnd.length;
-  if (start < 0) return false;
-  for (var i = 0; i < _pasteEnd.length; i++) {
-    if (units[start + i] != _pasteEnd.codeUnitAt(i)) return false;
-  }
-  return true;
-}
+/// The control characters a bracketed paste drops: C0 but tab, newline and
+/// carriage return, DEL, and C1.
+final _pasteControls = RegExp(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]');
 
 /// The keys that a phone keyboard does not have. It scrolls sideways.
 class KeyBar extends StatelessWidget {
