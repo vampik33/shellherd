@@ -36,63 +36,109 @@ Every release is signed with the same key. To check an APK before you install
 it, compare its certificate with this SHA-256
 (`apksigner verify --print-certs shellherd.apk`):
 
-    f4ba4f8c2b4bc3779b32569971dae1d9c4a88071418e92adccfafe90be2a5654
+```text
+f4ba4f8c2b4bc3779b32569971dae1d9c4a88071418e92adccfafe90be2a5654
+```
 
 ## Security
 
-Private keys and passwords stay on the phone, in storage that the Android
-Keystore encrypts, and the app's data is left out of Android backups. A
-server's key is trusted on first use, after you confirm its fingerprint; a
-changed key stops the connection. See [SECURITY.md](SECURITY.md) for the
-details and for how to report a vulnerability.
+Private keys and passwords are stored on the phone, encrypted with a key in
+the Android Keystore, and the app's data is left out of Android backups.
+Private keys never leave the phone; a password goes only to the server you
+log in to, once its key matches the one you trusted.
+[SECURITY.md](SECURITY.md) has the details and how to report a vulnerability.
 
-## Build
+## Development
 
-Flutter 3.47.9 (the revision in `.metadata`).
+### Build
+
+Use the Flutter version that CI pins (`flutter-version` in
+[.github/workflows/ci.yml](.github/workflows/ci.yml)).
 
 Linux desktop, on Ubuntu:
 
-    sudo apt install clang cmake ninja-build pkg-config libgtk-3-dev libsecret-1-dev
-    flutter run -d linux
+```sh
+sudo apt install clang cmake ninja-build pkg-config libgtk-3-dev libsecret-1-dev
+flutter run -d linux
+```
+
+If the first Linux build failed (for example, without libsecret), it cached
+the wrong install prefix: delete `build/linux` and build again.
 
 Android needs the Android SDK (platform 36, build-tools 36, NDK 28.2.13676358)
 and JDK 17 or newer; `flutter doctor` lists what is missing.
 
-## Test
+### Test
 
-    flutter analyze
-    flutter test --exclude-tags herdr,hc,sshd,docker   # offline tests only
+CI runs these two on every pull request; both must pass:
 
-Without `--exclude-tags`, the tests also start a throwaway sshd, herdr
-server, herdr-core or Docker container (tags in `dart_test.yaml`). A test
-whose program is missing skips itself. The Docker tests need Docker and the
-password and Tailscale login tests need paramiko:
+```sh
+flutter analyze
+flutter test --exclude-tags herdr,hc,sshd,docker   # offline tests only
+```
 
-    sudo apt install docker.io python3-paramiko
-    sudo usermod -aG docker $USER   # gives root-equivalent access
+Plain `flutter test` also runs the live tests, which start a throwaway sshd,
+herdr server, herdr-core or Docker container (tags in
+[dart_test.yaml](dart_test.yaml)). A test whose program is missing skips
+itself. The Docker tests need Docker and the password and Tailscale login
+tests need paramiko:
+
+```sh
+sudo apt install docker.io python3-paramiko
+sudo usermod -aG docker $USER   # gives root-equivalent access
+```
 
 Until you log in again, a shell without the docker group runs the suite as
 `sg docker -c "flutter test"`.
 
-## Release
+### Contributing
+
+- Work on a branch and open a pull request; pull requests are merged with
+  merge commits.
+- Commit subjects are short imperative sentences ("Find the hc socket where
+  hc puts it"). A version bump is its own commit, "Bump the version to
+  X.Y.Z+N", in `pubspec.yaml`.
+- The repository is public: no secrets, home paths, email addresses or IP
+  addresses in tracked files.
+
+### Release
 
 Release builds are signed with the key named in `android/key.properties`
-(gitignored, as is the keystore):
+(gitignored, as is the keystore). Without it, `flutter build apk --release`
+stops.
 
-    storeFile=<absolute path to the .jks>
-    storePassword=...
-    keyAlias=...
-    keyPassword=...
+```properties
+storeFile=<absolute path to the .jks>
+storePassword=...
+keyAlias=...
+keyPassword=...
+```
 
-Without it, `flutter build apk --release` stops. Every release must use the
-same key, or it will not install over the previous one. `apksigner` is in the
-Android SDK's build-tools:
+1. Merge the version bump to main, then build from that commit on a clean
+   tree (the last command must print nothing):
 
-    flutter build apk --release
-    apksigner verify --print-certs build/app/outputs/flutter-apk/app-release.apk
+   ```sh
+   git switch main && git pull --ff-only && git status --short
+   ```
 
-Compare the certificate SHA-256 with the previous release's APK, then tag
-`vX.Y.Z` on main and attach the APK to the GitHub release as `shellherd.apk`.
+2. Build the APK and print its signing certificate (`apksigner` is in the
+   Android SDK's build-tools):
+
+   ```sh
+   flutter build apk --release
+   apksigner verify --print-certs build/app/outputs/flutter-apk/app-release.apk
+   ```
+
+3. Check that the certificate SHA-256 matches the one under
+   [Install](#install). An APK signed with another key does not install over
+   the previous release.
+4. Tag the commit you built (`git rev-parse HEAD`), not whatever main is
+   then, with an annotated tag `vX.Y.Z` (no `+N`) whose message is
+   "shellherd X.Y.Z", and push it.
+5. Make a GitHub release from the tag, named "shellherd X.Y.Z", with the APK
+   as its only asset, `shellherd.apk`. The notes start with
+   "Covers X.Y.Z (#PR)" and end with an Install section that says which
+   release's key signed it.
 
 ## License
 

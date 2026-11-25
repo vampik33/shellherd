@@ -59,6 +59,5 @@ id_ecdsa*
 id_ed25519*
 known_hosts
 
-# Generated plan pages (docs/plan/*.html is the source)
-docs/plan/*.packed.html
-docs/plan/*.artifact.html
+# Design plans (html-plan pages) stay local
+docs/plan/
