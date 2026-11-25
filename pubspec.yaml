@@ -1,7 +1,7 @@
 name: shellherd
 description: "Android app that logs in to your computers over SSH or mosh and watches coding agents in herdr panes."
 publish_to: 'none'
-version: 0.1.10+11
+version: 0.1.11+12
 
 environment:
   sdk: ^3.13.7
