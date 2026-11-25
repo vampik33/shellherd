@@ -60,7 +60,10 @@ void main() {
       final terminal = tester
           .widget<TerminalView>(find.byType(TerminalView))
           .terminal;
-      terminal.textInput("printf 'flow%s\\n' ok\r");
+      // As the phone keyboard sends them: the line, then Enter on its own.
+      terminal
+        ..textInput("printf 'flow%s\\n' ok")
+        ..keyInput(TerminalKey.enter);
       await until(
         tester,
         () => terminal.buffer.getText().contains('flowok'),

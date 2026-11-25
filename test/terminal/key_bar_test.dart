@@ -1,3 +1,6 @@
+import 'dart:math';
+
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shellherd/terminal/key_bar.dart';
@@ -85,6 +88,158 @@ void main() {
       mods.toggleCtrl();
       terminal.keyInput(TerminalKey.arrowUp);
       expect(sent, ['\x1b[1;5A']);
+    });
+
+    group('paste', () {
+      const start = '\x1b[200~', end = '\x1b[201~';
+
+      /// The program turns bracketed paste on.
+      void bracketed() => terminal.write('\x1b[?2004h');
+
+      /// What one bracketed paste of [text] sends between the markers.
+      String pasted(String text) {
+        sent.clear();
+        terminal.paste(text);
+        expect(sent, hasLength(1));
+        final out = sent.single;
+        expect(out, startsWith(start));
+        expect(out, endsWith(end));
+        return out.substring(start.length, out.length - end.length);
+      }
+
+      test('an end marker in the text cannot end the paste', () {
+        bracketed();
+        expect(pasted('echo hi${end}id\r'), 'echo hi[201~id\r');
+      });
+
+      test('the signal characters cannot end the paste', () {
+        // The tty drops the input queued before ^C, ^Z or ^\, start marker
+        // and all, and the rest would run as typed.
+        bracketed();
+        for (final c in ['\x03', '\x1a', '\x1c']) {
+          expect(pasted('echo hi${c}id\r'), 'echo hiid\r');
+        }
+      });
+
+      test('ESC, the other C0 controls, DEL and C1 go; tab, LF, CR stay', () {
+        bracketed();
+        expect(pasted('ls -l\r\x1b[A'), 'ls -l\r[A');
+        expect(pasted('a\x00b\x07c\x08d\x7fe\x80f\x9bg\x9fh'), 'abcdefgh');
+        expect(pasted('a\tb\nc\r'), 'a\tb\nc\r');
+      });
+
+      test('text with no control character passes as it is', () {
+        bracketed();
+        const text = 'ls -l | grep "x" ~ ä €  ÿ😀';
+        expect(pasted(text), text);
+        expect(pasted(''), '');
+      });
+
+      test('without bracketed paste the text goes as typed, unchanged', () {
+        terminal.paste('ls$end\x03\r');
+        expect(sent, ['ls$end\x03\r']);
+      });
+
+      test('several characters at once from the keyboard go as a paste', () {
+        bracketed();
+        terminal.textInput('ls -l\r');
+        expect(sent, ['${start}ls -l\r$end']);
+      });
+
+      test('several characters from the keyboard lose the controls', () {
+        terminal.textInput('a${end}b\x1c\r');
+        bracketed();
+        terminal.textInput('a${end}b\x1c\r');
+        expect(sent, ['a${end}b\x1c\r', '${start}a[201~b\r$end']);
+      });
+
+      test(
+        'one character from the keyboard is typed, also outside the BMP',
+        () {
+          bracketed();
+          terminal.textInput('a');
+          terminal.textInput('😀');
+          expect(sent, ['a', '😀']);
+        },
+      );
+
+      test('a paste does not use the sticky modifiers up', () {
+        mods.toggleCtrl();
+        terminal.textInput('cd');
+        terminal.paste('x');
+        expect(sent, ['cd', 'x']);
+        expect(mods.ctrl, isTrue);
+        terminal.textInput('c');
+        expect(sent.last, '\x03');
+      });
+
+      testWidgets('what the phone keyboard commits goes through TerminalView', (
+        tester,
+      ) async {
+        bracketed();
+        await tester.pumpWidget(
+          MaterialApp(home: Scaffold(body: TerminalView(terminal))),
+        );
+        // A tap opens the phone keyboard.
+        await tester.tap(find.byType(TerminalView));
+        await tester.pump(kDoubleTapTimeout);
+        expect(tester.testTextInput.hasAnyClients, isTrue);
+        // Text the keyboard still composes goes nowhere yet.
+        tester.testTextInput.updateEditingValue(
+          const TextEditingValue(
+            text: 'ls',
+            composing: TextRange(start: 0, end: 2),
+            selection: TextSelection.collapsed(offset: 2),
+          ),
+        );
+        await tester.pump();
+        expect(sent, isEmpty);
+        // A paste from the keyboard's clipboard comes as one commit.
+        tester.testTextInput.updateEditingValue(
+          TextEditingValue(
+            text: 'ls$end -l\x1c\n',
+            selection: const TextSelection.collapsed(offset: 12),
+          ),
+        );
+        await tester.pump();
+        expect(sent, ['${start}ls[201~ -l\n$end']);
+        tester.testTextInput.updateEditingValue(
+          const TextEditingValue(
+            text: 'q',
+            selection: TextSelection.collapsed(offset: 1),
+          ),
+        );
+        await tester.pump();
+        expect(sent.last, 'q');
+      });
+
+      test('keeps exactly the characters that are no controls, in order', () {
+        // The oracle: the rule spelled out, one code unit at a time.
+        bool dropped(int c) =>
+            (c < 0x20 && c != 0x09 && c != 0x0a && c != 0x0d) ||
+            (c >= 0x7f && c <= 0x9f);
+        String oracle(String s) =>
+            String.fromCharCodes(s.codeUnits.where((c) => !dropped(c)));
+
+        const pieces = [end, start, 'a', ' ', '~', 'ä', '😀', ' '];
+        bracketed();
+        for (var seed = 0; seed < 3000; seed++) {
+          final random = Random(seed);
+          final text = [
+            for (var i = random.nextInt(24); i > 0; i--)
+              random.nextBool()
+                  ? pieces[random.nextInt(pieces.length)]
+                  // Any code unit up to U+00FF: every control and the
+                  // characters on both sides of each range.
+                  : String.fromCharCode(random.nextInt(0x100)),
+          ].join();
+          final inner = pasted(text);
+          expect(inner, oracle(text), reason: 'seed $seed');
+          expect(inner.codeUnits.where(dropped), isEmpty, reason: 'seed $seed');
+          expect(inner.contains('\x1b'), isFalse, reason: 'seed $seed');
+          expect(pasted(inner), inner, reason: 'idempotent, seed $seed');
+        }
+      });
     });
 
     test('replies of the terminal to the program ignore the modifiers', () {

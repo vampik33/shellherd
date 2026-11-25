@@ -82,9 +82,41 @@ class StickyTerminal extends Terminal {
     return handled;
   }
 
+  /// Text from the phone keyboard or the key bar. More than one character
+  /// at once is not a typed key but a paste from the keyboard's clipboard,
+  /// or text it composed: it goes as [paste], without the sticky modifiers,
+  /// which stay on for the next key.
   @override
-  void textInput(String text) => super.textInput(modifiers.apply(text));
+  void textInput(String text) {
+    if (text.runes.length > 1) {
+      paste(text);
+    } else {
+      super.textInput(modifiers.apply(text));
+    }
+  }
+
+  /// xterm.dart puts pasted text between the bracketed paste markers as it
+  /// is, and some control characters in it would end the paste early: the
+  /// program would take the rest as typed, so a newline in it would run a
+  /// command. ESC starts the end marker; the tty's signal characters (^C, ^Z
+  /// and ^\ by default) make it drop the input queued before them, start
+  /// marker and all. So a bracketed paste drops [_pasteControls].
+  ///
+  /// Without bracketed paste, xterm.dart's paste hands the text to
+  /// [textInput], which would hand it back here; it goes out directly.
+  @override
+  void paste(String text) {
+    if (bracketedPasteMode) {
+      super.paste(text.replaceAll(_pasteControls, ''));
+    } else {
+      super.textInput(text);
+    }
+  }
 }
+
+/// The control characters a bracketed paste drops: C0 but tab, newline and
+/// carriage return, DEL, and C1.
+final _pasteControls = RegExp(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]');
 
 /// The keys that a phone keyboard does not have. It scrolls sideways.
 class KeyBar extends StatelessWidget {
