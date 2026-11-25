@@ -1,6 +1,6 @@
 import 'dart:async';
-import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -26,13 +26,7 @@ Future<void> main() async {
     // For example a Linux desktop with no notification server.
     debugPrint('shellherd: no notifications: $e');
   }
-  services.notify = switch (notifier) {
-    _ when Platform.isAndroid => ServiceNotify(services.hosts),
-    final notifier? => InProcessNotify(
-      WatchHub.ssh(services.hosts, services.watchConnector, notifier),
-    ),
-    null => const NoNotify(),
-  };
+  services.notify = notifyControl(services, notifier);
   if (await notifier?.launchTarget() case final target?) {
     await WidgetsBinding.instance.endOfFrame;
     unawaited(services.openPane(target));
@@ -40,3 +34,16 @@ Future<void> main() async {
   // Watching starts again with the app; it does not ask for permission.
   await services.syncNotify();
 }
+
+/// Who watches the agents: the background service on Android, the app
+/// itself where it has notifications, else nobody.
+NotifyControl notifyControl(AppServices services, Notifier? notifier) =>
+    switch (notifier) {
+      _ when defaultTargetPlatform == TargetPlatform.android => ServiceNotify(
+        services.hosts,
+      ),
+      final notifier? => InProcessNotify(
+        WatchHub.ssh(services.hosts, services.watchConnector, notifier),
+      ),
+      null => const NoNotify(),
+    };
