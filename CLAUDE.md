@@ -30,6 +30,7 @@ Tags (dart_test.yaml): `herdr` starts a throwaway herdr server, `hc` a throwaway
 ## Gotchas
 
 - Linux build deps and release signing steps: README. A failed first Linux configure (e.g. missing libsecret) caches CMAKE_INSTALL_PREFIX=/usr/local: delete build/linux and rebuild.
+- The `docker` tests need docker.io and the password/Tailscale login tests python3-paramiko (README "Test"); a shell without the docker group runs `sg docker -c "flutter test"`.
 - Before publishing an APK, check its signing cert SHA-256 (`apksigner verify --print-certs`) matches the previous release's; a different key cannot update an install.
 - Releases: annotated tag `vX.Y.Z` (no `+N`) named "shellherd X.Y.Z", one asset `shellherd.apk`, notes start "Covers X.Y.Z (#PR)" and end with an Install section on the signing key.
 - Bound every SSH channel open/exec yourself: dartssh2 keepalive has no reply deadline, a stalled link hangs forever.

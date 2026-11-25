@@ -65,7 +65,14 @@ and JDK 17 or newer; `flutter doctor` lists what is missing.
 
 Without `--exclude-tags`, the tests also start a throwaway sshd, herdr
 server, herdr-core or Docker container (tags in `dart_test.yaml`). A test
-whose program is missing skips itself.
+whose program is missing skips itself. The Docker tests need Docker and the
+password and Tailscale login tests need paramiko:
+
+    sudo apt install docker.io python3-paramiko
+    sudo usermod -aG docker $USER   # gives root-equivalent access
+
+Until you log in again, a shell without the docker group runs the suite as
+`sg docker -c "flutter test"`.
 
 ## Release
 
