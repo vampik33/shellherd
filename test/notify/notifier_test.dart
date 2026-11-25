@@ -98,6 +98,91 @@ void main() {
         expect(linux.cancelled, [id]);
       });
 
+      group('with the desktop late', () {
+        Future<LocalNotifier> init() =>
+            LocalNotifier.init(linuxDeadline: Duration.zero);
+
+        test('a show it never answers holds up shows, not cancels', () async {
+          final notifier = await init();
+          linux.showAnswer = Completer();
+          unawaited(notifier.show(host, alert));
+          await notifier.cancel('h1', 'p2');
+          expect(linux.cancelled, [id]);
+          unawaited(notifier.show(host, alert));
+          await pumpEventQueue();
+          expect(linux.shown, hasLength(1));
+          await notifier.cancel('h1', 'p2');
+          expect(linux.cancelled, [id, id]);
+          expect(linux.shown, hasLength(1));
+        });
+
+        // The plugin keeps one desktop id per notification.
+        test('a show waits for an unanswered one: one alert', () async {
+          final notifier = await init();
+          final answer = linux.showAnswer = Completer();
+          final first = notifier.show(host, alert);
+          final second = notifier.show(host, alert);
+          await pumpEventQueue();
+          expect(linux.shown, hasLength(1));
+          answer.complete();
+          await Future.wait([first, second]);
+          expect(linux.visible, [id]);
+          await notifier.cancel('h1', 'p2');
+          expect(linux.visible, isEmpty);
+        });
+
+        test('a show it answers after a cancel ran is closed again', () async {
+          final notifier = await init();
+          final answer = linux.showAnswer = Completer();
+          final showing = notifier.show(host, alert);
+          await notifier.cancel('h1', 'p2');
+          expect(linux.cancelled, [id]);
+          answer.complete();
+          await showing;
+          expect(linux.cancelled, [id, id]);
+          expect(linux.visible, isEmpty);
+        });
+
+        test('a show it answers late stays when a show came last', () async {
+          final notifier = await init();
+          final answer = linux.showAnswer = Completer();
+          final showing = notifier.show(host, alert);
+          await notifier.cancel('h1', 'p2');
+          final again = notifier.show(host, alert);
+          answer.complete();
+          await Future.wait([showing, again]);
+          expect(linux.cancelled, [id]);
+          expect(linux.visible, [id]);
+        });
+
+        test('a show that fails late is not closed again', () async {
+          final notifier = await init();
+          final answer = linux.showAnswer = Completer();
+          final showing = notifier.show(host, alert);
+          await notifier.cancel('h1', 'p2');
+          answer.completeError(StateError('no notification server'));
+          await expectLater(showing, throwsStateError);
+          expect(linux.cancelled, [id]);
+        });
+
+        // The late cancel's cleanup must not drop the queue of a later show.
+        test('a cancel answered late leaves a newer show in order', () async {
+          final notifier = await init();
+          final cancelAnswer = linux.cancelAnswer = Completer();
+          final cancelling = notifier.cancel('h1', 'p2');
+          await notifier.cancel('h1', 'p2');
+          final answer = linux.showAnswer = Completer();
+          final showing = notifier.show(host, alert);
+          await pumpEventQueue();
+          cancelAnswer.complete();
+          await cancelling;
+          await notifier.cancel('h1', 'p2');
+          answer.complete();
+          await showing;
+          expect(linux.visible, isEmpty);
+        });
+      });
+
       test('the alert of another pane does not wait', () async {
         final notifier = await LocalNotifier.init();
         final answer = linux.showAnswer = Completer();
@@ -106,7 +191,7 @@ void main() {
         expect(linux.cancelled, [notificationId('h1', 'p3')]);
         answer.complete();
         await showing;
-        expect(linux.visible, {id});
+        expect(linux.visible, [id]);
       });
     });
   }
@@ -156,11 +241,21 @@ NotificationAppLaunchDetails _launched(String payload) =>
     );
 
 /// The Linux plugin, recording what it is asked to do. Like the real one, it
-/// knows a shown id only once the desktop answered: with [showAnswer], when
-/// that completes.
+/// keeps one desktop id per notification and learns it only once the
+/// desktop answered a show, which replaces the notification of the id it
+/// had when it started: with [showAnswer], the next show waits for it. With
+/// [cancelAnswer], the next cancel waits for it.
 class _Linux extends LinuxFlutterLocalNotificationsPlugin {
   Completer<void>? showAnswer;
-  final visible = <int>{};
+  Completer<void>? cancelAnswer;
+
+  /// The notifications on the desktop: their ids by desktop id.
+  final _desktop = <int, int>{};
+  final _desktopIds = <int, int>{};
+  var _nextDesktopId = 1;
+
+  /// The ids of the notifications on the desktop, one per notification.
+  List<int> get visible => _desktop.values.toList();
   LinuxInitializationSettings? settings;
   DidReceiveNotificationResponseCallback? onResponse;
   final shown =
@@ -200,14 +295,26 @@ class _Linux extends LinuxFlutterLocalNotificationsPlugin {
       payload: payload,
       details: notificationDetails,
     ));
-    await showAnswer?.future;
-    visible.add(id);
+    final replaces = _desktopIds[id];
+    final answer = showAnswer;
+    showAnswer = null;
+    await answer?.future;
+    final desktopId = replaces ?? _nextDesktopId++;
+    _desktop[desktopId] = id;
+    _desktopIds[id] = desktopId;
   }
 
   @override
   Future<void> cancel({required int id}) async {
+    final desktopId = _desktopIds[id];
+    final answer = cancelAnswer;
+    cancelAnswer = null;
+    await answer?.future;
     cancelled.add(id);
-    visible.remove(id);
+    if (desktopId != null) {
+      _desktop.remove(desktopId);
+      _desktopIds.remove(id);
+    }
   }
 }
 
