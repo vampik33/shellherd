@@ -190,6 +190,19 @@ Future<void> main() async {
       },
     );
 
+    test('closing an older session leaves the terminal to a newer one', () async {
+      final first = await start();
+      await runs('first-session');
+      await start();
+      // The older session ends after the newer one took the terminal, as a
+      // reconnect does.
+      first.close();
+      await runs('second-session');
+      terminal.resize(90, 25);
+      terminal.textInput("stty size | sed 's/^/size:/'\r");
+      await showsText('size:25 90');
+    });
+
     test('a missing mosh-server says so', () async {
       final missing = Host(
         id: host.id,

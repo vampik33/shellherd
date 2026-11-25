@@ -12,6 +12,7 @@ import '../ssh/ids.dart';
 import '../ssh/ssh_exec.dart';
 import '../ssh/ssh_connector.dart';
 import 'ssh_shell_session.dart';
+import 'terminal_binding.dart';
 
 /// How the mosh link is.
 enum MoshLink {
@@ -134,6 +135,11 @@ class MoshShellSession implements ShellSession {
   final _Heard _heard;
   final Future<void> Function() _killServer;
   final _ended = Completer<ShellEnd>();
+  late final _binding = TerminalBinding(
+    terminal,
+    send: (data) => _udp.send(utf8.encode(data)),
+    resize: (width, height, _, _) => _udp.resize(width, height),
+  );
   late final StreamSubscription<String> _output;
   late final Timer _tick;
 
@@ -224,23 +230,12 @@ class MoshShellSession implements ShellSession {
     _output = _udp.stdout
         .transform(const Utf8Decoder(allowMalformed: true))
         .listen(terminal.write);
-    terminal.onOutput = _onOutput;
-    terminal.onResize = _onResize;
+    _binding.bind();
     // The view can change size while the session starts.
     _udp.resize(terminal.viewWidth, terminal.viewHeight);
     // The server shuts the session down when the shell exits.
     unawaited(_udp.done.then((_) => _end(killServer: false)));
     _tick = Timer.periodic(const Duration(seconds: 1), (_) => _updateLink());
-  }
-
-  void _onOutput(String data) {
-    if (_ended.isCompleted) return;
-    _udp.send(utf8.encode(data));
-  }
-
-  void _onResize(int width, int height, int pixelWidth, int pixelHeight) {
-    if (_ended.isCompleted) return;
-    _udp.resize(width, height);
   }
 
   void _updateLink() {
@@ -276,9 +271,7 @@ class MoshShellSession implements ShellSession {
     if (_ended.isCompleted) return;
     _tick.cancel();
     unawaited(_output.cancel());
-    // A new session can own the terminal by now; leave its callbacks.
-    if (terminal.onOutput == _onOutput) terminal.onOutput = null;
-    if (terminal.onResize == _onResize) terminal.onResize = null;
+    _binding.unbind();
     unawaited(_udp.close());
     if (killServer) {
       unawaited(
