@@ -4,6 +4,8 @@ import 'dart:convert';
 import 'package:dartssh2/dartssh2.dart';
 import 'package:xterm/xterm.dart';
 
+import 'terminal_binding.dart';
+
 /// How a shell session ended. [lost] means the connection dropped.
 /// [exitCode] is null when the shell gave no exit status: the connection
 /// was lost, a signal ended the shell, or the app closed it.
@@ -51,6 +53,11 @@ class SshShellSession implements ShellSession {
   final Duration pingTimeout;
   final _subs = <StreamSubscription<String>>[];
   final _ended = Completer<ShellEnd>();
+  late final _binding = TerminalBinding(
+    terminal,
+    send: (data) => _shell.write(utf8.encode(data)),
+    resize: _shell.resizeTerminal,
+  );
   Timer? _pinger;
   var _checking = false;
 
@@ -115,8 +122,7 @@ class SshShellSession implements ShellSession {
             .listen(terminal.write),
       );
     }
-    terminal.onOutput = _onOutput;
-    terminal.onResize = _onResize;
+    _binding.bind();
     // dartssh2 completes done without an error also when the connection
     // drops; then the client is closed and there is no exit status.
     _shell.done.whenComplete(
@@ -166,22 +172,10 @@ class SshShellSession implements ShellSession {
     }
   }
 
-  void _onOutput(String data) {
-    if (_ended.isCompleted) return;
-    _shell.write(utf8.encode(data));
-  }
-
-  void _onResize(int width, int height, int pixelWidth, int pixelHeight) {
-    if (_ended.isCompleted) return;
-    _shell.resizeTerminal(width, height, pixelWidth, pixelHeight);
-  }
-
   void _end(ShellEnd end) {
     if (_ended.isCompleted) return;
     _pinger?.cancel();
-    // A new session can own the terminal by now; leave its callbacks.
-    if (terminal.onOutput == _onOutput) terminal.onOutput = null;
-    if (terminal.onResize == _onResize) terminal.onResize = null;
+    _binding.unbind();
     _client.close();
     _ended.complete(end);
   }
