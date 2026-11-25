@@ -72,9 +72,15 @@ const _channelId = 'agents';
 /// [Notifier] on the system notifications: Android, or the desktop
 /// notification server on Linux.
 class LocalNotifier implements Notifier {
-  LocalNotifier._(this._plugin);
+  LocalNotifier._(this._plugin, this._linux);
 
   final FlutterLocalNotificationsPlugin _plugin;
+
+  /// The Linux plugin, when it is the one this host registered. It is called
+  /// directly: [_plugin] picks a platform by `defaultTargetPlatform`, so in a
+  /// Linux debug build that emulates Android it would send every call to the
+  /// Android plugin, which is not there, and drop it.
+  final LinuxFlutterLocalNotificationsPlugin? _linux;
 
   /// Sets the plugin up in this isolate. [onTap] gets the taps on
   /// notifications while the app runs; only the main isolate gets them.
@@ -82,21 +88,33 @@ class LocalNotifier implements Notifier {
     void Function(PaneTarget target)? onTap,
   }) async {
     final plugin = FlutterLocalNotificationsPlugin();
+    final DidReceiveNotificationResponseCallback? onResponse = onTap == null
+        ? null
+        : (response) {
+            if (PaneTarget.decode(response.payload) case final target?) {
+              onTap(target);
+            }
+          };
+    const linuxSettings = LinuxInitializationSettings(
+      defaultActionName: 'Open',
+    );
+    if (FlutterLocalNotificationsPlatform.instance
+        case final LinuxFlutterLocalNotificationsPlugin linux) {
+      await linux.initialize(
+        settings: linuxSettings,
+        onDidReceiveNotificationResponse: onResponse,
+      );
+      return LocalNotifier._(plugin, linux);
+    }
     await plugin.initialize(
       settings: const InitializationSettings(
         // Monochrome: Android shows a status bar icon as a white shape.
         android: AndroidInitializationSettings('ic_stat_shellherd'),
-        linux: LinuxInitializationSettings(defaultActionName: 'Open'),
+        linux: linuxSettings,
       ),
-      onDidReceiveNotificationResponse: onTap == null
-          ? null
-          : (response) {
-              if (PaneTarget.decode(response.payload) case final target?) {
-                onTap(target);
-              }
-            },
+      onDidReceiveNotificationResponse: onResponse,
     );
-    return LocalNotifier._(plugin);
+    return LocalNotifier._(plugin, null);
   }
 
   /// The pane of the notification that started the app, if one did. Only
@@ -112,18 +130,32 @@ class LocalNotifier implements Notifier {
   @override
   Future<void> show(Host host, AgentAlert alert) {
     final text = alertText(host, alert);
+    final id = notificationId(host.id, alert.paneId);
+    final payload = PaneTarget(host.id, alert.paneId).encode();
+    if (_linux case final linux?) {
+      return linux.show(
+        id: id,
+        title: text.title,
+        body: text.body,
+        payload: payload,
+        notificationDetails: agentNotificationDetails.linux,
+      );
+    }
     return _plugin.show(
-      id: notificationId(host.id, alert.paneId),
+      id: id,
       title: text.title,
       body: text.body,
-      payload: PaneTarget(host.id, alert.paneId).encode(),
+      payload: payload,
       notificationDetails: agentNotificationDetails,
     );
   }
 
   @override
-  Future<void> cancel(String hostId, String paneId) =>
-      _plugin.cancel(id: notificationId(hostId, paneId));
+  Future<void> cancel(String hostId, String paneId) {
+    final id = notificationId(hostId, paneId);
+    if (_linux case final linux?) return linux.cancel(id: id);
+    return _plugin.cancel(id: id);
+  }
 }
 
 /// How an agent alert shows.
