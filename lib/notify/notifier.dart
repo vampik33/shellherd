@@ -100,12 +100,20 @@ class LocalNotifier implements Notifier {
   /// each call holds up the next only until its deadline; a show answered
   /// after it is closed again if the last thing asked of its id was a
   /// cancel, which may have run first.
+  ///
+  /// A show never starts while an earlier show waits for its answer: the
+  /// plugin keeps one desktop id per notification, so with two in flight
+  /// one alert could not be closed. Only the last call asked of an id runs,
+  /// so a show held that way gives way to any later call.
   Future<void> _inOrder(
     int id,
     Future<void> Function() call, {
     required bool show,
   }) async {
-    final queue = _linuxQueues.putIfAbsent(id, _LinuxQueue.new)
+    final queue = _linuxQueues.putIfAbsent(id, _LinuxQueue.new);
+    queue.lastAsked?.complete();
+    final overtaken = queue.lastAsked = Completer<void>();
+    queue
       ..wantShown = show
       ..asked += 1;
     final before = queue.last;
@@ -120,6 +128,16 @@ class LocalNotifier implements Notifier {
     var late = false;
     try {
       await before;
+      if (show && queue.unanswered) {
+        await Future.any([queue.showing, overtaken.future]);
+        if (overtaken.isCompleted) return;
+      }
+      final answered = Completer<void>();
+      if (show) {
+        queue
+          ..showing = answered.future
+          ..unanswered = true;
+      }
       final deadline = Timer(_linuxDeadline, () {
         late = true;
         if (show) queue.lateShows++;
@@ -129,9 +147,11 @@ class LocalNotifier implements Notifier {
         await call();
       } finally {
         deadline.cancel();
-        release();
+        if (show) queue.unanswered = false;
+        answered.complete();
       }
     } finally {
+      release();
       if (late && show) queue.lateShows--;
       // A call that ended late may find its queue removed and the id given
       // a newer queue, which is not its to remove.
@@ -235,10 +255,20 @@ class _LinuxQueue {
   /// Ends when the last call asked has ended or passed its deadline.
   Future<void> last = Future.value();
 
+  /// Ends when the last show sent to the desktop has its answer.
+  Future<void> showing = Future.value();
+
+  /// Whether the last show sent to the desktop waits for its answer.
+  bool unanswered = false;
+
+  /// Completes when a call is asked after the last one.
+  Completer<void>? lastAsked;
+
   /// Whether the last call asked was a show.
   bool wantShown = false;
 
-  /// The calls asked that have neither ended nor passed their deadline.
+  /// The calls asked that have neither ended, given way nor passed their
+  /// deadline.
   int asked = 0;
 
   /// The shows past their deadline that the desktop has not answered yet.
