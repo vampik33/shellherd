@@ -1,6 +1,6 @@
 import 'dart:async';
+import 'dart:io';
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:path_provider/path_provider.dart';
 
@@ -26,8 +26,10 @@ Future<void> main() async {
     // For example a Linux desktop with no notification server.
     debugPrint('shellherd: no notifications: $e');
   }
-  services.notify = notifyControl(services, notifier);
-  if (await notifier?.launchTarget() case final target?) {
+  // The host's own OS: a debug build can emulate another target platform.
+  final android = Platform.isAndroid;
+  services.notify = notifyControl(services, notifier, android: android);
+  if (await notifier?.launchTarget(android: android) case final target?) {
     await WidgetsBinding.instance.endOfFrame;
     unawaited(services.openPane(target));
   }
@@ -35,15 +37,16 @@ Future<void> main() async {
   await services.syncNotify();
 }
 
-/// Who watches the agents: the background service on Android, the app
+/// Who watches the agents: the background service on [android], the app
 /// itself where it has notifications, else nobody.
-NotifyControl notifyControl(AppServices services, Notifier? notifier) =>
-    switch (notifier) {
-      _ when defaultTargetPlatform == TargetPlatform.android => ServiceNotify(
-        services.hosts,
-      ),
-      final notifier? => InProcessNotify(
-        WatchHub.ssh(services.hosts, services.watchConnector, notifier),
-      ),
-      null => const NoNotify(),
-    };
+NotifyControl notifyControl(
+  AppServices services,
+  Notifier? notifier, {
+  required bool android,
+}) => switch (notifier) {
+  _ when android => ServiceNotify(services.hosts),
+  final notifier? => InProcessNotify(
+    WatchHub.ssh(services.hosts, services.watchConnector, notifier),
+  ),
+  null => const NoNotify(),
+};

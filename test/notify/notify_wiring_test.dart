@@ -25,29 +25,34 @@ void main() {
   });
 
   group('on Android', () {
-    setUp(() => debugDefaultTargetPlatformOverride = TargetPlatform.android);
-
     test('the background service watches, with notifications', () {
-      expect(notifyControl(services, RecordingNotifier()), isA<ServiceNotify>());
+      expect(
+        notifyControl(services, RecordingNotifier(), android: true),
+        isA<ServiceNotify>(),
+      );
     });
 
     test('the background service watches, even with no notifier here', () {
-      expect(notifyControl(services, null), isA<ServiceNotify>());
+      expect(notifyControl(services, null, android: true), isA<ServiceNotify>());
     });
   });
 
   group('on Linux', () {
-    setUp(() => debugDefaultTargetPlatformOverride = TargetPlatform.linux);
-
     test('the app watches and notifies through its notifier', () {
       final notifier = RecordingNotifier();
-      final control = notifyControl(services, notifier);
+      final control = notifyControl(services, notifier, android: false);
       expect(control, isA<InProcessNotify>());
       expect((control as InProcessNotify).hub.notifier, same(notifier));
     });
 
     test('nobody watches with no notification server', () {
-      expect(notifyControl(services, null), isA<NoNotify>());
+      expect(notifyControl(services, null, android: false), isA<NoNotify>());
+    });
+
+    test('a debug build emulating Android still watches in the app', () {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      final control = notifyControl(services, RecordingNotifier(), android: false);
+      expect(control, isA<InProcessNotify>());
     });
   });
 }

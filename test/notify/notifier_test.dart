@@ -18,7 +18,16 @@ void main() {
       debugDefaultTargetPlatformOverride = TargetPlatform.linux;
       FlutterLocalNotificationsPlatform.instance = _NoLaunchDetails();
       final notifier = await LocalNotifier.init();
-      expect(await notifier.launchTarget(), isNull);
+      expect(await notifier.launchTarget(android: false), isNull);
+    });
+
+    test('is null off Android, even if a debug build emulates Android', () async {
+      debugDefaultTargetPlatformOverride = TargetPlatform.android;
+      FlutterLocalNotificationsPlatform.instance = _AndroidLaunch(
+        _launched(const PaneTarget('h1', 'p2').encode()),
+      );
+      final notifier = await LocalNotifier.init();
+      expect(await notifier.launchTarget(android: false), isNull);
     });
 
     for (final (what, details, want) in [
@@ -31,7 +40,7 @@ void main() {
         debugDefaultTargetPlatformOverride = TargetPlatform.android;
         FlutterLocalNotificationsPlatform.instance = _AndroidLaunch(details);
         final notifier = await LocalNotifier.init();
-        expect(await notifier.launchTarget(), want);
+        expect(await notifier.launchTarget(android: true), want);
       });
     }
   });
