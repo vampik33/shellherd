@@ -133,7 +133,13 @@ class LocalNotifier implements Notifier {
       }
     } finally {
       if (late && show) queue.lateShows--;
-      if (queue.asked == 0 && queue.lateShows == 0) _linuxQueues.remove(id);
+      // A call that ended late may find its queue removed and the id given
+      // a newer queue, which is not its to remove.
+      if (queue.asked == 0 &&
+          queue.lateShows == 0 &&
+          identical(_linuxQueues[id], queue)) {
+        _linuxQueues.remove(id);
+      }
     }
     if (late && show && !queue.wantShown) {
       await _inOrder(id, show: false, () => _linux!.cancel(id: id));

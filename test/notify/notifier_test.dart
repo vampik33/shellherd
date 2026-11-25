@@ -146,6 +146,23 @@ void main() {
           await expectLater(showing, throwsStateError);
           expect(linux.cancelled, [id]);
         });
+
+        // The late cancel's cleanup must not drop the queue of a later show.
+        test('a cancel answered late leaves a newer show in order', () async {
+          final notifier = await init();
+          final cancelAnswer = linux.cancelAnswer = Completer();
+          final cancelling = notifier.cancel('h1', 'p2');
+          await notifier.cancel('h1', 'p2');
+          final answer = linux.showAnswer = Completer();
+          final showing = notifier.show(host, alert);
+          await pumpEventQueue();
+          cancelAnswer.complete();
+          await cancelling;
+          await notifier.cancel('h1', 'p2');
+          answer.complete();
+          await showing;
+          expect(linux.visible, isEmpty);
+        });
       });
 
       test('the alert of another pane does not wait', () async {
@@ -207,9 +224,10 @@ NotificationAppLaunchDetails _launched(String payload) =>
 
 /// The Linux plugin, recording what it is asked to do. Like the real one, it
 /// knows a shown id only once the desktop answered: with [showAnswer], the
-/// next show waits for it.
+/// next show waits for it. With [cancelAnswer], the next cancel waits for it.
 class _Linux extends LinuxFlutterLocalNotificationsPlugin {
   Completer<void>? showAnswer;
+  Completer<void>? cancelAnswer;
   final visible = <int>{};
   LinuxInitializationSettings? settings;
   DidReceiveNotificationResponseCallback? onResponse;
@@ -258,6 +276,9 @@ class _Linux extends LinuxFlutterLocalNotificationsPlugin {
 
   @override
   Future<void> cancel({required int id}) async {
+    final answer = cancelAnswer;
+    cancelAnswer = null;
+    await answer?.future;
     cancelled.add(id);
     visible.remove(id);
   }
