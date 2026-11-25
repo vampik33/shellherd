@@ -144,12 +144,12 @@ class HerdrPaneApi implements PaneApi {
     String paneId, {
     required ReadSource source,
     int? lines,
-  }) async => (await _client.paneRead(
+  }) => _client.paneRead(
     paneId,
     source: source,
     format: ReadFormat.ansi,
     lines: lines,
-  )).text;
+  );
 
   @override
   Future<void> keys(String paneId, List<String> keys) =>

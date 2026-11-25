@@ -122,7 +122,7 @@ class HerdrTestSession {
     final deadline = DateTime.now().add(timeout);
     var last = '';
     while (DateTime.now().isBefore(deadline)) {
-      last = (await client.paneRead(paneId, format: format, lines: 50)).text;
+      last = await client.paneRead(paneId, format: format, lines: 50);
       if (test(last)) return last;
       await Future<void>.delayed(const Duration(milliseconds: 100));
     }

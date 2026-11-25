@@ -32,22 +32,9 @@ enum ReadSource {
 
   const ReadSource(this.wire);
   final String wire;
-
-  static ReadSource fromWire(Object? value) => values.firstWhere(
-    (s) => s.wire == value,
-    orElse: () => throw HerdrProtocolException('unknown read source: $value'),
-  );
 }
 
-enum ReadFormat {
-  text,
-  ansi;
-
-  static ReadFormat fromWire(Object? value) => values.firstWhere(
-    (f) => f.name == value,
-    orElse: () => throw HerdrProtocolException('unknown read format: $value'),
-  );
-}
+enum ReadFormat { text, ansi }
 
 class HerdrPing {
   const HerdrPing({
@@ -70,33 +57,21 @@ class HerdrPing {
 class Workspace {
   const Workspace({
     required this.id,
-    required this.number,
     required this.label,
-    required this.focused,
     required this.paneCount,
-    required this.tabCount,
-    required this.activeTabId,
     required this.status,
   });
 
   factory Workspace.fromJson(Map<String, Object?> j) => Workspace(
     id: jsonField<String>(j, 'workspace_id'),
-    number: jsonField<int>(j, 'number'),
     label: jsonField<String>(j, 'label'),
-    focused: jsonField<bool>(j, 'focused'),
     paneCount: jsonField<int>(j, 'pane_count'),
-    tabCount: jsonField<int>(j, 'tab_count'),
-    activeTabId: jsonField<String>(j, 'active_tab_id'),
     status: AgentStatus.fromWire(j['agent_status']),
   );
 
   final String id;
-  final int number;
   final String label;
-  final bool focused;
   final int paneCount;
-  final int tabCount;
-  final String activeTabId;
   final AgentStatus status;
 }
 
@@ -104,9 +79,7 @@ class Tab {
   const Tab({
     required this.id,
     required this.workspaceId,
-    required this.number,
     required this.label,
-    required this.focused,
     required this.paneCount,
     required this.status,
   });
@@ -114,18 +87,14 @@ class Tab {
   factory Tab.fromJson(Map<String, Object?> j) => Tab(
     id: jsonField<String>(j, 'tab_id'),
     workspaceId: jsonField<String>(j, 'workspace_id'),
-    number: jsonField<int>(j, 'number'),
     label: jsonField<String>(j, 'label'),
-    focused: jsonField<bool>(j, 'focused'),
     paneCount: jsonField<int>(j, 'pane_count'),
     status: AgentStatus.fromWire(j['agent_status']),
   );
 
   final String id;
   final String workspaceId;
-  final int number;
   final String label;
-  final bool focused;
   final int paneCount;
   final AgentStatus status;
 }
@@ -135,9 +104,7 @@ class Pane {
     required this.id,
     required this.workspaceId,
     required this.tabId,
-    required this.focused,
     required this.status,
-    required this.revision,
     this.agent,
     this.displayAgent,
     this.title,
@@ -151,9 +118,7 @@ class Pane {
     id: jsonField<String>(j, 'pane_id'),
     workspaceId: jsonField<String>(j, 'workspace_id'),
     tabId: jsonField<String>(j, 'tab_id'),
-    focused: jsonField<bool>(j, 'focused'),
     status: AgentStatus.fromWire(j['agent_status']),
-    revision: jsonField<int>(j, 'revision'),
     agent: jsonOptional<String>(j, 'agent'),
     displayAgent: jsonOptional<String>(j, 'display_agent'),
     title: jsonOptional<String>(j, 'title'),
@@ -166,9 +131,7 @@ class Pane {
   final String id;
   final String workspaceId;
   final String tabId;
-  final bool focused;
   final AgentStatus status;
-  final int revision;
 
   /// Canonical agent kind (`claude`, `codex`), or null without an agent.
   final String? agent;
@@ -233,18 +196,12 @@ class HerdrSnapshot {
     required this.tabs,
     required this.panes,
     required this.agents,
-    this.focusedWorkspaceId,
-    this.focusedTabId,
-    this.focusedPaneId,
     this.paneSizes = const {},
   });
 
   factory HerdrSnapshot.fromJson(Map<String, Object?> j) => HerdrSnapshot(
     version: jsonField<String>(j, 'version'),
     protocol: jsonField<int>(j, 'protocol'),
-    focusedWorkspaceId: jsonOptional<String>(j, 'focused_workspace_id'),
-    focusedTabId: jsonOptional<String>(j, 'focused_tab_id'),
-    focusedPaneId: jsonOptional<String>(j, 'focused_pane_id'),
     workspaces: jsonList(j, 'workspaces', Workspace.fromJson),
     tabs: jsonList(j, 'tabs', Tab.fromJson),
     panes: jsonList(j, 'panes', Pane.fromJson),
@@ -260,9 +217,6 @@ class HerdrSnapshot {
 
   final String version;
   final int protocol;
-  final String? focusedWorkspaceId;
-  final String? focusedTabId;
-  final String? focusedPaneId;
   final List<Workspace> workspaces;
   final List<Tab> tabs;
   final List<Pane> panes;
@@ -302,39 +256,6 @@ class PaneSize {
   String toString() => '${cols}x$rows';
 }
 
-class PaneRead {
-  const PaneRead({
-    required this.paneId,
-    required this.workspaceId,
-    required this.tabId,
-    required this.source,
-    required this.format,
-    required this.text,
-    required this.revision,
-    required this.truncated,
-  });
-
-  factory PaneRead.fromJson(Map<String, Object?> j) => PaneRead(
-    paneId: jsonField<String>(j, 'pane_id'),
-    workspaceId: jsonField<String>(j, 'workspace_id'),
-    tabId: jsonField<String>(j, 'tab_id'),
-    source: ReadSource.fromWire(j['source']),
-    format: ReadFormat.fromWire(j['format']),
-    text: jsonField<String>(j, 'text'),
-    revision: jsonField<int>(j, 'revision'),
-    truncated: jsonField<bool>(j, 'truncated'),
-  );
-
-  final String paneId;
-  final String workspaceId;
-  final String tabId;
-  final ReadSource source;
-  final ReadFormat format;
-  final String text;
-  final int revision;
-  final bool truncated;
-}
-
 /// One event filter for `events.subscribe`.
 class Subscription {
   /// A lifecycle event such as `workspace.created` or `pane.closed`.
@@ -365,18 +286,4 @@ class HerdrEvent {
   /// Wire kind with underscores, for example `pane_agent_status_changed`.
   final String kind;
   final Map<String, Object?> data;
-
-  String? get paneId => _idOf('pane');
-
-  String? get workspaceId => _idOf('workspace');
-
-  /// `<kind>_id` on the event itself, or inside its nested `<kind>` record.
-  String? _idOf(String kind) =>
-      jsonOptional<String>(data, '${kind}_id') ??
-      jsonOptional<String>(jsonOptional<Map<String, Object?>>(data, kind) ?? const {}, '${kind}_id');
-
-  /// Present on `pane_agent_status_changed`.
-  AgentStatus? get agentStatus => data.containsKey('agent_status')
-      ? AgentStatus.fromWire(data['agent_status'])
-      : null;
 }

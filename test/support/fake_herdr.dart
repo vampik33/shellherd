@@ -160,14 +160,8 @@ class FakeHerdr {
     }
   }
 
-  static const ping = HerdrPing(
-    version: '0.9.5',
-    protocol: 22,
-    capabilities: {},
-  );
-
-  /// [HerdrSnapshot.workspaces] holds one workspace whose number tells which
-  /// snapshot this was.
+  /// [HerdrSnapshot.workspaces] holds one workspace whose label is the
+  /// number of this snapshot.
   static Map<String, Object?> _snapshot(int n, List<String> panes) => {
     'version': '0.9.5',
     'protocol': 22,
@@ -175,7 +169,7 @@ class FakeHerdr {
       {
         'workspace_id': 'w1',
         'number': n,
-        'label': 'ws',
+        'label': '$n',
         'focused': true,
         'pane_count': panes.length,
         'tab_count': 1,
@@ -214,7 +208,6 @@ class FakeLink {
 
   late final OpenLink open = OpenLink.herdr(
     herdr.client,
-    server: FakeHerdr.ping,
     screens: screens,
     done: done.future,
     close: () {

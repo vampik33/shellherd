@@ -1,6 +1,8 @@
 import 'dart:async';
 
+import '../../bounded_open.dart';
 import 'herdr_errors.dart';
+import 'json_fields.dart';
 import 'models.dart';
 import 'ndjson_transport.dart';
 
@@ -49,7 +51,7 @@ class HerdrClient {
   }
 
   /// Reads pane text. With [ReadFormat.ansi] the escape sequences are kept.
-  Future<PaneRead> paneRead(
+  Future<String> paneRead(
     String paneId, {
     ReadSource source = ReadSource.recentUnwrapped,
     ReadFormat format = ReadFormat.text,
@@ -63,7 +65,7 @@ class HerdrClient {
       'lines': ?lines,
       if (format == ReadFormat.ansi) 'strip_ansi': false,
     });
-    return PaneRead.fromJson(_field(r, 'read', method));
+    return jsonField<String>(_field(r, 'read', method), 'text');
   }
 
   /// Sends literal [text], then herdr key names such as `enter`, in order.
@@ -302,9 +304,7 @@ Future<HerdrChannel> openChannel(
   }
 }
 
-/// Waits up to [timeout] for [open], else throws [HerdrTimeoutException]
-/// with [method]. `Future.timeout` does not cancel the open, so a result
-/// that arrives late goes to [discard] to release it.
+/// [boundedOpen] that throws [HerdrTimeoutException] with [method].
 Future<T> openWithin<T>(
   Future<T> open,
   Duration timeout,
@@ -312,9 +312,8 @@ Future<T> openWithin<T>(
   String method,
 ) async {
   try {
-    return await open.timeout(timeout);
+    return await boundedOpen(open, timeout, discard);
   } on TimeoutException {
-    unawaited(open.then<void>(discard, onError: (Object _) {}));
     throw HerdrTimeoutException(method, timeout);
   }
 }

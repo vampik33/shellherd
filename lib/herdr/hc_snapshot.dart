@@ -9,7 +9,7 @@ import 'api/herdr_client.dart';
 /// a status. A terminal outside the layout that reports one, such as an
 /// agent another agent started, stands in the tab of its labels or of its
 /// parent, after the tab's own panes; one with no such place is left out,
-/// as the app leaves it out. herdr-core keeps no focus: nothing is focused.
+/// as the app leaves it out.
 HerdrSnapshot hcSnapshot(
   HcHello hello,
   List<HcTerminal> terminals,
@@ -48,7 +48,7 @@ HerdrSnapshot hcSnapshot(
   final panes = <Pane>[];
   final tabs = <Tab>[];
   final workspaces = <Workspace>[];
-  for (final (i, space) in layout.spaces.indexed) {
+  for (final space in layout.spaces) {
     final spacePanes = <Pane>[];
     for (final (j, tab) in space.tabs.indexed) {
       final tabPanes = [
@@ -61,9 +61,7 @@ HerdrSnapshot hcSnapshot(
         Tab(
           id: tab.id,
           workspaceId: space.id,
-          number: j + 1,
           label: tab.name.isNotEmpty ? tab.name : '${j + 1}',
-          focused: false,
           paneCount: tabPanes.length,
           status: _mostUrgent(tabPanes),
         ),
@@ -73,14 +71,10 @@ HerdrSnapshot hcSnapshot(
     workspaces.add(
       Workspace(
         id: space.id,
-        number: i + 1,
         label: space.name.isNotEmpty
             ? space.name
             : _derivedName(space, spacePanes, live),
-        focused: false,
         paneCount: spacePanes.length,
-        tabCount: space.tabs.length,
-        activeTabId: space.tabs.firstOrNull?.id ?? '',
         status: _mostUrgent(spacePanes),
       ),
     );
@@ -114,9 +108,7 @@ Pane _pane(HcTerminal t, String space, String tab) => Pane(
   id: t.address,
   workspaceId: space,
   tabId: tab,
-  focused: false,
   status: hcAgentStatus(t),
-  revision: 0,
   agent: t.status?.app,
   displayAgent: t.status?.app,
   label: t.name,

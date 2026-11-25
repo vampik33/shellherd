@@ -3,6 +3,8 @@ import 'dart:convert';
 
 import 'package:dartssh2/dartssh2.dart';
 
+import '../bounded_open.dart';
+
 /// Runs [cmd] and returns its stdout and exit code. Not [SSHClient.run]:
 /// that has no deadline and leaves stdin open. Here stdin gets EOF at once,
 /// so a startup file that reads it cannot block.
@@ -29,17 +31,8 @@ Future<(String, int?)> sshExec(
 /// Starts [cmd] and returns its session. Throws [TimeoutException] when the
 /// channel does not open within [timeout]; one that opens late is
 /// destroyed.
-Future<SSHSession> openExec(SSHClient ssh, String cmd, Duration timeout) async {
-  final open = ssh.execute(cmd);
-  try {
-    return await open.timeout(timeout);
-  } on TimeoutException {
-    unawaited(
-      open.then<void>((s) => s.channel.destroy(), onError: (Object _) {}),
-    );
-    rethrow;
-  }
-}
+Future<SSHSession> openExec(SSHClient ssh, String cmd, Duration timeout) =>
+    boundedOpen(ssh.execute(cmd), timeout, (s) => s.channel.destroy());
 
 /// Quotes [s] for `sh`.
 String shQuote(String s) => "'${s.replaceAll("'", r"'\''")}'";

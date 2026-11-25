@@ -15,7 +15,7 @@ void main() {
   late List<HerdrSnapshot> published;
 
   /// The number of the snapshot that was published last.
-  int lastNumber() => published.last.workspaces.single.number;
+  int lastNumber() => int.parse(published.last.workspaces.single.label);
 
   HerdrCache build({
     Duration debounce = const Duration(milliseconds: 5),
@@ -43,7 +43,7 @@ void main() {
         'session.snapshot',
       ]);
       expect(herdr.watched, ['w1:p1']);
-      expect(published.map((s) => s.workspaces.single.number), [2]);
+      expect(published.map((s) => s.workspaces.single.label), ['2']);
     });
 
     test('an event brings a new snapshot, on the same subscription', () async {

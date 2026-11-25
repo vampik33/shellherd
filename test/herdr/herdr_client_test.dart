@@ -223,11 +223,7 @@ void main() {
 
     test('pane.read parses the read result', () async {
       final (f, _) = await serve(() => client.paneRead('w1:p1'), (ch, req) => ok(ch, req, read));
-      final r = await f;
-      expect(r.text, '\u001b[32mok\u001b[0m');
-      expect(r.source, ReadSource.visible);
-      expect(r.format, ReadFormat.ansi);
-      expect(r.revision, 3);
+      expect(await f, '\u001b[32mok\u001b[0m');
     });
 
     test('pane.send_input sends text then keys', () async {
@@ -340,10 +336,7 @@ void main() {
       ch.end();
       final events = await sub.events.toList();
       expect(events.map((e) => e.kind), ['pane_agent_status_changed', 'workspace_created']);
-      expect(events[0].paneId, 'w1:p1');
-      expect(events[0].agentStatus, AgentStatus.blocked);
-      expect(events[1].workspaceId, 'w2');
-      expect(events[1].agentStatus, isNull);
+      expect(events[0].data['agent_status'], 'blocked');
       expect(ch.closed, isTrue);
     });
 
