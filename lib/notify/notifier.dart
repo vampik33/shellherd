@@ -128,35 +128,30 @@ class LocalNotifier implements Notifier {
     var late = false;
     try {
       await before;
-      if (show && queue.unanswered) {
-        await Future.any([queue.showing, overtaken.future]);
+      if (queue.inFlight case final earlier? when show) {
+        await Future.any([earlier.future, overtaken.future]);
         if (overtaken.isCompleted) return;
       }
-      final answered = Completer<void>();
-      if (show) {
-        queue
-          ..showing = answered.future
-          ..unanswered = true;
-      }
+      final answered = show ? queue.inFlight = Completer<void>() : null;
       final deadline = Timer(_linuxDeadline, () {
         late = true;
-        if (show) queue.lateShows++;
         release();
       });
       try {
         await call();
       } finally {
         deadline.cancel();
-        if (show) queue.unanswered = false;
-        answered.complete();
+        if (answered != null) {
+          queue.inFlight = null;
+          answered.complete();
+        }
       }
     } finally {
       release();
-      if (late && show) queue.lateShows--;
       // A call that ended late may find its queue removed and the id given
       // a newer queue, which is not its to remove.
       if (queue.asked == 0 &&
-          queue.lateShows == 0 &&
+          queue.inFlight == null &&
           identical(_linuxQueues[id], queue)) {
         _linuxQueues.remove(id);
       }
@@ -255,11 +250,9 @@ class _LinuxQueue {
   /// Ends when the last call asked has ended or passed its deadline.
   Future<void> last = Future.value();
 
-  /// Ends when the last show sent to the desktop has its answer.
-  Future<void> showing = Future.value();
-
-  /// Whether the last show sent to the desktop waits for its answer.
-  bool unanswered = false;
+  /// Completes when the show sent to the desktop has its answer; null when
+  /// none waits for one.
+  Completer<void>? inFlight;
 
   /// Completes when a call is asked after the last one.
   Completer<void>? lastAsked;
@@ -270,9 +263,6 @@ class _LinuxQueue {
   /// The calls asked that have neither ended, given way nor passed their
   /// deadline.
   int asked = 0;
-
-  /// The shows past their deadline that the desktop has not answered yet.
-  int lateShows = 0;
 }
 
 /// How an agent alert shows.
