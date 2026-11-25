@@ -72,7 +72,7 @@ const _channelId = 'agents';
 /// [Notifier] on the system notifications: Android, or the desktop
 /// notification server on Linux.
 class LocalNotifier implements Notifier {
-  LocalNotifier._(this._plugin, this._linux);
+  LocalNotifier._(this._plugin, this._linux, this._linuxDeadline);
 
   final FlutterLocalNotificationsPlugin _plugin;
 
@@ -82,31 +82,70 @@ class LocalNotifier implements Notifier {
   /// Android plugin, which is not there, and drop it.
   final LinuxFlutterLocalNotificationsPlugin? _linux;
 
-  /// The last Linux show or cancel of each notification id, while it runs.
+  /// How long one Linux call holds up the next calls of its id.
+  final Duration _linuxDeadline;
+
+  /// The Linux calls of each notification id still asked, running or past
+  /// their deadline.
+  final _linuxQueues = <int, _LinuxQueue>{};
+
+  /// Runs [call], a show if [show], once the earlier Linux calls of [id]
+  /// have ended or passed their deadline; a failure still reaches the
+  /// caller of its own call.
+  ///
   /// The Linux plugin learns a notification's id only when the desktop has
   /// answered its show, so a cancel that overtook the show would find
-  /// nothing and leave the alert up: the calls of one id run in order.
-  final _linuxCalls = <int, Future<void>>{};
+  /// nothing and leave the alert up: the calls of one id run in order. A
+  /// desktop that never answers would then hold up the pane for good, so
+  /// each call holds up the next only until its deadline; a show answered
+  /// after it is closed again if the last thing asked of its id was a
+  /// cancel, which may have run first.
+  Future<void> _inOrder(
+    int id,
+    Future<void> Function() call, {
+    required bool show,
+  }) async {
+    final queue = _linuxQueues.putIfAbsent(id, _LinuxQueue.new)
+      ..wantShown = show
+      ..asked += 1;
+    final before = queue.last;
+    final released = Completer<void>();
+    queue.last = released.future;
+    void release() {
+      if (released.isCompleted) return;
+      released.complete();
+      queue.asked--;
+    }
 
-  /// Runs [call] once the earlier Linux calls of [id] have ended, failed
-  /// or not; a failure still reaches the caller of its own call.
-  Future<void> _inOrder(int id, Future<void> Function() call) async {
-    final before = _linuxCalls[id];
-    final done = Completer<void>();
-    _linuxCalls[id] = done.future;
+    var late = false;
     try {
       await before;
-      await call();
+      final deadline = Timer(_linuxDeadline, () {
+        late = true;
+        if (show) queue.lateShows++;
+        release();
+      });
+      try {
+        await call();
+      } finally {
+        deadline.cancel();
+        release();
+      }
     } finally {
-      done.complete();
-      if (identical(_linuxCalls[id], done.future)) _linuxCalls.remove(id);
+      if (late && show) queue.lateShows--;
+      if (queue.asked == 0 && queue.lateShows == 0) _linuxQueues.remove(id);
+    }
+    if (late && show && !queue.wantShown) {
+      await _inOrder(id, show: false, () => _linux!.cancel(id: id));
     }
   }
 
   /// Sets the plugin up in this isolate. [onTap] gets the taps on
   /// notifications while the app runs; only the main isolate gets them.
+  /// [linuxDeadline] is how long one Linux call holds up the next of its id.
   static Future<LocalNotifier> init({
     void Function(PaneTarget target)? onTap,
+    Duration linuxDeadline = const Duration(seconds: 5),
   }) async {
     final plugin = FlutterLocalNotificationsPlugin();
     final DidReceiveNotificationResponseCallback? onResponse = onTap == null
@@ -125,7 +164,7 @@ class LocalNotifier implements Notifier {
         settings: linuxSettings,
         onDidReceiveNotificationResponse: onResponse,
       );
-      return LocalNotifier._(plugin, linux);
+      return LocalNotifier._(plugin, linux, linuxDeadline);
     }
     await plugin.initialize(
       settings: const InitializationSettings(
@@ -135,7 +174,7 @@ class LocalNotifier implements Notifier {
       ),
       onDidReceiveNotificationResponse: onResponse,
     );
-    return LocalNotifier._(plugin, null);
+    return LocalNotifier._(plugin, null, linuxDeadline);
   }
 
   /// The pane of the notification that started the app, if one did. Only
@@ -156,6 +195,7 @@ class LocalNotifier implements Notifier {
     if (_linux case final linux?) {
       return _inOrder(
         id,
+        show: true,
         () => linux.show(
           id: id,
           title: text.title,
@@ -178,10 +218,25 @@ class LocalNotifier implements Notifier {
   Future<void> cancel(String hostId, String paneId) {
     final id = notificationId(hostId, paneId);
     if (_linux case final linux?) {
-      return _inOrder(id, () => linux.cancel(id: id));
+      return _inOrder(id, show: false, () => linux.cancel(id: id));
     }
     return _plugin.cancel(id: id);
   }
+}
+
+/// The Linux calls of one notification id.
+class _LinuxQueue {
+  /// Ends when the last call asked has ended or passed its deadline.
+  Future<void> last = Future.value();
+
+  /// Whether the last call asked was a show.
+  bool wantShown = false;
+
+  /// The calls asked that have neither ended nor passed their deadline.
+  int asked = 0;
+
+  /// The shows past their deadline that the desktop has not answered yet.
+  int lateShows = 0;
 }
 
 /// How an agent alert shows.

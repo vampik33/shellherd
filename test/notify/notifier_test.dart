@@ -98,6 +98,56 @@ void main() {
         expect(linux.cancelled, [id]);
       });
 
+      group('with the desktop late', () {
+        Future<LocalNotifier> init() =>
+            LocalNotifier.init(linuxDeadline: Duration.zero);
+
+        test('a show it never answers does not hold up the pane', () async {
+          final notifier = await init();
+          linux.showAnswer = Completer();
+          unawaited(notifier.show(host, alert));
+          await notifier.cancel('h1', 'p2');
+          await notifier.show(host, alert);
+          expect(linux.cancelled, [id]);
+          expect(linux.shown, hasLength(2));
+          expect(linux.visible, {id});
+        });
+
+        test('a show it answers after a cancel ran is closed again', () async {
+          final notifier = await init();
+          final answer = linux.showAnswer = Completer();
+          final showing = notifier.show(host, alert);
+          await notifier.cancel('h1', 'p2');
+          expect(linux.cancelled, [id]);
+          answer.complete();
+          await showing;
+          expect(linux.cancelled, [id, id]);
+          expect(linux.visible, isEmpty);
+        });
+
+        test('a show it answers late stays when a show came last', () async {
+          final notifier = await init();
+          final answer = linux.showAnswer = Completer();
+          final showing = notifier.show(host, alert);
+          await notifier.cancel('h1', 'p2');
+          await notifier.show(host, alert);
+          answer.complete();
+          await showing;
+          expect(linux.cancelled, [id]);
+          expect(linux.visible, {id});
+        });
+
+        test('a show that fails late is not closed again', () async {
+          final notifier = await init();
+          final answer = linux.showAnswer = Completer();
+          final showing = notifier.show(host, alert);
+          await notifier.cancel('h1', 'p2');
+          answer.completeError(StateError('no notification server'));
+          await expectLater(showing, throwsStateError);
+          expect(linux.cancelled, [id]);
+        });
+      });
+
       test('the alert of another pane does not wait', () async {
         final notifier = await LocalNotifier.init();
         final answer = linux.showAnswer = Completer();
@@ -156,8 +206,8 @@ NotificationAppLaunchDetails _launched(String payload) =>
     );
 
 /// The Linux plugin, recording what it is asked to do. Like the real one, it
-/// knows a shown id only once the desktop answered: with [showAnswer], when
-/// that completes.
+/// knows a shown id only once the desktop answered: with [showAnswer], the
+/// next show waits for it.
 class _Linux extends LinuxFlutterLocalNotificationsPlugin {
   Completer<void>? showAnswer;
   final visible = <int>{};
@@ -200,7 +250,9 @@ class _Linux extends LinuxFlutterLocalNotificationsPlugin {
       payload: payload,
       details: notificationDetails,
     ));
-    await showAnswer?.future;
+    final answer = showAnswer;
+    showAnswer = null;
+    await answer?.future;
     visible.add(id);
   }
 
