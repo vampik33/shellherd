@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -20,6 +22,20 @@ void main() {
     group('on Linux, with ${emulated.name} as the target platform', () {
       late _Linux linux;
       final taps = <PaneTarget>[];
+      final host = Host(
+        id: 'h1',
+        label: 'box',
+        address: 'box',
+        user: 'me',
+        keyId: 'k1',
+      );
+      const alert = AgentAlert(
+        paneId: 'p2',
+        status: AgentStatus.blocked,
+        agent: 'claude',
+        where: 'repo',
+      );
+      final id = notificationId('h1', 'p2');
 
       setUp(() {
         debugDefaultTargetPlatformOverride = emulated;
@@ -43,21 +59,7 @@ void main() {
 
       test('shows and cancels alerts on the Linux plugin', () async {
         final notifier = await LocalNotifier.init();
-        final host = Host(
-          id: 'h1',
-          label: 'box',
-          address: 'box',
-          user: 'me',
-          keyId: 'k1',
-        );
-        const alert = AgentAlert(
-          paneId: 'p2',
-          status: AgentStatus.blocked,
-          agent: 'claude',
-          where: 'repo',
-        );
         await notifier.show(host, alert);
-        final id = notificationId('h1', 'p2');
         expect(linux.shown, [
           (
             id: id,
@@ -69,6 +71,42 @@ void main() {
         ]);
         await notifier.cancel('h1', 'p2');
         expect(linux.cancelled, [id]);
+      });
+
+      // The plugin learns the id only when the desktop answers the show.
+      test('a cancel waits for the show of its alert', () async {
+        final notifier = await LocalNotifier.init();
+        final answer = linux.showAnswer = Completer();
+        final showing = notifier.show(host, alert);
+        final cancelling = notifier.cancel('h1', 'p2');
+        await pumpEventQueue();
+        expect(linux.cancelled, isEmpty);
+        answer.complete();
+        await Future.wait([showing, cancelling]);
+        expect(linux.cancelled, [id]);
+        expect(linux.visible, isEmpty);
+      });
+
+      test('a failed show fails, and the cancel still runs', () async {
+        final notifier = await LocalNotifier.init();
+        final answer = linux.showAnswer = Completer();
+        final showing = notifier.show(host, alert);
+        final cancelling = notifier.cancel('h1', 'p2');
+        answer.completeError(StateError('no notification server'));
+        await expectLater(showing, throwsStateError);
+        await cancelling;
+        expect(linux.cancelled, [id]);
+      });
+
+      test('the alert of another pane does not wait', () async {
+        final notifier = await LocalNotifier.init();
+        final answer = linux.showAnswer = Completer();
+        final showing = notifier.show(host, alert);
+        await notifier.cancel('h1', 'p3');
+        expect(linux.cancelled, [notificationId('h1', 'p3')]);
+        answer.complete();
+        await showing;
+        expect(linux.visible, {id});
       });
     });
   }
@@ -117,8 +155,12 @@ NotificationAppLaunchDetails _launched(String payload) =>
       ),
     );
 
-/// The Linux plugin, recording what it is asked to do.
+/// The Linux plugin, recording what it is asked to do. Like the real one, it
+/// knows a shown id only once the desktop answered: with [showAnswer], when
+/// that completes.
 class _Linux extends LinuxFlutterLocalNotificationsPlugin {
+  Completer<void>? showAnswer;
+  final visible = <int>{};
   LinuxInitializationSettings? settings;
   DidReceiveNotificationResponseCallback? onResponse;
   final shown =
@@ -150,16 +192,23 @@ class _Linux extends LinuxFlutterLocalNotificationsPlugin {
     String? body,
     LinuxNotificationDetails? notificationDetails,
     String? payload,
-  }) async => shown.add((
-    id: id,
-    title: title,
-    body: body,
-    payload: payload,
-    details: notificationDetails,
-  ));
+  }) async {
+    shown.add((
+      id: id,
+      title: title,
+      body: body,
+      payload: payload,
+      details: notificationDetails,
+    ));
+    await showAnswer?.future;
+    visible.add(id);
+  }
 
   @override
-  Future<void> cancel({required int id}) async => cancelled.add(id);
+  Future<void> cancel({required int id}) async {
+    cancelled.add(id);
+    visible.remove(id);
+  }
 }
 
 /// A platform with the interface's defaults, as the Linux plugin has for

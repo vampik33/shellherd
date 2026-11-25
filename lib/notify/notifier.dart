@@ -82,6 +82,27 @@ class LocalNotifier implements Notifier {
   /// Android plugin, which is not there, and drop it.
   final LinuxFlutterLocalNotificationsPlugin? _linux;
 
+  /// The last Linux show or cancel of each notification id, while it runs.
+  /// The Linux plugin learns a notification's id only when the desktop has
+  /// answered its show, so a cancel that overtook the show would find
+  /// nothing and leave the alert up: the calls of one id run in order.
+  final _linuxCalls = <int, Future<void>>{};
+
+  /// Runs [call] once the earlier Linux calls of [id] have ended, failed
+  /// or not; a failure still reaches the caller of its own call.
+  Future<void> _inOrder(int id, Future<void> Function() call) async {
+    final before = _linuxCalls[id];
+    final done = Completer<void>();
+    _linuxCalls[id] = done.future;
+    try {
+      await before;
+      await call();
+    } finally {
+      done.complete();
+      if (identical(_linuxCalls[id], done.future)) _linuxCalls.remove(id);
+    }
+  }
+
   /// Sets the plugin up in this isolate. [onTap] gets the taps on
   /// notifications while the app runs; only the main isolate gets them.
   static Future<LocalNotifier> init({
@@ -133,12 +154,15 @@ class LocalNotifier implements Notifier {
     final id = notificationId(host.id, alert.paneId);
     final payload = PaneTarget(host.id, alert.paneId).encode();
     if (_linux case final linux?) {
-      return linux.show(
-        id: id,
-        title: text.title,
-        body: text.body,
-        payload: payload,
-        notificationDetails: agentNotificationDetails.linux,
+      return _inOrder(
+        id,
+        () => linux.show(
+          id: id,
+          title: text.title,
+          body: text.body,
+          payload: payload,
+          notificationDetails: agentNotificationDetails.linux,
+        ),
       );
     }
     return _plugin.show(
@@ -153,7 +177,9 @@ class LocalNotifier implements Notifier {
   @override
   Future<void> cancel(String hostId, String paneId) {
     final id = notificationId(hostId, paneId);
-    if (_linux case final linux?) return linux.cancel(id: id);
+    if (_linux case final linux?) {
+      return _inOrder(id, () => linux.cancel(id: id));
+    }
     return _plugin.cancel(id: id);
   }
 }
