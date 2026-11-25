@@ -94,17 +94,16 @@ void main() {
     await showsText(tester, '${mark}k');
   }
 
-  Future<void> pumpScreen(WidgetTester tester, {bool mosh = false, Host? on}) =>
-      tester.pumpWidget(
-        MaterialApp(
-          navigatorKey: navigator,
-          home: TerminalScreen(
-            host: on ?? host,
-            connector: connector,
-            mosh: mosh,
-          ),
-        ),
-      );
+  Future<void> pumpScreen(
+    WidgetTester tester, {
+    bool mosh = false,
+    Host? on,
+  }) => tester.pumpWidget(
+    MaterialApp(
+      navigatorKey: navigator,
+      home: TerminalScreen(host: on ?? host, connector: connector, mosh: mosh),
+    ),
+  );
 
   /// Disposes the screen, which closes its connection.
   Future<void> closeScreen(WidgetTester tester) async {
@@ -215,10 +214,7 @@ void main() {
           ..handleAppLifecycleStateChanged(AppLifecycleState.paused);
         // A paused app draws no frames: wait on the clock for the prompt.
         final t = terminal(tester);
-        await poll.until(
-          () => t.buffer.getText().trim().isNotEmpty,
-          'the prompt',
-        );
+        await poll.until(() => t.buffer.getText().trim().isNotEmpty, 'the prompt');
         // Android freezes the app; the link gives no replies meanwhile.
         // Past the first ping (15 s) and its deadline (20 s).
         await sshd.signalConnections(ProcessSignal.sigstop);
@@ -284,9 +280,7 @@ void main() {
 
       Finder chipStarting(String prefix) => find.byWidgetPredicate(
         (w) =>
-            w is Chip &&
-            w.label is Text &&
-            (w.label as Text).data!.startsWith(prefix),
+            w is Chip && w.label is Text && (w.label as Text).data!.startsWith(prefix),
       );
 
       testWidgets('runs a shell, shows the round trip, and leaving ends '
