@@ -4,6 +4,7 @@
 @Tags(['herdr'])
 library;
 
+import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shellherd/herdr/api/herdr_client.dart';
@@ -34,7 +35,6 @@ Future<void> main() async {
       final ws = snap.workspaces.singleWhere((w) => w.label == 'snap');
       final pane = snap.panes.singleWhere((p) => p.id == paneId);
       expect(pane.workspaceId, ws.id);
-      expect(snap.tabs.where((t) => t.workspaceId == ws.id), hasLength(ws.tabCount));
       expect(snap.protocol, 22);
     });
 
@@ -60,8 +60,8 @@ Future<void> main() async {
       );
       expect(ansi, contains('\u001b['));
       final plain = await herdr.client.paneRead(paneId, lines: 50);
-      expect(plain.text, contains('RED_MARK'));
-      expect(plain.text, isNot(contains('\u001b[')));
+      expect(plain, contains('RED_MARK'));
+      expect(plain, isNot(contains('\u001b[')));
     });
 
     test('send_keys ctrl+c interrupts a running command', () async {
@@ -99,7 +99,8 @@ Future<void> main() async {
       final events = await seen.timeout(const Duration(seconds: 5));
       final ws = events.singleWhere((e) => e.kind == 'workspace_created');
       expect((ws.data['workspace']! as Map)['label'], 'evented');
-      expect(events.singleWhere((e) => e.kind == 'pane_created').paneId, paneId);
+      final pane = events.singleWhere((e) => e.kind == 'pane_created');
+      expect(jsonEncode(pane.data), contains('"$paneId"'));
     });
 
     test('subscribing to the status of an unknown pane is rejected', () async {

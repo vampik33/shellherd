@@ -72,7 +72,6 @@ void main() {
         LinkSyncing,
         LinkLive,
       ]);
-      expect((states.last as LinkLive).server.protocol, 22);
       expect(link.snapshot.value, isNotNull);
     });
 

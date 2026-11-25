@@ -38,8 +38,7 @@ class LinkSyncing extends LinkState {
 
 /// Events arrive and the snapshot is current.
 class LinkLive extends LinkState {
-  const LinkLive(this.server);
-  final HerdrPing server;
+  const LinkLive();
 }
 
 /// The link failed and the app tries again by itself.
@@ -77,7 +76,6 @@ typedef CacheFactory = SnapshotCache Function(
 class OpenLink {
   const OpenLink({
     required this.api,
-    required this.server,
     required this.cache,
     required this.done,
     required this.close,
@@ -87,14 +85,12 @@ class OpenLink {
   /// A link to herdr.
   factory OpenLink.herdr(
     HerdrClient client, {
-    required HerdrPing server,
     required Future<void> done,
     required void Function() close,
     ScreenOpener? screens,
   }) => OpenLink(
     api: HerdrPaneApi(client),
     screens: screens,
-    server: server,
     cache: (onSnapshot, {required debounce, required refreshEvery}) =>
         HerdrCache(
           client,
@@ -114,11 +110,6 @@ class OpenLink {
     required void Function() close,
   }) => OpenLink(
     api: HcPaneApi(client),
-    server: HerdrPing(
-      version: client.hello.version,
-      protocol: client.hello.generation,
-      capabilities: const {},
-    ),
     cache: (onSnapshot, {required debounce, required refreshEvery}) =>
         HcCache(client, onSnapshot: onSnapshot, debounce: debounce),
     done: done,
@@ -130,8 +121,6 @@ class OpenLink {
   /// Starts live screen streams of panes; null where the server has none.
   final ScreenOpener? screens;
 
-  /// Who answered: version and protocol.
-  final HerdrPing server;
   final CacheFactory cache;
 
   /// Completes, with or without an error, when the link ends.
@@ -160,7 +149,6 @@ LinkOpener sshLinkOpener(
         );
         return OpenLink.herdr(
           link.client,
-          server: link.server,
           screens: sshScreenOpener(ssh, link.socketPath, timeout: timeout),
           done: ssh.done,
           close: ssh.close,
@@ -285,7 +273,7 @@ class HerdrConnection {
         if (!current()) return;
         failures = 0;
         _live = link;
-        state.value = LinkLive(link.server);
+        state.value = const LinkLive();
         // The first of these to complete is the reason the link ended.
         cause = await Future.any([
           stop.future,

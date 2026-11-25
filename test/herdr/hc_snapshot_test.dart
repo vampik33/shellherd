@@ -42,12 +42,11 @@ void main() {
       expect(s.version, '0.1.20');
       expect(s.protocol, 1);
       final w = s.workspaces.single;
-      expect((w.id, w.number, w.label), ('s1', 1, 'web'));
-      expect((w.tabCount, w.paneCount, w.activeTabId), (2, 3, 'b1'));
-      expect(s.tabs.map((t) => (t.id, t.number, t.label, t.paneCount)), [
-        ('b1', 1, 'fix login', 2),
+      expect((w.id, w.label, w.paneCount), ('s1', 'web', 3));
+      expect(s.tabs.map((t) => (t.id, t.label, t.paneCount)), [
+        ('b1', 'fix login', 2),
         // An unnamed tab is called by its place.
-        ('b2', 2, '2', 1),
+        ('b2', '2', 1),
       ]);
       expect(s.panes.map((p) => (p.id, p.tabId, p.displayName)), [
         ('t2', 'b1', 'vim notes'),
@@ -56,21 +55,6 @@ void main() {
       ]);
       expect(s.panes.first.cwd, '/home/u/work');
       expect(s.agents, isEmpty);
-    });
-
-    test('nothing is focused: herdr-core keeps no focus', () {
-      final s = _snapshot(
-        [hcTerminal('t1')],
-        [
-          hcSpace('s1', [
-            hcTab('b1', ['t1']),
-          ]),
-        ],
-      );
-      expect(s.focusedPaneId, isNull);
-      expect(s.workspaces.single.focused, isFalse);
-      expect(s.tabs.single.focused, isFalse);
-      expect(s.panes.single.focused, isFalse);
     });
 
     test('a terminal that is gone or finished has no pane', () {

@@ -92,7 +92,7 @@ Future<void> main() async {
       final deadline = DateTime.now().add(const Duration(seconds: 10));
       var text = '';
       while (!text.contains('SSH_42') && DateTime.now().isBefore(deadline)) {
-        text = (await link.client.paneRead(paneId, lines: 50)).text;
+        text = await link.client.paneRead(paneId, lines: 50);
         await Future<void>.delayed(const Duration(milliseconds: 100));
       }
       expect(text, contains('SSH_42'));

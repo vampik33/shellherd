@@ -15,7 +15,7 @@ void main() {
   late List<HerdrSnapshot> published;
 
   /// The number of the snapshot that was published last.
-  int lastNumber() => published.last.workspaces.single.number;
+  String lastNumber() => published.last.workspaces.single.label;
 
   HerdrCache build({
     Duration debounce = const Duration(milliseconds: 5),
@@ -43,14 +43,14 @@ void main() {
         'session.snapshot',
       ]);
       expect(herdr.watched, ['w1:p1']);
-      expect(published.map((s) => s.workspaces.single.number), [2]);
+      expect(published.map((s) => s.workspaces.single.label), ['2']);
     });
 
     test('an event brings a new snapshot, on the same subscription', () async {
       await cache.start();
       herdr.push();
       await until(() => published.length == 2, 'a second snapshot');
-      expect(lastNumber(), 3);
+      expect(lastNumber(), '3');
       expect(herdr.count('events.subscribe'), 1);
     });
 
@@ -142,7 +142,7 @@ void main() {
       herdr.holdSnapshots!.complete();
       herdr.holdSnapshots = null;
       await until(() => published.length == 3, 'one more snapshot');
-      expect(lastNumber(), 4);
+      expect(lastNumber(), '4');
     });
 
     test('a pane that closed before the subscribe does no harm', () async {
