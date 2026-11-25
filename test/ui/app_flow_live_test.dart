@@ -49,8 +49,10 @@ void main() {
       );
 
       await tester.tap(find.text('Save'));
-      await untilFound(tester, find.text('testbox'));
       await untilGone(tester, hostField('Label'));
+      // The list reads the hosts again once the form closes; find.text would
+      // also match the label still in the form's field.
+      await untilFound(tester, find.byTooltip('Terminal on testbox'));
 
       await tester.tap(find.byTooltip('Terminal on testbox'));
       await untilFound(tester, find.text('Trust'));
