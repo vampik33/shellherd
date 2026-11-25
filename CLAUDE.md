@@ -6,9 +6,11 @@ Flutter app (Android; Linux desktop for development) that logs in to hosts over 
 
 ```bash
 flutter run -d linux                                   # desktop build for development
+xvfb-run -a flutter run -d linux                       # same with no display; send q on stdin to quit
 flutter analyze                                        # must be clean
 flutter test                                           # everything, ~70 s; live tests skip if their program is missing
 flutter test --exclude-tags herdr,hc,sshd,docker       # offline only
+flutter build apk --release                            # needs android/key.properties; see README "Release"
 ```
 
 Tags (dart_test.yaml): `herdr` starts a throwaway herdr server, `hc` a throwaway herdr-core,
@@ -27,6 +29,9 @@ Tags (dart_test.yaml): `herdr` starts a throwaway herdr server, `hc` a throwaway
 
 ## Gotchas
 
+- Linux build deps and release signing steps: README. A failed first Linux configure (e.g. missing libsecret) caches CMAKE_INSTALL_PREFIX=/usr/local: delete build/linux and rebuild.
+- Before publishing an APK, check its signing cert SHA-256 (`apksigner verify --print-certs`) matches the previous release's; a different key cannot update an install.
+- Releases: annotated tag `vX.Y.Z` (no `+N`) named "shellherd X.Y.Z", one asset `shellherd.apk`, notes start "Covers X.Y.Z (#PR)" and end with an Install section on the signing key.
 - Bound every SSH channel open/exec yourself: dartssh2 keepalive has no reply deadline, a stalled link hangs forever.
 - Tests must never touch the user's own herdr-core: run `hc` without HC_TERMINAL_* vars and with HC_SESSION=<name> (HcTestSession does).
 - herdr reports no event for rename/cwd change and its JSON API has no output stream: the exact screen streams over an SSH exec of `herdr terminal session observe` (lib/herdr/pane_stream.dart), the text view and the fallback poll pane.read.
