@@ -82,6 +82,8 @@ class SshShellSession implements ShellSession {
           )
           .timeout(timeout);
     } catch (_) {
+      // Also ends a shell channel that opens late: close() fails the pending
+      // open and destroys the channels already open.
       client.close();
       rethrow;
     }
