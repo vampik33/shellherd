@@ -81,23 +81,30 @@ void main() {
     '"$text" on the screen:\n${terminal(tester).buffer.getText()}',
   );
 
+  /// Types [line] and presses Enter as the phone keyboard sends them: the
+  /// text as one insert, which goes as a paste, and Enter as its own key.
+  void typeLine(WidgetTester tester, String line) => terminal(tester)
+    ..textInput(line)
+    ..keyInput(TerminalKey.enter);
+
   /// The command line shows what was typed, so the output has to differ:
   /// `printf 'm%s\n' k` prints "mk".
   Future<void> runsCommands(WidgetTester tester, String mark) async {
-    terminal(tester).textInput("printf '$mark%s\\n' k\r");
+    typeLine(tester, "printf '$mark%s\\n' k");
     await showsText(tester, '${mark}k');
   }
 
-  Future<void> pumpScreen(
-    WidgetTester tester, {
-    bool mosh = false,
-    Host? on,
-  }) => tester.pumpWidget(
-    MaterialApp(
-      navigatorKey: navigator,
-      home: TerminalScreen(host: on ?? host, connector: connector, mosh: mosh),
-    ),
-  );
+  Future<void> pumpScreen(WidgetTester tester, {bool mosh = false, Host? on}) =>
+      tester.pumpWidget(
+        MaterialApp(
+          navigatorKey: navigator,
+          home: TerminalScreen(
+            host: on ?? host,
+            connector: connector,
+            mosh: mosh,
+          ),
+        ),
+      );
 
   /// Disposes the screen, which closes its connection.
   Future<void> closeScreen(WidgetTester tester) async {
@@ -131,7 +138,7 @@ void main() {
       await pumpScreen(tester);
       await untilFound(tester, chip('ssh'));
       await runsCommands(tester, 'b'); // the shell reads input now
-      terminal(tester).textInput('sleep 60\r');
+      typeLine(tester, 'sleep 60');
       await Future<void>.delayed(const Duration(milliseconds: 300));
       await tester.tap(find.text('ctrl'));
       await tester.pump();
@@ -147,7 +154,7 @@ void main() {
       await knownHosts.trust('127.0.0.1', sshd.port, sshd.hostKey);
       await pumpScreen(tester);
       await untilFound(tester, chip('ssh'));
-      terminal(tester).textInput('exit 4\r');
+      typeLine(tester, 'exit 4');
       await untilFound(tester, find.text('Session ended (exit 4).'));
       expect(chip('closed'), findsOneWidget);
 
@@ -166,13 +173,13 @@ void main() {
       await untilFound(tester, chip('ssh'));
       // A full-screen program turns on modes, then the connection drops.
       await runsCommands(tester, 'f'); // the shell reads input now
-      terminal(tester).textInput(
+      typeLine(
+        tester,
         // The shell turns some modes off after a command, so the command
         // keeps running, as vim would. The external printf writes at once;
         // fish holds the output of its builtin until the line ends. \133
         // is "[": fish adds a closing "]" to a typed "[".
-        r"command printf '\033\133?1049h\033\133?1003h\033\133?25l\033\133?1h'; sleep 60"
-        '\r',
+        r"command printf '\033\133?1049h\033\133?1003h\033\133?25l\033\133?1h'; sleep 60",
       );
       await until(
         tester,
@@ -208,7 +215,10 @@ void main() {
           ..handleAppLifecycleStateChanged(AppLifecycleState.paused);
         // A paused app draws no frames: wait on the clock for the prompt.
         final t = terminal(tester);
-        await poll.until(() => t.buffer.getText().trim().isNotEmpty, 'the prompt');
+        await poll.until(
+          () => t.buffer.getText().trim().isNotEmpty,
+          'the prompt',
+        );
         // Android freezes the app; the link gives no replies meanwhile.
         // Past the first ping (15 s) and its deadline (20 s).
         await sshd.signalConnections(ProcessSignal.sigstop);
@@ -274,7 +284,9 @@ void main() {
 
       Finder chipStarting(String prefix) => find.byWidgetPredicate(
         (w) =>
-            w is Chip && w.label is Text && (w.label as Text).data!.startsWith(prefix),
+            w is Chip &&
+            w.label is Text &&
+            (w.label as Text).data!.startsWith(prefix),
       );
 
       testWidgets('runs a shell, shows the round trip, and leaving ends '
@@ -300,7 +312,7 @@ void main() {
         await pumpScreen(tester, mosh: true);
         await untilFound(tester, chipStarting('mosh'));
         await runsCommands(tester, 'n');
-        terminal(tester).textInput('exit\r');
+        typeLine(tester, 'exit');
         await untilFound(tester, find.text('Session ended.'));
         expect(chip('closed'), findsOneWidget);
         await tester.tap(find.text('Reconnect'));

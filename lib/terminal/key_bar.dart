@@ -82,8 +82,60 @@ class StickyTerminal extends Terminal {
     return handled;
   }
 
+  /// Text from the phone keyboard or the key bar. More than one character
+  /// at once is not a typed key but a paste from the keyboard's clipboard,
+  /// or text it composed: it goes as [paste], without the sticky modifiers,
+  /// which stay on for the next key.
   @override
-  void textInput(String text) => super.textInput(modifiers.apply(text));
+  void textInput(String text) {
+    if (text.runes.length > 1) {
+      paste(text);
+    } else {
+      super.textInput(modifiers.apply(text));
+    }
+  }
+
+  /// xterm.dart puts pasted text between the bracketed paste markers as it
+  /// is: an end marker in the text would end the paste there, and the
+  /// program would take the rest as typed, so a newline in it would run a
+  /// command. The end markers are taken out first.
+  ///
+  /// Without bracketed paste, xterm.dart's paste hands the text to
+  /// [textInput], which would hand it back here; it goes out directly.
+  @override
+  void paste(String text) {
+    final clean = _withoutPasteEnd(text);
+    if (bracketedPasteMode) {
+      super.paste(clean);
+    } else {
+      super.textInput(clean);
+    }
+  }
+}
+
+/// The end marker of a bracketed paste.
+const _pasteEnd = '\x1b[201~';
+
+/// [text] with no [_pasteEnd] left in it. Taking one out can join the text
+/// around it into another, as in `ESC[20 ESC[201~ 1~`, so each one goes as
+/// soon as it is complete, and the text kept never holds one.
+String _withoutPasteEnd(String text) {
+  if (!text.contains(_pasteEnd)) return text;
+  final out = <int>[];
+  for (final unit in text.codeUnits) {
+    out.add(unit);
+    if (_endsWithPasteEnd(out)) out.length -= _pasteEnd.length;
+  }
+  return String.fromCharCodes(out);
+}
+
+bool _endsWithPasteEnd(List<int> units) {
+  final start = units.length - _pasteEnd.length;
+  if (start < 0) return false;
+  for (var i = 0; i < _pasteEnd.length; i++) {
+    if (units[start + i] != _pasteEnd.codeUnitAt(i)) return false;
+  }
+  return true;
 }
 
 /// The keys that a phone keyboard does not have. It scrolls sideways.
