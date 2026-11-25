@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 
 import '../herdr/api/herdr_client.dart';
@@ -99,8 +100,11 @@ class LocalNotifier implements Notifier {
     return LocalNotifier._(plugin);
   }
 
-  /// The pane of the notification that started the app, if one did.
+  /// The pane of the notification that started the app, if one did. Only
+  /// Android starts the app from a notification; the Linux plugin has no
+  /// launch details and throws [UnimplementedError] for them.
   Future<PaneTarget?> launchTarget() async {
+    if (defaultTargetPlatform != TargetPlatform.android) return null;
     final details = await _plugin.getNotificationAppLaunchDetails();
     if (details == null || !details.didNotificationLaunchApp) return null;
     return PaneTarget.decode(details.notificationResponse?.payload);
