@@ -11,6 +11,5 @@ paths:
   and skip when their program is missing.
 - Wait with `until`/`eventually` (test/support/poll.dart), never a fixed
   delay.
-- Never touch the user's own herdr or herdr-core: use the throwaway sessions
-  `HerdrTestSession` and `HcTestSession`, which run `hc` without the
-  `HC_TERMINAL_*` variables and with `HC_SESSION=<name>`.
+- Live tests use the throwaway sessions `HerdrTestSession` and
+  `HcTestSession`, never the user's own herdr or herdr-core (see CLAUDE.md).

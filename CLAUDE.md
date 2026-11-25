@@ -33,3 +33,6 @@ Run plain `flutter test` once `id -nG` lists docker.
 - Bound every SSH channel open and exec with `boundedOpen`
   (lib/bounded_open.dart): dartssh2 keepalive has no reply deadline, so a
   stalled link hangs forever.
+- Never touch the user's own herdr or herdr-core, in tests or by hand: run
+  `hc` without the `HC_TERMINAL_*` variables and with `HC_SESSION=<name>`
+  (`HcTestSession` does).

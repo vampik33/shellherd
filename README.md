@@ -42,9 +42,11 @@ f4ba4f8c2b4bc3779b32569971dae1d9c4a88071418e92adccfafe90be2a5654
 
 ## Security
 
-Keys and passwords never leave the phone, and a server's key must match the
-one you trusted. [SECURITY.md](SECURITY.md) has the details and how to report
-a vulnerability.
+Private keys and passwords are stored on the phone, encrypted with a key in
+the Android Keystore, and the app's data is left out of Android backups.
+Private keys never leave the phone; a password goes only to the server you
+log in to, once its key matches the one you trusted.
+[SECURITY.md](SECURITY.md) has the details and how to report a vulnerability.
 
 ## Development
 
@@ -112,7 +114,13 @@ keyAlias=...
 keyPassword=...
 ```
 
-1. Merge the version bump to main.
+1. Merge the version bump to main, then build from that commit on a clean
+   tree (the last command must print nothing):
+
+   ```sh
+   git switch main && git pull --ff-only && git status --short
+   ```
+
 2. Build the APK and print its signing certificate (`apksigner` is in the
    Android SDK's build-tools):
 
@@ -124,7 +132,8 @@ keyPassword=...
 3. Check that the certificate SHA-256 matches the one under
    [Install](#install). An APK signed with another key does not install over
    the previous release.
-4. Tag main with an annotated tag `vX.Y.Z` (no `+N`) whose message is
+4. Tag the commit you built (`git rev-parse HEAD`), not whatever main is
+   then, with an annotated tag `vX.Y.Z` (no `+N`) whose message is
    "shellherd X.Y.Z", and push it.
 5. Make a GitHub release from the tag, named "shellherd X.Y.Z", with the APK
    as its only asset, `shellherd.apk`. The notes start with
