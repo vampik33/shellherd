@@ -9,10 +9,9 @@ this file adds only what agents need. Area rules are in `.claude/rules/`.
 
 ```sh
 xvfb-run -a flutter run -d linux   # no display; send q on stdin to quit
-sg docker -c "flutter test"        # full suite, ~90 s
 ```
 
-Run plain `flutter test` once `id -nG` lists docker.
+The full `flutter test` takes about 90 s.
 
 ## Layout
 
