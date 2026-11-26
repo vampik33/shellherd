@@ -8,6 +8,9 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shellherd/herdr/api/herdr_client.dart';
+import 'package:shellherd/herdr/pane_history.dart';
+import 'package:shellherd/herdr/pane_poller.dart';
+import 'package:shellherd/herdr/server_api.dart';
 
 import '../support/herdr_test_session.dart';
 
@@ -72,6 +75,30 @@ Future<void> main() async {
       await herdr.client.paneSendInput(paneId, text: r'echo AFTER_$((1+1))', keys: ['enter']);
       // Without the interrupt, sleep 60 would hold the shell past the timeout.
       await herdr.waitForText(paneId, (t) => t.contains('AFTER_2'), timeout: const Duration(seconds: 5));
+    });
+
+    test('a deeper read holds the text view\'s read, with older lines above '
+        'it; herdr gives at most 1000 lines', () async {
+      final paneId = await herdr.createWorkspace('history');
+      await herdr.client.paneSendInput(
+        paneId,
+        text: r'seq 1 3000; echo DONE_$((1+1))',
+        keys: ['enter'],
+      );
+      await herdr.waitForText(paneId, (t) => t.contains('DONE_2'));
+      final api = HerdrPaneApi(herdr.client);
+      Future<List<String>> read(int lines) async => (await api.read(
+        paneId,
+        source: ReadSource.recentUnwrapped,
+        lines: lines,
+      )).split('\n');
+      final shown = await read(PanePoller.historyLines);
+      expect(shown, hasLength(PanePoller.historyLines));
+      final deeper = await read(historySteps.first);
+      // Fewer lines than asked for: the text view loads no more.
+      expect(deeper.length, lessThan(historySteps.first));
+      expect(deeper.length, greaterThan(shown.length));
+      expect(olderLines(shown, deeper), deeper.length - shown.length);
     });
 
     test('agent.prompt on a pane without an agent is agent_not_found', () async {

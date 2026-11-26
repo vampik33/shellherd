@@ -8,6 +8,7 @@ import '../../ui/link_status.dart';
 import '../../ui/palette.dart';
 import '../api/herdr_client.dart';
 import '../herdr_connection.dart';
+import '../pane_history.dart';
 import '../pane_poller.dart';
 import '../pane_stream.dart';
 import '../seen_marker.dart';
@@ -157,6 +158,7 @@ class _PaneScreenState extends State<PaneScreen> {
       () => widget.connection.transcripts,
       () => _claudeSession,
       changes: link,
+      ranges: () => widget.connection.transcriptRanges,
     );
     _changes = Listenable.merge([
       link,
@@ -553,6 +555,11 @@ class _PaneScreenState extends State<PaneScreen> {
       child: ChatView(
         items: items,
         startsCut: transcript.startsCut,
+        firstKey: transcript.firstKey,
+        earlier: transcript.earlier,
+        onLoadEarlier: widget.connection.transcriptRanges == null
+            ? null
+            : () => unawaited(_transcript.loadEarlier()),
         status: _pane?.status,
         showDetails: _details.value,
       ),
@@ -568,7 +575,21 @@ class _PaneScreenState extends State<PaneScreen> {
     }
     return Opacity(
       opacity: state is LinkLive && !view.gone ? 1 : 0.5,
-      child: _exact ? _ExactScreen(text) : _ReflowedText(text),
+      child: _exact
+          ? _ExactScreen(text)
+          : _ReflowedText(text, readHistory: _readHistory),
+    );
+  }
+
+  /// The pane's text with up to [lines] lines, for the text view's older
+  /// lines.
+  Future<String> _readHistory(int lines) async {
+    final api = widget.connection.api;
+    if (api == null) throw StateError('no link to ${widget.server}');
+    return api.read(
+      widget.paneId,
+      source: ReadSource.recentUnwrapped,
+      lines: lines,
     );
   }
 
@@ -769,11 +790,17 @@ class _Answers extends StatelessWidget {
 }
 
 /// Whole lines that wrap at the width of the phone, the newest at the
-/// bottom. While the user reads further up, the text stays still.
+/// bottom. While the user reads further up, the text stays still; at the
+/// top of a text of [PanePoller.historyLines] lines, older lines load
+/// above, the steps of [historySteps] at a time, deeper in one load where
+/// a step finds none.
 class _ReflowedText extends StatefulWidget {
-  const _ReflowedText(this.text);
+  const _ReflowedText(this.text, {required this.readHistory});
 
   final String text;
+
+  /// Reads the pane's text with up to the given number of lines.
+  final Future<String> Function(int lines) readHistory;
 
   @override
   State<_ReflowedText> createState() => _ReflowedTextState();
@@ -784,12 +811,71 @@ class _ReflowedTextState extends State<_ReflowedText> {
   late String _shown;
   late List<TextSpan> _lines;
 
-  void _show(String text) {
+  /// How many lines the read of [_shown] asked for.
+  var _depth = PanePoller.historyLines;
+
+  /// The pane may have lines older than [_shown].
+  var _older = false;
+  var _earlier = EarlierLoad.idle;
+
+  /// Bumped when [_shown] changes: a load for an older one is dropped.
+  var _version = 0;
+
+  /// Shows [text], read with up to [depth] lines; [older] when it may
+  /// not hold the oldest. A text with fewer lines than it asked for holds
+  /// them all.
+  void _show(String text, {int depth = PanePoller.historyLines, bool? older}) {
     _shown = text;
+    _depth = depth;
+    _older = older ?? '\n'.allMatches(text).length + 1 >= depth;
+    _earlier = EarlierLoad.idle;
+    _version++;
     _lines = parseAnsi(text);
     while (_lines.isNotEmpty && _lines.last.children!.isEmpty) {
       _lines.removeLast();
     }
+  }
+
+  /// Reads the next step of [historySteps] and puts the lines older than
+  /// [_shown] above it, which stays as it is. A full read that does not
+  /// hold the start of [_shown], or nothing before it, goes on to the next
+  /// step; [_shown] never takes a read that does not hold its start. Where
+  /// no step is left, or a short read holds nothing more, the older lines
+  /// are not loaded.
+  Future<void> _loadOlder() async {
+    if (!_older || _earlier == EarlierLoad.loading) return;
+    final version = _version;
+    final shownLines = _shown.split('\n');
+    setState(() => _earlier = EarlierLoad.loading);
+    for (final depth in historySteps.where((d) => d > _depth)) {
+      try {
+        final read = await widget.readHistory(depth);
+        if (!mounted || version != _version) return;
+        final readLines = read.split('\n');
+        final full = readLines.length >= depth;
+        final older = olderLines(shownLines, readLines);
+        if (older != null && (older > 0 || !full)) {
+          setState(() {
+            _show(
+              [...readLines.take(older), ...shownLines].join('\n'),
+              depth: depth,
+              older: full,
+            );
+            if (_older && depth == historySteps.last) {
+              _earlier = EarlierLoad.capped;
+            }
+          });
+          return;
+        }
+        if (!full) break;
+      } catch (e) {
+        if (!mounted || version != _version) return;
+        debugPrint('shellherd: cannot load older lines of the pane: $e');
+        setState(() => _earlier = EarlierLoad.failed);
+        return;
+      }
+    }
+    setState(() => _earlier = EarlierLoad.capped);
   }
 
   bool get _scrolledUp => _scroll.hasClients && _scroll.offset > 1;
@@ -823,9 +909,14 @@ class _ReflowedTextState extends State<_ReflowedText> {
     controller: _scroll,
     reverse: true,
     padding: const EdgeInsets.all(6),
-    itemCount: _lines.length,
-    itemBuilder: (context, i) =>
-        Text.rich(_lines[_lines.length - 1 - i], style: _paneStyle),
+    itemCount: _lines.length + (_older ? 1 : 0),
+    itemBuilder: (context, i) => i == _lines.length
+        ? EarlierRow(
+            _earlier,
+            () => unawaited(_loadOlder()),
+            what: 'older lines',
+          )
+        : Text.rich(_lines[_lines.length - 1 - i], style: _paneStyle),
   );
 }
 

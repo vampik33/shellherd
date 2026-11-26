@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shellherd/herdr/api/herdr_client.dart';
 import 'package:shellherd/herdr/herdr_connection.dart';
 import 'package:shellherd/herdr/transcript/chat_items.dart';
+import 'package:shellherd/herdr/transcript/transcript_stream.dart';
 import 'package:shellherd/herdr/ui/chat_details.dart';
 import 'package:shellherd/herdr/ui/chat_view.dart';
 import 'package:shellherd/herdr/ui/pane_screen.dart';
@@ -74,6 +75,7 @@ void main() {
     Map<String, Object?>? session,
     bool withTranscripts = true,
     bool showDetails = true,
+    FakeTranscriptRanges? ranges,
   }) async {
     transcripts = FakeTranscripts();
     details = ChatDetails()..value = showDetails;
@@ -81,6 +83,8 @@ void main() {
       session ?? _session(),
       null,
       withTranscripts ? transcripts.open : null,
+      null,
+      ranges?.read,
     );
     herdr().paneText = 'pane text line';
     connection = HerdrConnection(
@@ -562,5 +566,276 @@ void main() {
     await tester.pumpAndSettle();
     await untilFound(tester, paneText('message 60'));
     await close(tester);
+  });
+
+  group('earlier messages', () {
+    String prompt(int i) => claudeUser('msg $i.', uuid: 'u$i');
+
+    /// Opens the chat on [lines] read from inside line [cutLine], as for a
+    /// file bigger than the read's tail.
+    Future<void> openCut(
+      WidgetTester tester,
+      List<String> lines,
+      int cutLine, {
+      FakeTranscriptRanges? ranges,
+    }) async {
+      final file = transcriptFile(lines);
+      ranges?.file = file;
+      await open(tester, ranges: ranges);
+      await until(tester, () => transcripts.opened.isNotEmpty, 'a read');
+      final cut = transcriptFile(lines.take(cutLine).toList()).length + 2;
+      transcripts.last
+        ..header(file.length, start: cut)
+        ..bytes(file.sublist(cut));
+    }
+
+    testWidgets('scrolling to the top loads them above, and the chat stays '
+        'still', (tester) async {
+      tester.view.physicalSize = const Size(360, 640);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final ranges = FakeTranscriptRanges()..hold = Completer();
+      final lines = [for (var i = 0; i < 60; i++) prompt(i)];
+      await openCut(tester, lines, 30, ranges: ranges);
+      await untilFound(tester, paneText('msg 59.'));
+      expect(ranges.asked, isEmpty, reason: 'the top is far away');
+
+      await tester.drag(find.byType(ListView).first, const Offset(0, 5000));
+      await untilStill(tester);
+      await untilFound(tester, find.text('Loading earlier messages…'));
+      expect(ranges.asked, hasLength(1));
+      await untilStill(tester, paneText('msg 31.'));
+      final before = tester.getTopLeft(paneText('msg 31.')).dy;
+
+      ranges.hold!.complete();
+      await until(
+        tester,
+        () => find.text('Loading earlier messages…').evaluate().isEmpty,
+        'the load',
+      );
+      await tester.pump();
+      expect(tester.getTopLeft(paneText('msg 31.')).dy, before);
+      expect(ranges.asked, hasLength(1));
+
+      await tester.drag(find.byType(ListView).first, const Offset(0, 5000));
+      await untilStill(tester);
+      await untilFound(tester, paneText('msg 0.'));
+      expect(paneText('msg 30.'), findsNothing, reason: 'msg 30 is far below');
+      await close(tester);
+    });
+
+    testWidgets('a short chat loads them at once, and an open row stays '
+        'open', (tester) async {
+      final ranges = FakeTranscriptRanges()..hold = Completer();
+      final lines = [
+        for (var i = 0; i < 5; i++) prompt(i),
+        claudeAssistant([
+          {'type': 'thinking', 'thinking': 'deep thought', 'signature': 's'},
+        ], uuid: 'a1'),
+        prompt(9),
+      ];
+      await openCut(tester, lines, 3, ranges: ranges);
+      await untilFound(tester, paneText('msg 9.'));
+      await until(tester, () => ranges.asked.isNotEmpty, 'a load');
+      await tester.tap(find.text('Thinking'));
+      await tester.pump();
+      expect(paneText('deep thought'), findsOneWidget);
+
+      ranges.hold!.complete();
+      await untilFound(tester, paneText('msg 0.'));
+      expect(paneText('deep thought'), findsOneWidget);
+      expect(find.text('Loading earlier messages…'), findsNothing);
+      expect(ranges.asked, hasLength(1));
+      await close(tester);
+    });
+
+    testWidgets('a failed load offers to try again', (tester) async {
+      final ranges = FakeTranscriptRanges()
+        ..failNext = StateError('link stalled');
+      final lines = [for (var i = 0; i < 4; i++) prompt(i)];
+      await openCut(tester, lines, 1, ranges: ranges);
+      await untilFound(
+        tester,
+        find.text('Cannot load earlier messages. Tap to try again.'),
+      );
+      expect(paneText('msg 0.'), findsNothing);
+      await tester.tap(
+        find.text('Cannot load earlier messages. Tap to try again.'),
+      );
+      await untilFound(tester, paneText('msg 0.'));
+      expect(ranges.asked, hasLength(2));
+      await close(tester);
+    });
+
+    testWidgets('a link without range reads says they are not shown', (
+      tester,
+    ) async {
+      final lines = [for (var i = 0; i < 4; i++) prompt(i)];
+      await openCut(tester, lines, 1);
+      await untilFound(tester, find.text('Earlier messages are not shown.'));
+      expect(paneText('msg 0.'), findsNothing);
+      await close(tester);
+    });
+
+    testWidgets('an item that loads in front in place of a later copy shows '
+        'once', (tester) async {
+      tester.view.physicalSize = const Size(360, 640);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      const tool = ChatTool(
+        id: 't7',
+        name: 'Bash',
+        summary: 'only once',
+        input: 'ls',
+      );
+      final later = [for (var i = 1; i < 60; i++) ChatPrompt('msg $i.')];
+      Widget chat(List<ChatItem> items, int firstKey) => MaterialApp(
+        home: Scaffold(
+          body: ChatView(
+            items: items,
+            firstKey: firstKey,
+            startsCut: true,
+            onLoadEarlier: () {},
+          ),
+        ),
+      );
+      await tester.pumpWidget(chat([tool, ...later], 0));
+      await tester.drag(find.byType(ListView), const Offset(0, 5000));
+      await tester.pump();
+      await untilFound(tester, paneText('only once'));
+      // The earlier lines hold the record with the call: its later copy
+      // is dropped, and the items shift by one less than came in front.
+      await tester.pumpWidget(
+        chat([const ChatPrompt('msg 0.'), tool, ...later], -2),
+      );
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+      expect(paneText('only once'), findsOneWidget);
+      expect(paneText('msg 0.'), findsOneWidget);
+    });
+
+    testWidgets('an open row after a later copy that earlier lines drop does '
+        'not open another', (tester) async {
+      final ranges = FakeTranscriptRanges()..hold = Completer();
+      String thinking(String text, String uuid) => claudeAssistant([
+        {'type': 'thinking', 'thinking': text, 'signature': 's'},
+      ], uuid: uuid);
+      final lines = [
+        prompt(0),
+        prompt(1),
+        prompt(2),
+        // A later copy of record u1, which the earlier lines hold.
+        prompt(1),
+        thinking('thought A', 'a1'),
+        thinking('thought B', 'a2'),
+        thinking('thought C', 'a3'),
+        prompt(9),
+      ];
+      await openCut(tester, lines, 2, ranges: ranges);
+      await untilFound(tester, paneText('msg 9.'));
+      await until(tester, () => ranges.asked.isNotEmpty, 'a load');
+      // From the bottom: C, B, A.
+      await tester.tap(find.text('Thinking').at(1));
+      await tester.pump();
+      expect(paneText('thought B'), findsOneWidget);
+      expect(paneText('thought A'), findsNothing);
+      expect(paneText('thought C'), findsNothing);
+
+      ranges.hold!.complete();
+      await untilFound(tester, paneText('msg 0.'));
+      expect(paneText('msg 1.'), findsOneWidget);
+      expect(paneText('thought A'), findsNothing);
+      expect(paneText('thought C'), findsNothing);
+      await close(tester);
+    });
+
+    testWidgets('further up, items that take new numbers show under them', (
+      tester,
+    ) async {
+      tester.view.physicalSize = const Size(360, 640);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      const tool = ChatTool(
+        id: 't7',
+        name: 'Bash',
+        summary: 'only once',
+        input: 'ls',
+      );
+      final later = [for (var i = 1; i < 60; i++) ChatPrompt('msg $i.')];
+      Widget chat(List<ChatItem> items, int firstKey) => MaterialApp(
+        home: Scaffold(
+          body: ChatView(
+            items: items,
+            firstKey: firstKey,
+            startsCut: true,
+            onLoadEarlier: () {},
+          ),
+        ),
+      );
+      await tester.pumpWidget(chat([tool, ...later], 0));
+      await tester.drag(find.byType(ListView), const Offset(0, 5000));
+      await tester.pump();
+      await untilFound(tester, paneText('only once'));
+      // As the stream numbers them when the later copy of the call drops:
+      // below the 2 that came in front and the 60 there were.
+      await tester.pumpWidget(
+        chat([const ChatPrompt('msg 0.'), tool, ...later], -62),
+      );
+      await tester.pump();
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey(-62)),
+          matching: paneText('msg 0.'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey(-60)),
+          matching: paneText('msg 1.'),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('while nothing can load them, it says they are not shown', (
+      tester,
+    ) async {
+      var loads = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ChatView(
+              items: const [ChatPrompt('hi')],
+              startsCut: true,
+              earlier: EarlierLoad.none,
+              onLoadEarlier: () => loads++,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(find.text('Earlier messages are not shown.'), findsOneWidget);
+      expect(loads, 0);
+    });
+
+    testWidgets('past the cap it says they are not loaded', (tester) async {
+      var loads = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: ChatView(
+              items: const [ChatPrompt('hi')],
+              startsCut: true,
+              earlier: EarlierLoad.capped,
+              onLoadEarlier: () => loads++,
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      expect(find.text('Earlier messages are not loaded.'), findsOneWidget);
+      expect(loads, 0);
+    });
   });
 }

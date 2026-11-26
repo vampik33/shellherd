@@ -12,7 +12,23 @@ import 'chat_items.dart';
 /// each becomes the next item. A record seen twice (by its uuid), a
 /// subagent's records (`isSidechain`) and the text Claude Code adds for
 /// the model (`isMeta`) are dropped.
+///
+/// It keeps what each record says, so that [prepend] can put earlier lines
+/// in front.
 class ClaudeTranscript {
+  /// What each line read said, oldest first, while [keepRecords].
+  final _records = <_Record>[];
+
+  /// Whether it keeps what each line said, for [prepend]. Turning it off
+  /// drops what it kept.
+  bool get keepRecords => _keepRecords;
+  set keepRecords(bool value) {
+    _keepRecords = value;
+    if (!value) _records.clear();
+  }
+
+  var _keepRecords = true;
+
   final _items = <ChatItem>[];
 
   /// Where each tool call stands in [_items], by its id.
@@ -25,33 +41,85 @@ class ClaudeTranscript {
   /// Reads one line. A line that is no record, such as a cut-off one, is
   /// dropped.
   void add(String line) {
-    if (!line.startsWith('{')) return;
+    final record = _parse(line);
+    if (record == null) return;
+    if (_keepRecords) _records.add(record);
+    _apply(record);
+  }
+
+  /// Reads [lines], the lines of the file just before those read so far,
+  /// oldest first. The items are then the same as if [lines] had been read
+  /// first. Returns how many items come before those of the lines read
+  /// before. Needs [keepRecords]; throws [StateError] without.
+  int prepend(Iterable<String> lines) {
+    if (!_keepRecords) throw StateError('no records kept to prepend to');
+    final earlier = [for (final line in lines) ?_parse(line)];
+    if (earlier.isEmpty) return 0;
+    _records.insertAll(0, earlier);
+    _items.clear();
+    _toolAt.clear();
+    _seen.clear();
+    for (final record in earlier) {
+      _apply(record);
+    }
+    final before = _items.length;
+    for (final record in _records.skip(earlier.length)) {
+      _apply(record);
+    }
+    return before;
+  }
+
+  /// What [line] says; null for a line that is no record this reads.
+  static _Record? _parse(String line) {
+    if (!line.startsWith('{')) return null;
     final Object? json;
     try {
       json = jsonDecode(line);
     } on FormatException {
-      return;
+      return null;
     }
-    if (json is! Map<String, Object?>) return;
-    if (json['isSidechain'] == true || json['isMeta'] == true) return;
+    if (json is! Map<String, Object?>) return null;
+    if (json['isSidechain'] == true || json['isMeta'] == true) return null;
     final type = json['type'];
-    if (type != 'user' && type != 'assistant') return;
+    if (type != 'user' && type != 'assistant') return null;
     final message = json['message'];
-    if (message is! Map<String, Object?>) return;
+    if (message is! Map<String, Object?>) return null;
     final uuid = json['uuid'];
-    if (uuid is String && !_seen.add(uuid)) return;
     final content = message['content'];
+    final events = <_Event>[];
     if (type == 'assistant') {
-      _assistant(content, apiError: json['isApiErrorMessage'] == true);
+      _assistant(content, events, apiError: json['isApiErrorMessage'] == true);
     } else if (json['isCompactSummary'] == true) {
-      _items.add(const ChatNote('Earlier conversation was summarized.'));
+      events.add(const _Item(ChatNote('Earlier conversation was summarized.')));
     } else {
-      _user(content);
+      _user(content, events);
+    }
+    // A record without items still counts as seen by its uuid.
+    if (uuid is! String && events.isEmpty) return null;
+    return (uuid: uuid is String ? uuid : null, events: events);
+  }
+
+  void _apply(_Record record) {
+    if (record.uuid case final uuid? when !_seen.add(uuid)) return;
+    for (final event in record.events) {
+      switch (event) {
+        case _Item(:final item):
+          _items.add(item);
+        case _Tool(:final tool):
+          if (_toolAt.containsKey(tool.id)) continue;
+          _toolAt[tool.id] = _items.length;
+          _items.add(tool);
+        case _Result(:final id, :final result):
+          final at = _toolAt[id];
+          // The call was before the part of the transcript that was read.
+          if (at == null) continue;
+          _items[at] = (_items[at] as ChatTool).withResult(result);
+      }
     }
   }
 
-  void _user(Object? content) {
-    if (content is String) return _userText(content);
+  static void _user(Object? content, List<_Event> events) {
+    if (content is String) return _userText(content, events);
     if (content is! List<Object?>) return;
     final text = <String>[];
     for (final block in content.whereType<Map<String, Object?>>()) {
@@ -61,17 +129,21 @@ class ClaudeTranscript {
         case 'image':
           text.add('[image]');
         case 'tool_result':
-          _toolResult(block);
+          _toolResult(block, events);
       }
     }
-    if (text.isNotEmpty) _userText(text.join('\n'));
+    if (text.isNotEmpty) _userText(text.join('\n'), events);
   }
 
-  void _userText(String text) {
-    if (text.trim().isEmpty) return;
+  static void _userText(String text, List<_Event> events) {
+    final item = _userItem(text);
+    if (item != null) events.add(_Item(item));
+  }
+
+  static ChatItem? _userItem(String text) {
+    if (text.trim().isEmpty) return null;
     if (text.startsWith('[Request interrupted by user')) {
-      _items.add(const ChatNote('Interrupted'));
-      return;
+      return const ChatNote('Interrupted');
     }
     // Claude Code's own records start with its tags; a typed prompt that
     // only mentions one is a prompt.
@@ -79,89 +151,117 @@ class ClaudeTranscript {
       case 'command-name' || 'command-message':
         if (_tag(text, 'command-name') case final name?) {
           final args = _tag(text, 'command-args') ?? '';
-          _items.add(ChatPrompt('$name $args'.trim()));
-          return;
+          return ChatPrompt('$name $args'.trim());
         }
       case 'local-command-stdout':
         if (_tag(text, 'local-command-stdout') case final out?) {
-          _note(out);
-          return;
+          return _note(out);
         }
       case 'local-command-caveat':
-        if (_tag(text, 'local-command-caveat') != null) return;
+        if (_tag(text, 'local-command-caveat') != null) return null;
       case 'bash-input':
         if (_tag(text, 'bash-input') case final command?) {
-          _items.add(ChatPrompt('! $command'));
-          return;
+          return ChatPrompt('! $command');
         }
       case 'bash-stdout' || 'bash-stderr':
         final stdout = _tag(text, 'bash-stdout');
         final stderr = _tag(text, 'bash-stderr');
         if (stdout != null || stderr != null) {
-          _note(
+          return _note(
             [?stdout, ?stderr].where((s) => s.trim().isNotEmpty).join('\n'),
           );
-          return;
         }
     }
-    _items.add(ChatPrompt(text.trim()));
+    return ChatPrompt(text.trim());
   }
 
-  /// A note of command output, unless it is empty.
-  void _note(String output) {
+  /// A note of command output; null when it is empty.
+  static ChatNote? _note(String output) {
     final shown = stripAnsi(output).trim();
-    if (shown.isNotEmpty) _items.add(ChatNote(shown));
+    return shown.isEmpty ? null : ChatNote(shown);
   }
 
-  void _toolResult(Map<String, Object?> block) {
+  static void _toolResult(Map<String, Object?> block, List<_Event> events) {
     final id = block['tool_use_id'];
-    final at = id is String ? _toolAt[id] : null;
-    // The call was before the part of the transcript that was read.
-    if (at == null) return;
-    final tool = _items[at] as ChatTool;
-    _items[at] = tool.withResult(
-      ToolResult(
-        _cap(stripAnsi(_resultText(block['content']))),
-        isError: block['is_error'] == true,
+    if (id is! String) return;
+    events.add(
+      _Result(
+        id,
+        ToolResult(
+          _cap(stripAnsi(_resultText(block['content']))),
+          isError: block['is_error'] == true,
+        ),
       ),
     );
   }
 
-  void _assistant(Object? content, {required bool apiError}) {
+  static void _assistant(
+    Object? content,
+    List<_Event> events, {
+    required bool apiError,
+  }) {
     if (content is! List<Object?>) return;
     for (final block in content.whereType<Map<String, Object?>>()) {
       switch (block['type']) {
         case 'text':
           final text = block['text'];
           if (text is! String || text.trim().isEmpty) continue;
-          _items.add(apiError ? ChatNote(text.trim()) : ChatReply(text.trim()));
+          events.add(
+            _Item(apiError ? ChatNote(text.trim()) : ChatReply(text.trim())),
+          );
         case 'thinking':
           final text = block['thinking'];
-          _items.add(ChatThinking(text is String ? text.trim() : ''));
+          events.add(_Item(ChatThinking(text is String ? text.trim() : '')));
         case 'redacted_thinking':
-          _items.add(const ChatThinking(''));
+          events.add(const _Item(ChatThinking('')));
         case 'tool_use':
           final id = block['id'];
           final name = block['name'];
-          if (id is! String || name is! String || _toolAt.containsKey(id)) {
-            continue;
-          }
+          if (id is! String || name is! String) continue;
           final input = switch (block['input']) {
             final Map<String, Object?> m => m,
             _ => const <String, Object?>{},
           };
-          _toolAt[id] = _items.length;
-          _items.add(
-            ChatTool(
-              id: id,
-              name: name,
-              summary: toolSummary(name, input),
-              input: _cap(_inputText(name, input)),
+          events.add(
+            _Tool(
+              ChatTool(
+                id: id,
+                name: name,
+                summary: toolSummary(name, input),
+                input: _cap(_inputText(name, input)),
+              ),
             ),
           );
       }
     }
   }
+}
+
+/// What one line of a transcript says: its uuid, and what it adds to the
+/// chat, in order.
+typedef _Record = ({String? uuid, List<_Event> events});
+
+sealed class _Event {
+  const _Event();
+}
+
+/// An item that is not a tool call.
+class _Item extends _Event {
+  const _Item(this.item);
+  final ChatItem item;
+}
+
+/// A tool call, unless one with its id came before.
+class _Tool extends _Event {
+  const _Tool(this.tool);
+  final ChatTool tool;
+}
+
+/// The result of the tool call [id], if that call was read.
+class _Result extends _Event {
+  const _Result(this.id, this.result);
+  final String id;
+  final ToolResult result;
 }
 
 /// The longest text a tool row keeps of an input or a result.

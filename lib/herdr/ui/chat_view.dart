@@ -1,3 +1,6 @@
+import 'dart:math';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -5,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../ui/palette.dart';
 import '../api/herdr_client.dart';
 import '../transcript/chat_items.dart';
+import '../transcript/transcript_stream.dart';
 import 'herdr_lists.dart';
 
 const _monoStyle = TextStyle(fontFamily: monoFont, fontSize: 12, height: 1.35);
@@ -12,21 +16,35 @@ const _monoStyle = TextStyle(fontFamily: monoFont, fontSize: 12, height: 1.35);
 /// An agent's conversation as a chat: the user's prompts in bubbles on the
 /// right, the agent's replies in markdown on the left, its tool calls as
 /// rows that open on a tap. The newest is at the bottom. While the user
-/// reads further up, the chat stays still. Without [showDetails], thinking
-/// and tool calls are left out.
+/// reads further up, the chat stays still, but earlier messages that load
+/// show above. Without [showDetails], thinking and tool calls are left out.
 class ChatView extends StatefulWidget {
   const ChatView({
     super.key,
     required this.items,
     this.startsCut = false,
+    this.firstKey = 0,
+    this.earlier = EarlierLoad.idle,
+    this.onLoadEarlier,
     this.status,
     this.showDetails = true,
   });
 
   final List<ChatItem> items;
 
-  /// Older messages were not read: the top says so.
+  /// Older messages were not read: the top says so, or loads them.
   final bool startsCut;
+
+  /// See [TranscriptView.firstKey].
+  final int firstKey;
+
+  /// How loading the older messages goes.
+  final EarlierLoad earlier;
+
+  /// Loads the older messages; called when the top of the chat comes near
+  /// while [earlier] is idle. Without it, the top only says that they are
+  /// not shown.
+  final VoidCallback? onLoadEarlier;
 
   /// The agent's state, for the line under the last message.
   final AgentStatus? status;
@@ -42,12 +60,16 @@ class _ChatViewState extends State<ChatView> {
   final _scroll = ScrollController();
   late List<ChatItem> _shown;
 
+  /// The [ChatView.firstKey] of [_shown].
+  late int _shownFirst;
+
   bool get _scrolledUp => _scroll.hasClients && _scroll.offset > 1;
 
   @override
   void initState() {
     super.initState();
     _shown = widget.items;
+    _shownFirst = widget.firstKey;
     _scroll.addListener(_release);
   }
 
@@ -56,7 +78,20 @@ class _ChatViewState extends State<ChatView> {
     super.didUpdateWidget(old);
     if (!_scrolledUp) {
       _shown = widget.items;
+      _shownFirst = widget.firstKey;
     } else {
+      // Earlier messages go above what shows: the reverse list keeps the
+      // place of what is below.
+      final front = min(_shownFirst - widget.firstKey, widget.items.length);
+      if (front > 0) {
+        final rest = widget.items.skip(front).take(_shown.length).toList();
+        // Earlier lines can drop a later copy of a record they hold; then
+        // what shows is the new items, under numbers none had before.
+        _shown = listEquals(rest, _shown)
+            ? [...widget.items.take(front), ..._shown]
+            : widget.items.take(front + _shown.length).toList();
+        _shownFirst = widget.firstKey;
+      }
       // A shorter list can end the scroll without telling the listener:
       // check again once it is laid out.
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -67,7 +102,10 @@ class _ChatViewState extends State<ChatView> {
 
   void _release() {
     if (identical(_shown, widget.items) || _scrolledUp) return;
-    setState(() => _shown = widget.items);
+    setState(() {
+      _shown = widget.items;
+      _shownFirst = widget.firstKey;
+    });
   }
 
   @override
@@ -78,13 +116,15 @@ class _ChatViewState extends State<ChatView> {
 
   @override
   Widget build(BuildContext context) {
-    // Without details, thinking and tool calls are left out.
-    final items = widget.showDetails
-        ? _shown
-        : [
-            for (final item in _shown)
-              if (item is! ChatThinking && item is! ChatTool) item,
-          ];
+    // Without details, thinking and tool calls are left out. Where each
+    // item shown stands in [_shown], for its key.
+    final places = [
+      for (var i = 0; i < _shown.length; i++)
+        if (widget.showDetails ||
+            (_shown[i] is! ChatThinking && _shown[i] is! ChatTool))
+          i,
+    ];
+    final items = [for (final i in places) _shown[i]];
     final working = widget.status == AgentStatus.working;
     if (items.isEmpty && !widget.startsCut && !working) {
       return const Center(
@@ -93,40 +133,32 @@ class _ChatViewState extends State<ChatView> {
     }
     // The list runs from the bottom: index 0 is the working line, when
     // there is one, then the newest item. Items keep the key of their
-    // place from the top, so that a row stays open as new ones come; tool
-    // calls the key of their id, so that one stays open when a new read
-    // starts at another record.
+    // number ([ChatView.firstKey] for the first), so that a row stays open
+    // as new ones come and earlier ones load; tool calls the key of their
+    // id, so that one stays open when a new read starts at another record.
     final lead = working ? 1 : 0;
     final count = lead + items.length + (widget.startsCut ? 1 : 0);
-    // Built on the first lookup of a tool call's key only.
-    Map<Key, int>? toolAt;
+    Key key(int at) => _key(_shown, places[at], _shownFirst);
+    // Built on the first lookup only.
+    Map<Key, int>? keyAt;
     final markdown = _markdownStyle(Theme.of(context));
     return ListView.builder(
       controller: _scroll,
       reverse: true,
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
       itemCount: count,
-      findChildIndexCallback: (key) {
-        final at = switch (key) {
-          ValueKey<int>(:final value)
-              when value < items.length && items[value] is! ChatTool =>
-            value,
-          ValueKey<int>() => null,
-          _ => (toolAt ??= {
-            for (var at = 0; at < items.length; at++)
-              if (items[at] is ChatTool) _key(items, at): at,
-          })[key],
-        };
+      findChildIndexCallback: (wanted) {
+        final at = (keyAt ??= {
+          for (var at = 0; at < items.length; at++) key(at): at,
+        })[wanted];
         return at == null ? null : lead + items.length - 1 - at;
       },
       itemBuilder: (context, i) {
         if (i < lead) return const _Working();
         final at = items.length - 1 - (i - lead);
-        if (at < 0) {
-          return const _Note('Earlier messages are not shown.');
-        }
+        if (at < 0) return EarlierRow(widget.earlier, widget.onLoadEarlier);
         return KeyedSubtree(
-          key: _key(items, at),
+          key: key(at),
           child: _row(
             items[at],
             previous: at > 0 ? items[at - 1] : null,
@@ -137,10 +169,11 @@ class _ChatViewState extends State<ChatView> {
     );
   }
 
-  static Key _key(List<ChatItem> items, int at) => switch (items[at]) {
-    ChatTool(:final id) => ValueKey(('tool', id)),
-    _ => ValueKey(at),
-  };
+  static Key _key(List<ChatItem> items, int at, int first) =>
+      switch (items[at]) {
+        ChatTool(:final id) => ValueKey(('tool', id)),
+        _ => ValueKey(first + at),
+      };
 
   Widget _row(
     ChatItem item, {
@@ -441,6 +474,75 @@ class _Note extends StatelessWidget {
       maxLines: 12,
       overflow: TextOverflow.ellipsis,
       style: const TextStyle(fontSize: 12, color: Graphite.dim),
+    ),
+  );
+}
+
+/// The top of a list that starts after the start of what it shows, such
+/// as a chat cut at the start of its transcript: it loads [what] once it is
+/// built, near the top of the screen, or says why it does not.
+class EarlierRow extends StatelessWidget {
+  const EarlierRow(
+    this.state,
+    this.onLoad, {
+    super.key,
+    this.what = 'earlier messages',
+  });
+
+  final EarlierLoad state;
+
+  /// Null where nothing can load them.
+  final VoidCallback? onLoad;
+
+  /// What loads, in lower case, such as "earlier messages".
+  final String what;
+
+  @override
+  Widget build(BuildContext context) {
+    final load = onLoad;
+    final capital = '${what[0].toUpperCase()}${what.substring(1)}';
+    if (load == null) return _Note('$capital are not shown.');
+    switch (state) {
+      case EarlierLoad.idle:
+        // Not during the build: the load changes what the list shows.
+        WidgetsBinding.instance.addPostFrameCallback((_) => load());
+        return _Loading(what);
+      case EarlierLoad.loading:
+        return _Loading(what);
+      case EarlierLoad.failed:
+        return InkWell(
+          onTap: load,
+          child: _Note('Cannot load $what. Tap to try again.'),
+        );
+      case EarlierLoad.capped:
+        return _Note('$capital are not loaded.');
+      case EarlierLoad.none:
+        return _Note('$capital are not shown.');
+    }
+  }
+}
+
+class _Loading extends StatelessWidget {
+  const _Loading(this.what);
+
+  final String what;
+
+  @override
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: 8),
+    child: Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        const SizedBox.square(
+          dimension: 14,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        ),
+        const SizedBox(width: 8),
+        Text(
+          'Loading $what…',
+          style: const TextStyle(fontSize: 12, color: Graphite.dim),
+        ),
+      ],
     ),
   );
 }

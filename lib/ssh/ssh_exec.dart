@@ -24,6 +24,24 @@ Future<(String, int?)> sshExec(
   int? maxBytes,
   bool allowMalformed = false,
 }) async {
+  final (bytes, code) = await sshExecBytes(
+    ssh,
+    cmd,
+    timeout,
+    maxBytes: maxBytes,
+  );
+  return (utf8.decode(bytes, allowMalformed: allowMalformed), code);
+}
+
+/// [sshExec] without decoding: stdout as bytes. The read may take
+/// [readTimeout], by default [timeout].
+Future<(Uint8List, int?)> sshExecBytes(
+  SSHClient ssh,
+  String cmd,
+  Duration timeout, {
+  Duration? readTimeout,
+  int? maxBytes,
+}) async {
   final session = await openExec(ssh, cmd, timeout);
   try {
     await session.stdin.close();
@@ -37,8 +55,8 @@ Future<(String, int?)> sshExec(
           break;
         }
       }
-    }().timeout(timeout);
-    final out = utf8.decode(bytes.takeBytes(), allowMalformed: allowMalformed);
+    }().timeout(readTimeout ?? timeout);
+    final out = bytes.takeBytes();
     if (cut) return (out, null);
     await session.done.timeout(timeout, onTimeout: () {});
     return (out, session.exitCode);

@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:dartssh2/dartssh2.dart';
 
 import '../../ssh/ssh_exec.dart';
@@ -52,20 +54,10 @@ String transcriptCommand(String session, {TranscriptMark? from}) {
   }
   const cut = transcriptTail + 1;
   final inner = [
-    'd="\${CLAUDE_CONFIG_DIR:-\$HOME/.claude}/projects"',
-    '[ -d "\$d" ] || { echo "no Claude Code transcripts in \$d" >&2; exit 66; }',
-    'find_f() {',
-    '  f=',
-    '  for g in "\$d"/*/$session.jsonl; do',
-    '    [ -r "\$g" ] || continue',
-    '    { [ -z "\$f" ] || [ "\$g" -nt "\$f" ]; } && f=\$g',
-    '  done',
-    '}',
-    'find_f',
+    ..._findTranscript(session),
     'start=0',
     'if [ -n "\$f" ]; then',
-    '  size=\$((\$(wc -c < "\$f")))',
-    '  ino=\$(ls -i -- "\$f" | { read -r i _; echo "\$i"; })',
+    for (final line in _sizeAndInode) '  $line',
     '  if [ "\$size" -gt $cut ]; then start=\$((size - $cut)); fi',
     if (from != null) ...[
       '  if [ "\$ino" = ${from.inode} ] && [ "\$size" -ge ${from.offset} ] &&',
@@ -83,4 +75,133 @@ String transcriptCommand(String session, {TranscriptMark? from}) {
     ),
   ].join('\n');
   return 'sh -c ${shQuote(inner)}';
+}
+
+/// Lines of `sh` that set `d` to Claude Code's projects directory, or
+/// exit 66 without one.
+const _projects = [
+  'd="\${CLAUDE_CONFIG_DIR:-\$HOME/.claude}/projects"',
+  '[ -d "\$d" ] || { echo "no Claude Code transcripts in \$d" >&2; exit 66; }',
+];
+
+/// Lines of `sh` that set `f` to the transcript of Claude Code session
+/// [session] (see [transcriptCommand]), empty while there is none, and
+/// define `find_f` to look again. Without the projects directory they exit
+/// 66.
+List<String> _findTranscript(String session) => [
+  ..._projects,
+  'find_f() {',
+  '  f=',
+  '  for g in "\$d"/*/$session.jsonl; do',
+  '    [ -r "\$g" ] || continue',
+  '    { [ -z "\$f" ] || [ "\$g" -nt "\$f" ]; } && f=\$g',
+  '  done',
+  '}',
+  'find_f',
+];
+
+/// Lines of `sh` that set `size` and `ino` for the file `f`.
+const _sizeAndInode = [
+  'size=\$((\$(wc -c < "\$f")))',
+  'ino=\$(ls -i -- "\$f" | { read -r i _; echo "\$i"; })',
+];
+
+/// A [TranscriptRangeReader] that runs [transcriptRangeCommand] on the
+/// remote host. A range can take a while over a slow link: the read may
+/// take [readTimeout].
+TranscriptRangeReader sshTranscriptRangeReader(
+  SSHClient ssh, {
+  Duration timeout = const Duration(seconds: 15),
+  Duration readTimeout = const Duration(seconds: 60),
+}) => (session, range) async {
+  final (out, code) = await sshExecBytes(
+    ssh,
+    transcriptRangeCommand(session, range),
+    timeout,
+    readTimeout: readTimeout,
+    maxBytes: range.to - range.from + _maxNoise,
+  );
+  if (code == 65) {
+    throw const TranscriptRangeFailed('no such transcript', changed: true);
+  }
+  if (code != 0) {
+    throw TranscriptRangeFailed('the read exited ${code ?? 'without a code'}');
+  }
+  return transcriptRangeBody(out, range);
+};
+
+/// How much a remote shell's startup files may print before the header of
+/// a range read.
+const _maxNoise = 64 * 1024;
+
+/// Prints a header line ([transcriptHeader], with the size of the
+/// transcript of Claude Code session [session] that has the inode of
+/// [range], the start of [range] and that inode), then the bytes of [range]
+/// when the file reaches its end; [transcriptRangeBody] checks. The file is
+/// the one a [transcriptCommand] read, even where another of the session
+/// is newer now, and the bytes are those of the file checked, opened once.
+/// Exits 65 without one, 66 without the projects directory.
+///
+/// Throws [ArgumentError] for an id or a range it does not take.
+String transcriptRangeCommand(String session, TranscriptRange range) {
+  if (!claudeSessionId.hasMatch(session)) {
+    throw ArgumentError.value(session, 'session', 'not a session id');
+  }
+  if (!transcriptInode.hasMatch(range.inode) ||
+      range.from < 0 ||
+      range.to <= range.from) {
+    throw ArgumentError.value(range, 'range', 'not a transcript range');
+  }
+  final inner = [
+    ..._projects,
+    'f=',
+    'for g in "\$d"/*/$session.jsonl; do',
+    '  [ -r "\$g" ] || continue',
+    '  i=\$(ls -i -- "\$g" | { read -r i _; echo "\$i"; })',
+    '  [ "\$i" = ${range.inode} ] && { f=\$g; break; }',
+    'done',
+    '[ -n "\$f" ] || { echo "no transcript of session $session with inode ${range.inode}" >&2; exit 65; }',
+    // Opened once: an inode that matches after the open is that of fd 3,
+    // whatever is renamed over the path then. `command` keeps a failed
+    // open from ending sh before the exit.
+    'command exec 3< "\$f" || exit 65',
+    ..._sizeAndInode,
+    'echo "$transcriptHeader\$size ${range.from} \${ino:--}"',
+    '[ "\$ino" = ${range.inode} ] && [ "\$size" -ge ${range.to} ] || exit 0',
+    'tail -c +${range.from + 1} <&3 | head -c ${range.to - range.from}',
+  ].join('\n');
+  return 'sh -c ${shQuote(inner)}';
+}
+
+/// The bytes of [range] in [output], the output of
+/// [transcriptRangeCommand]. Throws [TranscriptRangeFailed] when its header
+/// is missing, when the file is not the one of the range any more or is
+/// shorter, or when the bytes are not all there.
+List<int> transcriptRangeBody(List<int> output, TranscriptRange range) {
+  var lineStart = 0;
+  while (lineStart < output.length) {
+    var end = output.indexOf(0x0a, lineStart);
+    if (end < 0) end = output.length;
+    final at = transcriptStart(
+      utf8.decode(output.sublist(lineStart, end), allowMalformed: true),
+    );
+    lineStart = end + 1;
+    if (at == null) continue;
+    if (at.inode != range.inode || at.size < range.to) {
+      throw const TranscriptRangeFailed(
+        'the transcript changed',
+        changed: true,
+      );
+    }
+    final body = lineStart >= output.length
+        ? const <int>[]
+        : output.sublist(lineStart);
+    if (body.length != range.to - range.from) {
+      throw TranscriptRangeFailed(
+        'read ${body.length} bytes of ${range.to - range.from}',
+      );
+    }
+    return body;
+  }
+  throw const TranscriptRangeFailed('no transcript header');
 }
