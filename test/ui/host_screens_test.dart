@@ -210,7 +210,7 @@ void main() {
     await openEdit(tester, host);
     await tester.enterText(hostField('Label'), 'renamed');
     await tapText(tester, 'Save');
-    await untilFound(tester, find.text('renamed'));
+    await untilGone(tester, hostField('Label'));
 
     final saved = (await services.hosts.list()).single;
     expect(saved.id, host.id);
