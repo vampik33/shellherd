@@ -51,7 +51,6 @@ void main() {
       );
       expect(parseFrontmatter('description: >\n  two\n  lines\nother: 1'), {
         'description': 'two lines\n',
-        'other': '1',
       });
     });
 
@@ -77,11 +76,39 @@ void main() {
       expect(parseFrontmatter(''), isEmpty);
       expect(parseFrontmatter('- a\n- b'), isEmpty);
     });
+
+    test('a nested list or a map gives no value', () {
+      expect(parseFrontmatter('argument-hint: [[a, b], c]'), isEmpty);
+      expect(parseFrontmatter('description: {a: b}'), isEmpty);
+    });
+
+    test('aliases make no long value, and take no time', () {
+      // Each level is a list of ten aliases of the one before: 10^9 items.
+      final yaml = StringBuffer(
+        'a: &a [${List.filled(10, 'xxxxxxxxxx').join(', ')}]\n',
+      );
+      for (var i = 1; i <= 8; i++) {
+        final before = i == 1 ? 'a' : 'b${i - 1}';
+        yaml.writeln('b$i: &b$i [${List.filled(10, '*$before').join(', ')}]');
+      }
+      yaml
+        ..writeln('s: &s ${'y' * 100}')
+        ..writeln('flat: &flat [${List.filled(500, '*s').join(', ')}]')
+        ..writeln('unused: *b8')
+        ..writeln('description: *b8')
+        ..writeln('argument-hint: *flat');
+      final watch = Stopwatch()..start();
+      final front = parseFrontmatter('$yaml');
+      expect(watch.elapsed, lessThan(const Duration(seconds: 1)));
+      expect(front.keys, ['argument-hint']);
+      expect(front['argument-hint']!.length, lessThanOrEqualTo(1000));
+      expect(front['argument-hint'], startsWith('[${'y' * 100}] [y'));
+    });
   });
 
   group('parseSlashCommands', () {
-    test('project first, then the user\'s, then plugins; each by name; '
-        'one per name', () {
+    test('skills, the user\'s before the project\'s, then commands, then '
+        'plugins; each by name; one per name', () {
       final out = [
         'banner from .bashrc',
         _rec('user-command', '/c/commands/zeta.md', 'description: user zeta'),
@@ -106,9 +133,37 @@ void main() {
         ),
       ].join('\n');
       final commands = parseSlashCommands(out, cwd: '/p');
-      expect(_names(commands), ['dup', 'b', 'zeta', 'alpha', 'tool:run']);
-      expect(commands.first.description, 'project dup');
+      expect(_names(commands), ['alpha', 'b', 'dup', 'zeta', 'tool:run']);
+      expect(commands[2].description, 'user dup');
       expect(commands.last.argumentHint, '[x]');
+    });
+
+    test('of the same name, the user\'s skill wins over the project\'s, and '
+        'a skill over a command', () {
+      final out = [
+        _rec('project-command', '/p/.claude/commands/a.md', 'description: pc'),
+        _rec('user-command', '/c/commands/a.md', 'description: uc'),
+        _rec(
+          'project-skill',
+          '/p/.claude/skills/a/SKILL.md',
+          'description: ps',
+        ),
+        _rec('user-skill', '/c/skills/a/SKILL.md', 'description: us'),
+        _rec('project-command', '/p/.claude/commands/b.md', 'description: pc'),
+        _rec('user-command', '/c/commands/b.md', 'description: uc'),
+        _rec(
+          'project-skill',
+          '/p/.claude/skills/b/SKILL.md',
+          'description: ps',
+        ),
+        _rec('project-command', '/p/.claude/commands/c.md', 'description: pc'),
+        _rec('user-command', '/c/commands/c.md', 'description: uc'),
+      ].join('\n');
+      expect(parseSlashCommands(out, cwd: '/p'), const [
+        SlashCommand('a', description: 'us'),
+        SlashCommand('b', description: 'ps'),
+        SlashCommand('c', description: 'uc'),
+      ]);
     });
 
     test('a skill is named by its frontmatter, else its directory; one the '
@@ -307,7 +362,7 @@ void main() {
       String text() =>
           [for (var i = 0; i < random.nextInt(4); i++) 'w${word()}'].join(' ');
       for (var round = 0; round < 300; round++) {
-        // A command wins over a skill of the same name, the first of each
+        // A skill wins over a command of the same name, the first of each
         // kind over the next.
         final commands = <String, SlashCommand>{};
         final skills = <String, SlashCommand>{};
@@ -338,7 +393,7 @@ void main() {
             ),
           );
         }
-        final expected = {...skills, ...commands};
+        final expected = {...commands, ...skills};
         final parsed = parseSlashCommands(out.join('\n'));
         expect(
           {for (final c in parsed) c.name: c},
@@ -442,12 +497,12 @@ void main() {
 
         final commands = await run(project);
         expect(_names(commands), [
-          'proj',
+          'skill',
           'here',
           'deep',
           'mine',
           'nofront',
-          'skill',
+          'proj',
           'tool:go',
           'tool:learn',
         ]);
@@ -457,10 +512,10 @@ void main() {
         );
         // Without a cwd, nothing of the project.
         expect(_names(await run(null)), [
+          'skill',
           'deep',
           'mine',
           'nofront',
-          'skill',
           'tool:go',
           'tool:learn',
         ]);

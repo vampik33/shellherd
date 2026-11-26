@@ -51,13 +51,13 @@ void main() {
   test('finds the user\'s and the project\'s commands', skip: skip, () async {
     final lookup = sshSlashCommandLookup(ssh);
     expect(await lookup('${root.path}/project'), const [
-      SlashCommand('proj', argumentHint: '[x]'),
-      SlashCommand('mine', description: 'Mine'),
       SlashCommand('learn', description: 'Learn'),
+      SlashCommand('mine', description: 'Mine'),
+      SlashCommand('proj', argumentHint: '[x]'),
     ]);
     expect(await lookup(null), const [
-      SlashCommand('mine', description: 'Mine'),
       SlashCommand('learn', description: 'Learn'),
+      SlashCommand('mine', description: 'Mine'),
     ]);
   });
 }

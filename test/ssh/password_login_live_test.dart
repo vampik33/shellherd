@@ -105,13 +105,13 @@ Future<void> main() async {
 
     test('a wrong password is tried once per method', () async {
       await refused(await serve(PasswordMode.both, saved: 'wrong'));
-      expect(await sshd!.answered(2), ['password bad', 'kbdint 1 bad']);
+      expect(await sshd!.settled(), ['password bad', 'kbdint 1 bad']);
     });
 
     test('a code prompt after the password gets no answer', () async {
       await refused(await serve(PasswordMode.otp));
       expect(
-        await sshd!.answered(1),
+        await sshd!.settled(),
         ['kbdint 1 more'],
         reason: 'the password only',
       );

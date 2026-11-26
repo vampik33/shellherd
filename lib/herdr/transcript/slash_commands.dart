@@ -200,8 +200,10 @@ List<_Record> _records(String output) {
 }
 
 /// The commands in [output] of [slashCommandsCommand] for [cwd], in the
-/// menu's order: project commands and skills, the user's, then those of
-/// plugins, each group by name. One per name, the first.
+/// menu's order: the user's skills, the project's skills, the user's
+/// commands, the project's commands, then those of plugins, each group by
+/// name. One per name, the first: as in Claude Code, the user's skill wins
+/// over the project's, and a skill over a command.
 ///
 /// A plugin counts when `installed_plugins.json` lists it with an entry
 /// for all projects or for the project of [cwd], and the settings enable
@@ -249,10 +251,10 @@ List<SlashCommand> parseSlashCommands(String output, {String? cwd}) {
   }
   final groups = {
     for (final kind in const [
-      'project-command',
+      'user-skill',
       'project-skill',
       'user-command',
-      'user-skill',
+      'project-command',
       'plugin',
     ])
       kind: <SlashCommand>[],
@@ -357,10 +359,23 @@ String _oneLine(String s, int max) {
   return line.length <= max ? line : '${line.substring(0, max - 1)}…';
 }
 
-/// The scalar keys of YAML frontmatter [text], as strings. A list becomes
-/// its items, each in brackets: `argument-hint: [file]` is YAML for a
-/// list. Where the YAML does not parse, as for `argument-hint: [a] [b]`,
-/// each `key: value` line counts, without its quotes.
+/// The keys of YAML frontmatter that [_command] reads.
+const _frontmatterKeys = {
+  'name',
+  'description',
+  'argument-hint',
+  'user-invocable',
+};
+
+/// The longest list value of frontmatter; [_command] keeps less.
+const _maxListValue = 1000;
+
+/// The keys of YAML frontmatter [text] that [_command] reads, as strings.
+/// A list of scalars becomes its items, each in brackets, cut at
+/// [_maxListValue] characters: `argument-hint: [file]` is YAML for a
+/// list. A nested list or a map has no value: aliases could make it huge.
+/// Where the YAML does not parse, as for `argument-hint: [a] [b]`, each
+/// `key: value` line counts, without its quotes.
 Map<String, String> parseFrontmatter(String text) {
   Object? yaml;
   try {
@@ -371,21 +386,36 @@ Map<String, String> parseFrontmatter(String text) {
   if (yaml is YamlMap) {
     return {
       for (final MapEntry(:key, :value) in yaml.entries)
-        if (key is String) key: ?_scalar(value),
+        if (key is String && _frontmatterKeys.contains(key))
+          key: ?_value(value),
     };
   }
   if (yaml != null) return {};
   final line = RegExp(r'^([A-Za-z][A-Za-z0-9_-]*):[ \t]*(.*)$');
   return {
     for (final l in const LineSplitter().convert(text))
-      if (line.firstMatch(l) case final m?) m[1]!: _unquote(m[2]!.trim()),
+      if (line.firstMatch(l) case final m?)
+        if (_frontmatterKeys.contains(m[1])) m[1]!: _unquote(m[2]!.trim()),
   };
+}
+
+/// A scalar, or a list of scalars (null among them), as a string.
+String? _value(Object? value) {
+  if (value is! YamlList) return _scalar(value);
+  if (!value.every((v) => v == null || _scalar(v) != null)) return null;
+  final out = StringBuffer();
+  for (final v in value) {
+    if (out.length > _maxListValue) break;
+    if (out.isNotEmpty) out.write(' ');
+    out.write('[${_scalar(v) ?? ''}]');
+  }
+  final s = '$out';
+  return s.length <= _maxListValue ? s : s.substring(0, _maxListValue);
 }
 
 String? _scalar(Object? value) => switch (value) {
   final String s => s,
   num() || bool() => '$value',
-  final YamlList l => l.map((v) => '[${_scalar(v) ?? ''}]').join(' '),
   _ => null,
 };
 
