@@ -45,12 +45,17 @@ typedef TranscriptStart = ({int size, int start, String? inode});
 /// The inodes that a mark takes: the command gets them back.
 final transcriptInode = RegExp(r'^[0-9]{1,20}$');
 
+final _spaces = RegExp(r'\s+');
+
 /// What the header [line] says; null for any other line. A startup file
 /// can print text without a newline: it then stands before the marker.
 TranscriptStart? transcriptStart(String line) {
   final at = line.indexOf(transcriptHeader);
   if (at < 0) return null;
-  final words = line.substring(at + transcriptHeader.length).trim().split(RegExp(r'\s+'));
+  final words = line
+      .substring(at + transcriptHeader.length)
+      .trim()
+      .split(_spaces);
   if (words.length != 3) return null;
   final size = int.tryParse(words[0]);
   final start = int.tryParse(words[1]);
@@ -201,14 +206,8 @@ class TranscriptStream {
   TranscriptOpener? _lastOpener;
   String? _lastSession;
 
-  /// What the reads of the session made so far, and whether it starts
-  /// after the start of the file. While [_mark] is set, [_kept] holds
-  /// exactly the lines before it, and [_markLine] the bytes of its line,
-  /// without the newline.
-  ClaudeTranscript? _kept;
-  var _keptCut = false;
-  TranscriptMark? _mark;
-  List<int>? _markLine;
+  /// What the reads of the session made so far.
+  _Kept? _kept;
 
   /// Reads in a row that ended without bringing anything new.
   var _failures = 0;
@@ -254,8 +253,6 @@ class TranscriptStream {
       view.value = const TranscriptView();
       _reset();
       _kept = null;
-      _mark = null;
-      _markLine = null;
     } else if (opener != _lastOpener) {
       _reset();
     }
@@ -295,8 +292,8 @@ class TranscriptStream {
 
   Future<void> _read(TranscriptOpener opener, String session, int run) async {
     bool current() => run == _run && !_closed;
-    final from = _mark;
-    final fromLine = _markLine;
+    var kept = _kept;
+    final from = kept?.mark;
     var transcript = ClaudeTranscript();
     var header = false;
     var startsCut = false;
@@ -356,25 +353,23 @@ class TranscriptStream {
             inode = at.inode;
             initial = at.size - start;
             if (from != null && inode == from.inode && start == from.line) {
-              transcript = _kept!;
-              startsCut = _keptCut;
+              transcript = kept!.transcript;
+              startsCut = kept.cut;
               check = from.line < from.offset;
             } else {
               // The command starts a cut one byte early, so that the
               // first line, dropped, ends where a whole record starts.
               startsCut = dropFirst = start > 0;
-              _kept = transcript;
-              _keptCut = startsCut;
-              _mark = dropFirst || inode == null
-                  ? null
-                  : (inode: inode, line: start, offset: start);
-              _markLine = _mark == null ? null : const [];
+              kept = _kept = _Kept(transcript, cut: startsCut);
+              if (!dropFirst && inode != null) {
+                kept.mark = (inode: inode, line: start, offset: start);
+              }
             }
             continue;
           }
           if (check) {
             check = false;
-            if (bytes == null || !listEquals(bytes, fromLine)) {
+            if (bytes == null || !listEquals(bytes, kept!.line)) {
               changed = true;
               break read;
             }
@@ -387,10 +382,11 @@ class TranscriptStream {
           // Only whole lines count: the next read starts a line. A dropped
           // line cannot be checked: the next one sets the mark again.
           if (inode != null) {
-            _mark = bytes == null
-                ? null
-                : (inode: inode, line: lineStart, offset: start + received);
-            _markLine = bytes;
+            kept!
+              ..mark = bytes == null
+                  ? null
+                  : (inode: inode, line: lineStart, offset: start + received)
+              ..line = bytes ?? const [];
           }
         }
         // The last record of the file may not have ended yet: its bytes
@@ -414,8 +410,6 @@ class TranscriptStream {
       // What the reads made is not the file any more: the next read
       // starts over.
       _kept = null;
-      _mark = null;
-      _markLine = null;
     } else if (unshown ||
         (header && received < initial && view.value.items == null)) {
       publish();
@@ -433,4 +427,21 @@ class TranscriptStream {
       _start();
     });
   }
+}
+
+/// What the reads of a session made so far, for the next read to go on
+/// with.
+class _Kept {
+  _Kept(this.transcript, {required this.cut});
+
+  final ClaudeTranscript transcript;
+
+  /// The transcript starts after the start of the file.
+  final bool cut;
+
+  /// Where the last read stopped; null while a read cannot go on from it.
+  /// While it is set, [transcript] holds exactly the lines before its
+  /// offset, and [line] the bytes of its line, without the newline.
+  TranscriptMark? mark;
+  List<int> line = const [];
 }
