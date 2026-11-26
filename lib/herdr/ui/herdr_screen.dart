@@ -27,6 +27,7 @@ class HerdrScreen extends StatefulWidget {
     required this.onTerminal,
     this.openPane,
     this.onPaneShown,
+    this.onDisconnect,
   });
 
   final Host host;
@@ -43,6 +44,9 @@ class HerdrScreen extends StatefulWidget {
 
   /// Gets each pane that comes on the screen or goes from it.
   final void Function(String paneId, bool shown)? onPaneShown;
+
+  /// The user pressed Disconnect; the screen goes back to the host list.
+  final VoidCallback? onDisconnect;
 
   @override
   State<HerdrScreen> createState() => _HerdrScreenState();
@@ -118,7 +122,11 @@ class _HerdrScreenState extends State<HerdrScreen> {
             icon: const Icon(Icons.terminal),
             onPressed: widget.onTerminal,
           ),
-        ...linkActions(context, herdrLinkChip(state)),
+        ...linkActions(
+          context,
+          herdrLinkChip(state),
+          onDisconnect: widget.onDisconnect,
+        ),
       ],
     ),
     body: SafeArea(
@@ -214,6 +222,7 @@ class _HerdrScreenState extends State<HerdrScreen> {
     onShown: (shown) => widget.onPaneShown?.call(paneId, shown),
     onClose: wide ? null : _closePane,
     showLink: !wide,
+    onDisconnect: widget.onDisconnect,
     server: widget.host.herdrKind.label,
     exactFirst: widget.host.herdrKind == HerdrKind.herdr,
   );

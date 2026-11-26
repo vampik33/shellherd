@@ -962,14 +962,105 @@ void main() {
     Finder disconnect() => find.byTooltip('Disconnect');
     Finder hostList() => find.byType(HostListScreen);
 
-    testWidgets('the terminal goes back to the host list', (tester) async {
+    Future<bool> disconnected(Host host) async =>
+        (await services.hosts.get(host.id))!.disconnected;
+
+    Future<void> watchersUpdated(WidgetTester tester, int times) => until(
+      tester,
+      () => notify.syncs.length == times,
+      '$times updates of the watchers',
+    );
+
+    testWidgets('the terminal goes back to the host list, and saves the '
+        'disconnect', (tester) async {
       final host = await unreachable();
       await pumpApp(tester);
       await tester.tap(find.byTooltip('Terminal on ${host.label}'));
       await untilFound(tester, find.byType(TerminalScreen));
+      expect(notify.syncs, isEmpty, reason: 'opening changed nothing');
       await tester.tap(disconnect());
       await untilGone(tester, find.byType(TerminalScreen));
       expect(hostList(), findsOneWidget);
+      await watchersUpdated(tester, 1);
+      expect(notify.syncs, [false], reason: 'no permission prompt');
+      expect(await disconnected(host), isTrue);
+    });
+
+    testWidgets('the herdr screen saves the disconnect, a new start of the '
+        'app keeps it, and opening the host connects it again', (
+      tester,
+    ) async {
+      final host = await unreachable();
+      await pumpApp(tester);
+      await tester.tap(find.text(host.label));
+      await untilFound(tester, find.byType(HerdrScreen));
+      await tester.tap(disconnect());
+      await untilGone(tester, find.byType(HerdrScreen));
+      await watchersUpdated(tester, 1);
+      final restarted = AppServices(dataDir: dir, secrets: secrets);
+      expect((await restarted.hosts.get(host.id))!.disconnected, isTrue);
+
+      await tester.tap(find.text(host.label));
+      await untilFound(tester, find.byType(HerdrScreen));
+      await watchersUpdated(tester, 2);
+      expect(await disconnected(host), isFalse);
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('the terminal button connects a disconnected host again', (
+      tester,
+    ) async {
+      final host = await unreachable();
+      await services.hosts.setDisconnected(host.id, true);
+      await pumpApp(tester);
+      await tester.tap(find.byTooltip('Terminal on ${host.label}'));
+      await untilFound(tester, find.byType(TerminalScreen));
+      await watchersUpdated(tester, 1);
+      expect(await disconnected(host), isFalse);
+    });
+
+    testWidgets('a tapped notification connects a disconnected host again', (
+      tester,
+    ) async {
+      final host = await unreachable();
+      await services.hosts.setDisconnected(host.id, true);
+      await pumpApp(tester);
+      unawaited(services.openPane(PaneTarget(host.id, 'w1:p1')));
+      await untilFound(tester, find.byType(PaneScreen));
+      await watchersUpdated(tester, 1);
+      expect(await disconnected(host), isFalse);
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('an edit keeps the disconnect, also one saved after the list '
+        'was read', (tester) async {
+      final host = await savedHost();
+      await pumpApp(tester);
+      await services.hosts.setDisconnected(host.id, true);
+      await openEdit(tester, host);
+      await tester.enterText(hostField('Label'), 'renamed');
+      await tapText(tester, 'Save');
+      await untilGone(tester, hostField('Label'));
+      final saved = (await services.hosts.list()).single;
+      expect(saved.label, 'renamed');
+      expect(saved.disconnected, isTrue);
+    });
+
+    testWidgets('a disconnect that cannot be saved says so', (tester) async {
+      final host = await unreachable();
+      await pumpApp(tester);
+      await tester.tap(find.text(host.label));
+      await untilFound(tester, find.byType(HerdrScreen));
+      // A directory where the file was: it can be neither read nor written.
+      await File('${dir.path}/hosts.json').delete();
+      await Directory('${dir.path}/hosts.json').create();
+      await tester.tap(disconnect());
+      await untilGone(tester, find.byType(HerdrScreen));
+      await untilFound(
+        tester,
+        find.textContaining('Cannot save the disconnect'),
+      );
+      expect(notify.syncs, isEmpty);
     });
 
     testWidgets('the terminal over the herdr screen closes both', (

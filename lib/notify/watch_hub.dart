@@ -9,7 +9,7 @@ import '../ssh/ssh_connector.dart';
 import 'agent_watcher.dart';
 import 'notifier.dart';
 
-/// One [AgentWatcher] for each saved host that has [Host.notify] on.
+/// One [AgentWatcher] for each saved host that is [Host.watched].
 class WatchHub {
   WatchHub({
     required this.loadHosts,
@@ -66,7 +66,7 @@ class WatchHub {
   Future<void> _apply() async {
     final hosts = [
       for (final h in await loadHosts())
-        if (h.notify) h,
+        if (h.watched) h,
     ];
     if (_disposed) return;
     final wanted = {for (final h in hosts) h.id: h};

@@ -225,6 +225,10 @@ class _HostFormScreenState extends State<HostFormScreen> {
         if (old != null) previous = await _services.keys.password(_id);
         await _services.keys.savePassword(_id, password);
       }
+      // Read now: the host may have been disconnected or opened since the
+      // list gave this form its copy.
+      final disconnected =
+          (await _services.hosts.get(_id))?.disconnected ?? false;
       try {
         await _services.hosts.save(
           Host(
@@ -243,6 +247,7 @@ class _HostFormScreenState extends State<HostFormScreen> {
                 ? Host.defaultMoshServer
                 : moshServer,
             notify: _notify,
+            disconnected: disconnected,
           ),
         );
       } catch (_) {

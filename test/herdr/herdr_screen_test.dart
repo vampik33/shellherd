@@ -84,12 +84,14 @@ void main() {
   late List<FutureOr<FakeLink> Function()> script;
   late List<FakeLink> links;
   late int terminals;
+  late int disconnectPresses;
   late int connections;
 
   setUp(() {
     script = [];
     links = [];
     terminals = 0;
+    disconnectPresses = 0;
     connections = 0;
   });
 
@@ -124,6 +126,7 @@ void main() {
         );
       },
       onTerminal: () => terminals++,
+      onDisconnect: () => disconnectPresses++,
     );
     if (below == null) {
       await tester.pumpWidget(MaterialApp(home: screen));
@@ -776,6 +779,7 @@ void main() {
     Future<void> disconnects(WidgetTester tester) async {
       final link = links.single;
       await tester.tap(disconnect());
+      expect(disconnectPresses, 1, reason: 'the host learns of it once');
       await untilGone(tester, find.byType(HerdrScreen));
       expect(find.text('host list'), findsOneWidget);
       await until(tester, () => link.closed, 'the link to close');

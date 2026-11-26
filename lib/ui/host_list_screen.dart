@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../app.dart';
@@ -112,29 +114,37 @@ class _HostListScreenState extends State<HostListScreen> {
 }
 
 /// The plain terminal of [host]: over mosh when the host has it on.
-Route<void> terminalRoute(AppServices services, Host host) =>
-    MaterialPageRoute<void>(
-      builder: (_) => TerminalScreen(
-        host: host,
-        connector: services.connector,
-        mosh: host.mosh,
-      ),
-    );
+/// Opening it connects a disconnected host again.
+Route<void> terminalRoute(AppServices services, Host host) {
+  unawaited(services.setDisconnected(host.id, false));
+  return MaterialPageRoute<void>(
+    builder: (_) => TerminalScreen(
+      host: host,
+      connector: services.connector,
+      mosh: host.mosh,
+      onDisconnect: () => unawaited(services.setDisconnected(host.id, true)),
+    ),
+  );
+}
 
 /// The herdr session of [host]; with [openPane], that pane open in it.
-Route<void> herdrRoute(AppServices services, Host host, {String? openPane}) =>
-    MaterialPageRoute<void>(
-      builder: (context) => HerdrScreen(
-        host: host,
-        createConnection: () =>
-            HerdrConnection(sshLinkOpener(services.connector, host)),
-        onTerminal: () =>
-            Navigator.of(context).push(terminalRoute(services, host)),
-        openPane: openPane,
-        onPaneShown: (paneId, shown) =>
-            services.notify.paneShown(PaneTarget(host.id, paneId), shown),
-      ),
-    );
+/// Opening it connects a disconnected host again.
+Route<void> herdrRoute(AppServices services, Host host, {String? openPane}) {
+  unawaited(services.setDisconnected(host.id, false));
+  return MaterialPageRoute<void>(
+    builder: (context) => HerdrScreen(
+      host: host,
+      createConnection: () =>
+          HerdrConnection(sshLinkOpener(services.connector, host)),
+      onTerminal: () =>
+          Navigator.of(context).push(terminalRoute(services, host)),
+      openPane: openPane,
+      onPaneShown: (paneId, shown) =>
+          services.notify.paneShown(PaneTarget(host.id, paneId), shown),
+      onDisconnect: () => unawaited(services.setDisconnected(host.id, true)),
+    ),
+  );
+}
 
 class _Message extends StatelessWidget {
   const _Message(this.text);

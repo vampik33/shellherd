@@ -36,6 +36,7 @@ class Host {
     this.mosh = false,
     this.moshServer = defaultMoshServer,
     this.notify = false,
+    this.disconnected = false,
   }) {
     if (label.isEmpty || address.isEmpty || user.isEmpty) {
       throw ArgumentError('label, address and user must not be empty');
@@ -66,6 +67,8 @@ class Host {
     mosh: j['mosh']! as bool,
     moshServer: j['moshServer']! as String,
     notify: j['notify'] as bool? ?? false,
+    // Hosts saved before Disconnect came are connected.
+    disconnected: j['disconnected'] as bool? ?? false,
   );
 
   final String id;
@@ -101,6 +104,13 @@ class Host {
   /// needs the user or is done.
   final bool notify;
 
+  /// The user pressed Disconnect: nothing connects to the host in the
+  /// background until the user opens it again.
+  final bool disconnected;
+
+  /// The background watcher connects to this host.
+  bool get watched => notify && !disconnected;
+
   Map<String, Object?> toJson() => {
     'id': id,
     'label': label,
@@ -115,6 +125,7 @@ class Host {
     'mosh': mosh,
     'moshServer': moshServer,
     'notify': notify,
+    'disconnected': disconnected,
   };
 }
 
@@ -142,6 +153,23 @@ class HostStore {
     }
     data['hosts'] = hosts;
   });
+
+  /// Sets [Host.disconnected] of the saved host [id] in place. True if it
+  /// changed; false if it was already so or there is no such host.
+  Future<bool> setDisconnected(String id, bool value) async {
+    var changed = false;
+    await _file.update((data) {
+      for (final h in data['hosts'] as List<Object?>? ?? const []) {
+        final host = h! as Map<String, Object?>;
+        if (host['id'] != id) continue;
+        if ((host['disconnected'] as bool? ?? false) != value) {
+          host['disconnected'] = value;
+          changed = true;
+        }
+      }
+    });
+    return changed;
+  }
 
   Future<void> remove(String id) => _file.update((data) {
     final hosts = data['hosts'] as List<Object?>?;

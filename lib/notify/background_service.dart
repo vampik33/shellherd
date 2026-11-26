@@ -29,7 +29,7 @@ Future<String?> _savedStopButtonId() =>
 
 /// Android: the watchers run in a foreground service, in an isolate of
 /// their own, so they go on when the app is closed. The service runs while
-/// a saved host has [Host.notify] on, and starts again only with the app.
+/// a saved host is [Host.watched], and starts again only with the app.
 /// The Stop button on its notification ends it until then.
 class ServiceNotify implements NotifyControl {
   ServiceNotify(this._hosts) {
@@ -62,7 +62,7 @@ class ServiceNotify implements NotifyControl {
       _hosts.list(),
       FlutterForegroundTask.isRunningService,
     ).wait;
-    final watch = hosts.any((h) => h.notify);
+    final watch = hosts.any((h) => h.watched);
     if (!watch) {
       if (running) _check(await FlutterForegroundTask.stopService());
       return true;

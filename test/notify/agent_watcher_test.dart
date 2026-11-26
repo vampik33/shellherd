@@ -21,6 +21,7 @@ const _key = HostKey('ssh-ed25519', 'SHA256:x');
 Host _host(
   String id, {
   bool notify = true,
+  bool disconnected = false,
   String? label,
   HerdrKind kind = HerdrKind.herdr,
 }) => Host(
@@ -30,6 +31,7 @@ Host _host(
   user: 'me',
   keyId: 'k',
   notify: notify,
+  disconnected: disconnected,
   herdrKind: kind,
 );
 
@@ -423,6 +425,25 @@ void main() {
       hosts = [];
       await hub.reload();
       expect(hub.count, 0);
+    });
+
+    test('a disconnected host is not watched until it connects again', () async {
+      hosts = [_host('a', disconnected: true), _host('b', notify: false)];
+      await hub.reload();
+      expect(hub.count, 0);
+      expect(connections, isEmpty, reason: 'no connection attempt');
+
+      hosts = [_host('a'), _host('b', notify: false)];
+      await hub.reload();
+      expect(hub.count, 1);
+      final watching = connections.single;
+
+      hosts = [_host('a', disconnected: true), _host('b', notify: false)];
+      await hub.reload();
+      expect(hub.count, 0);
+      expect(connections, [watching], reason: 'no new connection');
+      // The running one is disposed, so it stops trying.
+      expect(() => watching.state.addListener(() {}), throwsFlutterError);
     });
 
     test('a kept watcher that stopped tries again on reload', () async {

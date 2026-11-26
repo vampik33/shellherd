@@ -65,6 +65,27 @@ class AppServices {
     }
   }
 
+  /// Saves whether the user disconnected [hostId], and updates the
+  /// watchers if that changed. A failure shows on the screen open then.
+  Future<void> setDisconnected(String hostId, bool value) async {
+    try {
+      if (await hosts.setDisconnected(hostId, value)) await syncNotify();
+    } catch (e) {
+      debugPrint('shellherd: cannot save the disconnect: $e');
+      final context = navigatorKey.currentContext;
+      if (context == null || !context.mounted) return;
+      ScaffoldMessenger.maybeOf(context)?.showSnackBar(
+        SnackBar(
+          content: Text(
+            value
+                ? 'Cannot save the disconnect: $e'
+                : 'Cannot save the reconnect: $e',
+          ),
+        ),
+      );
+    }
+  }
+
   /// For the watchers, which run with no one to ask: it trusts no new key.
   late final watchConnector = SshConnector(
     knownHosts: knownHosts,
