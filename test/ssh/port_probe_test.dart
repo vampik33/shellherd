@@ -1,7 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shellherd/ui/host_status.dart';
+import 'package:shellherd/ssh/port_probe.dart';
 
 void main() {
   group('sshPortOpen', () {

@@ -27,7 +27,7 @@ class _HostListScreenState extends State<HostListScreen> with RouteAware {
   Object? _error;
 
   /// The last answer of the probe, by `address:port`.
-  final _online = <String, bool>{};
+  final _status = <String, HostStatus>{};
 
   /// Counts the reads of the hosts, so an older one that ends last is
   /// dropped.
@@ -83,26 +83,27 @@ class _HostListScreenState extends State<HostListScreen> with RouteAware {
     for (final host in hosts) {
       final endpoint = _endpoint(host);
       // Hosts on one server share the check.
-      if (host.disconnected || !_checking.add(endpoint)) continue;
-      unawaited(
-        widget.services
-            .probeHost(host.address, host.port)
-            .then((online) {
-              if (mounted) setState(() => _online[endpoint] = online);
-            })
-            .whenComplete(() => _checking.remove(endpoint)),
-      );
+      if (!host.disconnected && _checking.add(endpoint)) {
+        unawaited(_check(host, endpoint));
+      }
     }
   }
 
-  HostStatus _status(Host host) {
-    if (host.disconnected) return HostStatus.disconnected;
-    return switch (_online[_endpoint(host)]) {
-      true => HostStatus.online,
-      false => HostStatus.offline,
-      null => HostStatus.unknown,
-    };
+  Future<void> _check(Host host, String endpoint) async {
+    try {
+      final online = await widget.services.probeHost(host.address, host.port);
+      final status = online ? HostStatus.online : HostStatus.offline;
+      if (mounted && _status[endpoint] != status) {
+        setState(() => _status[endpoint] = status);
+      }
+    } finally {
+      _checking.remove(endpoint);
+    }
   }
+
+  HostStatus _statusOf(Host host) => host.disconnected
+      ? HostStatus.disconnected
+      : _status[_endpoint(host)] ?? HostStatus.unknown;
 
   Future<void> _load() async {
     final load = ++_loads;
@@ -157,7 +158,7 @@ class _HostListScreenState extends State<HostListScreen> with RouteAware {
       children: [
         for (final host in hosts)
           ListTile(
-            leading: HostStatusDot(host.label, _status(host)),
+            leading: HostStatusDot(host.label, _statusOf(host)),
             title: Text(host.label),
             subtitle: Text(
               '${host.user}@${host.address}'

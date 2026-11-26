@@ -9,11 +9,11 @@ import 'ssh/json_file.dart';
 import 'ssh/host.dart';
 import 'ssh/key_store.dart';
 import 'ssh/known_hosts.dart';
+import 'ssh/port_probe.dart';
 import 'ssh/secret_store.dart';
 import 'ssh/ssh_connector.dart';
 import 'ui/host_key_dialog.dart';
 import 'ui/host_list_screen.dart';
-import 'ui/host_status.dart';
 import 'ui/palette.dart';
 import 'ui/tailscale_check_dialog.dart';
 
