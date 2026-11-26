@@ -551,6 +551,36 @@ void main() {
     await close(tester);
   });
 
+  testWidgets('the first connect shows loading, not a lost link', (
+    tester,
+  ) async {
+    link = FakeLink(_session());
+    herdr().paneText = 'last line';
+    final gate = Completer<void>();
+    connection = HerdrConnection(
+      () async {
+        await gate.future;
+        return link.open;
+      },
+      backoff: (_) => const Duration(minutes: 1),
+      debounce: const Duration(milliseconds: 1),
+    )..connect();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: PaneScreen(connection: connection, paneId: 'w1:p1'),
+      ),
+    );
+    await untilFound(tester, chip('connecting'));
+    expect(find.text('Connecting to herdr…'), findsOneWidget);
+    expect(find.textContaining('No link'), findsNothing);
+
+    gate.complete();
+    await untilFound(tester, paneText('last line'));
+    expect(find.textContaining('No link'), findsNothing);
+    expect(find.text('Connecting to herdr…'), findsNothing);
+    await close(tester);
+  });
+
   testWidgets('a dropped link dims the text; a tap sends nothing', (
     tester,
   ) async {

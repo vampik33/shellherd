@@ -343,7 +343,8 @@ class _PaneScreenState extends State<PaneScreen> {
         action: ('OK', () => setState(() => _failure = null)),
       );
     }
-    if (state is! LinkLive) {
+    // The first connect is no failure: the content says it is loading.
+    if (state case LinkReconnecting() || LinkNoServer() || LinkFailed()) {
       return StatusBanner('No link to ${widget.server}. This text may be old.');
     }
     if (view.error case final error?) {
@@ -355,9 +356,22 @@ class _PaneScreenState extends State<PaneScreen> {
   Widget _content(LinkState state, PaneView view) {
     final text = view.text;
     if (text == null) {
-      return view.gone || view.error != null
-          ? const SizedBox.shrink()
-          : const Center(child: CircularProgressIndicator());
+      if (view.gone || view.error != null) return const SizedBox.shrink();
+      return Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const CircularProgressIndicator(),
+            const SizedBox(height: 12),
+            Text(
+              state is LinkOffline || state is LinkConnecting
+                  ? 'Connecting to ${widget.server}…'
+                  : 'Loading the pane…',
+              style: const TextStyle(color: Graphite.dim),
+            ),
+          ],
+        ),
+      );
     }
     return Opacity(
       opacity: state is LinkLive && !view.gone ? 1 : 0.5,
