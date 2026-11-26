@@ -9,8 +9,8 @@ TranscriptOpener sshTranscriptOpener(
   SSHClient ssh, {
   Duration timeout = const Duration(seconds: 15),
 }) =>
-    (session) async => SshExecChannel(
-      await openExec(ssh, transcriptCommand(session), timeout),
+    (session, from) async => SshExecChannel(
+      await openExec(ssh, transcriptCommand(session, from: from), timeout),
       'transcript read',
     );
 
@@ -22,21 +22,31 @@ final _sessionId = RegExp(r'^[A-Za-z0-9_-]{1,128}$');
 /// Finds the transcript of Claude Code session [session] on the remote host,
 /// `<config>/projects/<project>/<session>.jsonl` with the config directory
 /// in CLAUDE_CONFIG_DIR or `~/.claude` (the newest if there are several),
-/// and prints a header line with its size ([transcriptHeader]), then its
-/// last [transcriptTail] bytes and the one before them, and each line added
-/// to it, until stdin ends.
+/// and prints a header line ([transcriptHeader]), then the file from where
+/// the read starts, and each line added to it, until stdin ends.
+///
+/// The read starts at [from] when the file has its inode, is not shorter,
+/// and grew by at most [transcriptTail] since: the reader has the lines
+/// before it. Otherwise at the last [transcriptTail] bytes and the one
+/// before them, or at the start of a smaller file.
 ///
 /// Claude Code writes the file with the first message, after herdr learns
 /// of the session: until the file is there, the header says 0 and the
-/// command waits for it. Without the projects directory, Claude Code keeps
-/// its transcripts elsewhere: it exits 66 then.
+/// command waits for it, then reads it from the start. Without the
+/// projects directory, Claude Code keeps its transcripts elsewhere: it
+/// exits 66 then.
 ///
 /// Through `sh`, because the login shell can be fish. Throws
-/// [ArgumentError] for an id it does not take.
-String transcriptCommand(String session) {
+/// [ArgumentError] for an id or a mark it does not take.
+String transcriptCommand(String session, {TranscriptMark? from}) {
   if (!_sessionId.hasMatch(session)) {
     throw ArgumentError.value(session, 'session', 'not a session id');
   }
+  if (from != null &&
+      (!transcriptInode.hasMatch(from.inode) || from.offset < 0)) {
+    throw ArgumentError.value(from, 'from', 'not a transcript mark');
+  }
+  const cut = transcriptTail + 1;
   final inner = [
     'd="\${CLAUDE_CONFIG_DIR:-\$HOME/.claude}/projects"',
     '[ -d "\$d" ] || { echo "no Claude Code transcripts in \$d" >&2; exit 66; }',
@@ -48,16 +58,24 @@ String transcriptCommand(String session) {
     '  done',
     '}',
     'find_f',
+    'start=0',
     'if [ -n "\$f" ]; then',
-    '  echo "$transcriptHeader\$(wc -c < "\$f")"',
-    '  from=${transcriptTail + 1}',
+    '  size=\$((\$(wc -c < "\$f")))',
+    '  ino=\$(ls -i -- "\$f" | { read -r i _; echo "\$i"; })',
+    '  if [ "\$size" -gt $cut ]; then start=\$((size - $cut)); fi',
+    if (from != null) ...[
+      '  if [ "\$ino" = ${from.inode} ] && [ "\$size" -ge ${from.offset} ] &&',
+      '    [ \$((size - ${from.offset})) -le $transcriptTail ]; then',
+      '    start=${from.offset}',
+      '  fi',
+    ],
+    '  echo "$transcriptHeader\$size \$start \${ino:--}"',
     'else',
-    '  echo "${transcriptHeader}0"',
-    '  from=+1',
+    '  echo "${transcriptHeader}0 0 -"',
     'fi',
     ...untilStdinEnds(
       '{ while [ -z "\$f" ]; do sleep 1; find_f; done; '
-      'exec tail -c "\$from" -F -- "\$f"; }',
+      'exec tail -c +\$((start + 1)) -F -- "\$f"; }',
     ),
   ].join('\n');
   return 'sh -c ${shQuote(inner)}';

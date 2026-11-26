@@ -14,25 +14,49 @@ import 'claude_transcript.dart';
 /// the end of the file and each line added to it.
 typedef TranscriptChannel = ExecChannel;
 
+/// Where a read stopped: the file, by its inode, and the offset of the
+/// first byte not read, which starts a line.
+typedef TranscriptMark = ({String inode, int offset});
+
 /// Starts a read of the transcript of Claude Code session [session] on the
-/// remote host.
-typedef TranscriptOpener = Future<TranscriptChannel> Function(String session);
+/// remote host: at [from] when it is still the file there and not too far
+/// behind its end, else at its end.
+typedef TranscriptOpener =
+    Future<TranscriptChannel> Function(String session, TranscriptMark? from);
 
 /// How much of the end of a transcript a read starts with, past the line
-/// the cut falls in. Transcripts grow to hundreds of megabytes.
+/// the cut falls in, and how far behind the end a read can go on from where
+/// the last stopped. Transcripts grow to hundreds of megabytes.
 const transcriptTail = 2 * 1024 * 1024;
 
-/// The first line of a read: the marker and the size of the file. Lines
-/// before it come from the remote shell's startup files.
+/// The first line of a read: the marker, the size of the file, the offset
+/// the read starts at, and the file's inode, `-` while there is no file.
+/// Lines before it come from the remote shell's startup files.
 const transcriptHeader = 'shellherd-transcript ';
 
-/// The size in a header line; null for any other line. A startup file
+/// What a header line says; null for any other line. [inode] is null while
+/// there is no file.
+typedef TranscriptStart = ({int size, int start, String? inode});
+
+/// The inodes that a mark takes: the command gets them back.
+final transcriptInode = RegExp(r'^[0-9]{1,20}$');
+
+/// What the header [line] says; null for any other line. A startup file
 /// can print text without a newline: it then stands before the marker.
-int? transcriptSize(String line) {
+TranscriptStart? transcriptStart(String line) {
   final at = line.indexOf(transcriptHeader);
-  return at < 0
-      ? null
-      : int.tryParse(line.substring(at + transcriptHeader.length).trim());
+  if (at < 0) return null;
+  final words = line.substring(at + transcriptHeader.length).trim().split(RegExp(r'\s+'));
+  if (words.length != 3) return null;
+  final size = int.tryParse(words[0]);
+  final start = int.tryParse(words[1]);
+  if (size == null || start == null || start < 0) return null;
+  final inode = words[2];
+  return (
+    size: size,
+    start: start,
+    inode: transcriptInode.hasMatch(inode) ? inode : null,
+  );
 }
 
 /// The wait before the next read after [failures] reads in a row that
@@ -118,7 +142,8 @@ class TranscriptView {
 
 /// The conversation of the Claude Code session in one pane, read from its
 /// transcript: the last [transcriptTail] bytes first, then each record as
-/// Claude Code adds it.
+/// Claude Code adds it. A new read of the same session, after a new link or
+/// while the chat was hidden, goes on where the last one stopped.
 ///
 /// A new opener (a new link) or a new session (after `/clear`) starts a
 /// new read. When a read fails before its header, for example because the
@@ -170,6 +195,13 @@ class TranscriptStream {
   TranscriptOpener? _lastOpener;
   String? _lastSession;
 
+  /// What the reads of the session made so far, and whether it starts
+  /// after the start of the file. While [_mark] is set, [_kept] holds
+  /// exactly the lines before it.
+  ClaudeTranscript? _kept;
+  var _keptCut = false;
+  TranscriptMark? _mark;
+
   /// Reads in a row that ended without bringing anything new.
   var _failures = 0;
 
@@ -213,6 +245,8 @@ class TranscriptStream {
       // Another conversation: the old one must not stay on the screen.
       view.value = const TranscriptView();
       _reset();
+      _kept = null;
+      _mark = null;
     } else if (opener != _lastOpener) {
       _reset();
     }
@@ -252,12 +286,18 @@ class TranscriptStream {
 
   Future<void> _read(TranscriptOpener opener, String session, int run) async {
     bool current() => run == _run && !_closed;
-    final transcript = ClaudeTranscript();
+    final from = _mark;
+    var transcript = ClaudeTranscript();
     var header = false;
     var startsCut = false;
-    // The bytes of the file's end that the read starts with, and how many
-    // of them came: the chat shows once all did, so that a new read does
-    // not show half of what the last one showed.
+    // The first line of a read that starts past the start of the file and
+    // not where the last one stopped is the end of a cut record.
+    var dropFirst = false;
+    var start = 0;
+    String? inode;
+    // The bytes of the file that the read starts with, and how many of
+    // them came: the chat shows once all did, so that a new read does not
+    // show half of what the last one showed.
     var initial = 0;
     var received = 0;
     Object? failure;
@@ -272,7 +312,7 @@ class TranscriptStream {
 
     try {
       final channel = await openWithin(
-        opener(session),
+        opener(session, from),
         openTimeout,
         (late) => late.close(),
         'transcript read',
@@ -294,20 +334,33 @@ class TranscriptStream {
               : utf8.decode(bytes, allowMalformed: true);
           if (!header) {
             if (line == null) continue;
-            final size = transcriptSize(line);
-            if (size == null) continue;
+            final at = transcriptStart(line);
+            if (at == null) continue;
             header = true;
-            // The command sends one byte more than the tail, so that the
-            // first line, dropped, ends where a whole record starts.
-            startsCut = size > transcriptTail + 1;
-            initial = startsCut ? transcriptTail + 1 : size;
+            start = at.start;
+            inode = at.inode;
+            initial = at.size - start;
+            if (from != null && from == (inode: inode, offset: start)) {
+              transcript = _kept!;
+              startsCut = _keptCut;
+            } else {
+              // The command starts a cut one byte early, so that the
+              // first line, dropped, ends where a whole record starts.
+              startsCut = dropFirst = start > 0;
+              _kept = transcript;
+              _keptCut = startsCut;
+            }
+            _mark = dropFirst || inode == null
+                ? null
+                : (inode: inode, offset: start);
             continue;
           }
-          // The first line of a cut read is the end of a cut record.
-          if (line != null && (received > 0 || !startsCut)) {
+          if (line != null && (received > 0 || !dropFirst)) {
             transcript.add(line);
           }
           received += length;
+          // Only whole lines count: the next read starts a line.
+          if (inode != null) _mark = (inode: inode, offset: start + received);
         }
         // The last record of the file may not have ended yet: its bytes
         // count, so that the records before it show.

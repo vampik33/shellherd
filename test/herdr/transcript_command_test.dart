@@ -43,9 +43,10 @@ void main() {
       String id, {
       String shell = '/bin/sh',
       Map<String, String> env = const {},
+      TranscriptMark? from,
     }) => Process.start(
       shell,
-      ['-c', transcriptCommand(id)],
+      ['-c', transcriptCommand(id, from: from)],
       environment: {'HOME': home.path, 'PATH': '/usr/bin:/bin', ...env},
       includeParentEnvironment: false,
     );
@@ -57,13 +58,114 @@ void main() {
 
     Future<void> expectLines(
       StreamIterator<String> out,
-      List<String> want,
+      List<Object> want,
     ) async {
       for (final line in want) {
         expect(await out.moveNext(), isTrue, reason: 'no line $line');
         expect(out.current, line);
       }
     }
+
+    /// A header for a file of [size] bytes read from [start].
+    Matcher head(int size, {int start = 0}) => matches(
+      RegExp('^${RegExp.escape(transcriptHeader)}$size $start [0-9]+\$'),
+    );
+
+    /// The first line [process] prints.
+    Future<String> firstLine(Process process) async {
+      final out = lines(process);
+      expect(await out.moveNext(), isTrue);
+      final line = out.current;
+      await process.stdin.close();
+      await out.cancel();
+      return line;
+    }
+
+    for (final shell in ['/bin/sh', '/usr/bin/fish']) {
+      test(
+        'goes on from a mark in the same file ($shell)',
+        skip: File(shell).existsSync() ? false : '$shell is missing',
+        () async {
+          final file = await transcript('{"a":1}\n{"b":2}\n');
+          final inode = await inodeOf(file);
+          final process = await run(
+            _id,
+            shell: shell,
+            from: (inode: inode, offset: 8),
+          );
+          final out = lines(process);
+          await expectLines(out, ['${transcriptHeader}16 8 $inode', '{"b":2}']);
+          file.writeAsStringSync('{"c":3}\n', mode: FileMode.append);
+          await expectLines(out, ['{"c":3}']);
+          await process.stdin.close();
+          await out.cancel();
+        },
+      );
+    }
+
+    test('a mark past the end of the file starts over', () async {
+      final file = await transcript('{"a":1}\n');
+      final from = (inode: await inodeOf(file), offset: 9);
+      final process = await run(_id, from: from);
+      final out = lines(process);
+      await expectLines(out, [head(8), '{"a":1}']);
+      await process.stdin.close();
+      await out.cancel();
+    });
+
+    test('a mark in another file starts over', () async {
+      final file = await transcript('{"a":1}\n{"b":2}\n');
+      final other = '${int.parse(await inodeOf(file)) + 1}';
+      final process = await run(_id, from: (inode: other, offset: 8));
+      final out = lines(process);
+      await expectLines(out, [head(16), '{"a":1}', '{"b":2}']);
+      await process.stdin.close();
+      await out.cancel();
+    });
+
+    test('a mark more than the tail behind starts at the tail', () async {
+      final size = transcriptTail + 100;
+      final file = await transcript('${'x' * (size - 1)}\n');
+      final inode = await inodeOf(file);
+      expect(
+        await firstLine(await run(_id, from: (inode: inode, offset: 100))),
+        '$transcriptHeader$size 100 $inode',
+        reason: 'grew by exactly the tail: goes on',
+      );
+      expect(
+        await firstLine(await run(_id, from: (inode: inode, offset: 50))),
+        '$transcriptHeader$size 99 $inode',
+        reason: 'grew by more: the tail and the byte before it',
+      );
+    });
+
+    test('a mark with no file yet waits and reads it from the start', () async {
+      await Directory('${home.path}/.claude/projects').create(recursive: true);
+      final process = await run(_id, from: (inode: '5', offset: 3));
+      final out = lines(process);
+      await expectLines(out, ['${transcriptHeader}0 0 -']);
+      await transcript('{"first":1}\n');
+      await expectLines(out, ['{"first":1}']);
+      await process.stdin.close();
+      await out.cancel();
+    });
+
+    test('refuses a mark it cannot pass safely', () {
+      for (final from in [
+        (inode: '', offset: 0),
+        (inode: '1;x', offset: 0),
+        (inode: r'$HOME', offset: 0),
+        (inode: '1 2', offset: 0),
+        (inode: '1' * 21, offset: 0),
+        (inode: '1', offset: -1),
+      ]) {
+        expect(
+          () => transcriptCommand(_id, from: from),
+          throwsArgumentError,
+          reason: '$from',
+        );
+      }
+    });
 
     for (final shell in ['/bin/sh', '/usr/bin/fish']) {
       test(
@@ -77,11 +179,7 @@ void main() {
           );
           final process = await run(_id, shell: shell);
           final out = lines(process);
-          await expectLines(out, [
-            '${transcriptHeader}16',
-            '{"a":1}',
-            '{"b":2}',
-          ]);
+          await expectLines(out, [head(16), '{"a":1}', '{"b":2}']);
           file.writeAsStringSync('{"c":3}\n', mode: FileMode.append);
           await expectLines(out, ['{"c":3}']);
           await process.stdin.close();
@@ -100,7 +198,7 @@ void main() {
       await transcript('{"config":1}\n', config: config);
       final process = await run(_id, env: {'CLAUDE_CONFIG_DIR': config});
       final out = lines(process);
-      await expectLines(out, ['${transcriptHeader}13', '{"config":1}']);
+      await expectLines(out, [head(13), '{"config":1}']);
       await process.stdin.close();
       await out.cancel();
     });
@@ -113,7 +211,7 @@ void main() {
       await transcript('{"new":1}\n', project: 'b');
       final process = await run(_id);
       final out = lines(process);
-      await expectLines(out, ['${transcriptHeader}10', '{"new":1}']);
+      await expectLines(out, [head(10), '{"new":1}']);
       await process.stdin.close();
       await out.cancel();
     });
@@ -121,11 +219,16 @@ void main() {
     test('a big file starts with its last part', () async {
       final line = '${'y' * 1023}\n';
       final size = transcriptTail + 10 * line.length + 5;
-      await transcript('${'z' * 5}${line * (size ~/ line.length)}');
+      final file = await transcript(
+        '${'z' * 5}${line * (size ~/ line.length)}',
+      );
       final process = await run(_id);
       final out = <int>[];
       final read = process.stdout.listen(out.addAll);
-      final header = utf8.encode('$transcriptHeader$size\n');
+      final start = size - transcriptTail - 1;
+      final header = utf8.encode(
+        '$transcriptHeader$size $start ${await inodeOf(file)}\n',
+      );
       await until(
         () => out.length >= header.length + transcriptTail + 1,
         'the tail',
@@ -160,7 +263,7 @@ void main() {
         await transcript('{}\n', id: 'another-session');
         final process = await run(_id);
         final out = lines(process);
-        await expectLines(out, ['${transcriptHeader}0']);
+        await expectLines(out, ['${transcriptHeader}0 0 -']);
         await transcript('{"first":1}\n', project: 'new');
         await expectLines(out, ['{"first":1}']);
         await process.stdin.close();
@@ -173,7 +276,7 @@ void main() {
       await Directory('${home.path}/.claude/projects').create(recursive: true);
       final process = await run(_id);
       final out = lines(process);
-      await expectLines(out, ['${transcriptHeader}0']);
+      await expectLines(out, ['${transcriptHeader}0 0 -']);
       await process.stdin.close();
       expect(
         await process.exitCode.timeout(const Duration(seconds: 5)),
@@ -206,6 +309,13 @@ void main() {
     });
   });
 }
+
+/// The inode of [file], as the command prints it.
+Future<String> inodeOf(File file) async => (await Process.run('stat', [
+  '-c',
+  '%i',
+  file.path,
+])).stdout.toString().trim();
 
 /// The pids of tail processes that follow [path].
 Future<List<int>> _tailsOf(String path) async {

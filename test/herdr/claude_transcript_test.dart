@@ -400,12 +400,30 @@ void main() {
     });
   });
 
-  test('transcriptSize reads only a header', () {
-    expect(transcriptSize('${transcriptHeader}123'), 123);
-    expect(transcriptSize('$transcriptHeader     123  '), 123);
-    expect(transcriptSize('${transcriptHeader}x'), isNull);
-    expect(transcriptSize('123'), isNull);
+  test('transcriptStart reads only a header', () {
+    const h = transcriptHeader;
+    expect(transcriptStart('${h}123 0 77'), (size: 123, start: 0, inode: '77'));
+    expect(
+      transcriptStart('$h   123  5   77 '),
+      (size: 123, start: 5, inode: '77'),
+    );
+    // No file yet; an inode the command could not take back.
+    expect(transcriptStart('${h}0 0 -'), (size: 0, start: 0, inode: null));
+    expect(transcriptStart('${h}9 0 1;x'), (size: 9, start: 0, inode: null));
+    for (final line in [
+      '${h}x 0 1',
+      '${h}12 -1 1',
+      '${h}12 0',
+      '${h}12',
+      '${h}12 0 1 2',
+      '12 0 1',
+    ]) {
+      expect(transcriptStart(line), isNull, reason: line);
+    }
     // A startup file that printed no newline.
-    expect(transcriptSize('Welcome!${transcriptHeader}12'), 12);
+    expect(
+      transcriptStart('Welcome!${h}12 0 3'),
+      (size: 12, start: 0, inode: '3'),
+    );
   });
 }

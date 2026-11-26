@@ -21,13 +21,16 @@ class FakeTranscripts {
 
   late final TranscriptOpener open = _open;
 
-  Future<TranscriptChannel> _open(String session) async {
+  Future<TranscriptChannel> _open(
+    String session,
+    TranscriptMark? from,
+  ) async {
     if (failOpen case final error?) {
       failOpen = null;
       throw error;
     }
     await holdOpen?.future;
-    final channel = FakeTranscriptChannel(session);
+    final channel = FakeTranscriptChannel(session, from);
     opened.add(channel);
     openedAt.add(DateTime.now());
     return channel;
@@ -36,10 +39,13 @@ class FakeTranscripts {
 
 /// One read: the test writes what the remote command prints.
 class FakeTranscriptChannel implements TranscriptChannel {
-  FakeTranscriptChannel(this.session);
+  FakeTranscriptChannel(this.session, this.from);
 
   /// The Claude Code session whose transcript this reads.
   final String session;
+
+  /// Where the stream asked the read to go on.
+  final TranscriptMark? from;
   final _output = StreamController<List<int>>();
   var closed = false;
 
@@ -58,8 +64,12 @@ class FakeTranscriptChannel implements TranscriptChannel {
 
   void text(String data) => bytes(utf8.encode(data));
 
-  /// The header for a file of [size] bytes.
-  void header(int size) => text('$transcriptHeader$size\n');
+  /// The header for a file of [size] bytes with [inode] (`-`: no file),
+  /// read from [start]: by default as the command starts a new read.
+  void header(int size, {int? start, String inode = '1'}) {
+    start ??= size > transcriptTail + 1 ? size - transcriptTail - 1 : 0;
+    text('$transcriptHeader$size $start $inode\n');
+  }
 
   /// A header for exactly [lines], then the lines: a whole small file.
   void file(List<String> lines) {
