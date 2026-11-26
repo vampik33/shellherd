@@ -4,19 +4,14 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:xterm/xterm.dart';
 
+import '../ssh/ssh_exec.dart';
 import 'api/herdr_client.dart';
 import 'api/json_fields.dart';
 import 'pane_poller.dart';
 
-/// One running `herdr terminal session observe`.
-abstract interface class ScreenChannel {
-  /// What the observer prints: one JSON record per line. Ends when it
-  /// exits; with an error when it failed.
-  Stream<List<int>> get output;
-
-  /// Ends the observer.
-  void close();
-}
+/// One running `herdr terminal session observe`: its output is one JSON
+/// record per line.
+typedef ScreenChannel = ExecChannel;
 
 /// Starts an observer of [paneId] that draws it at [size].
 typedef ScreenOpener =

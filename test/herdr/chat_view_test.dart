@@ -2,6 +2,8 @@
 @Timeout(Duration(seconds: 60))
 library;
 
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shellherd/herdr/api/herdr_client.dart';
@@ -202,6 +204,34 @@ void main() {
     transcripts.last.text('${claudeUser('first prompt', uuid: 'u1')}\n');
     await untilFound(tester, paneText('first prompt'));
     expect(find.text('Cannot read this pane.'), findsNothing);
+    await close(tester);
+  });
+
+  testWidgets('a pane that closes while the chat comes says so', (
+    tester,
+  ) async {
+    await open(tester);
+    await until(tester, () => transcripts.opened.isNotEmpty, 'a read');
+    transcripts.last.header(0);
+    await untilFound(tester, paneText('pane text line'));
+    // The next read of the text finds the pane closed, but its answer
+    // comes only after the chat is on the screen.
+    final hold = herdr().holdReads = Completer();
+    herdr().errors['pane.read'] = ['pane_not_found'];
+    final reads = herdr().count('pane.read');
+    await until(
+      tester,
+      () => herdr().count('pane.read') > reads,
+      'a read on its way',
+    );
+    transcripts.last.text('${claudeUser('first prompt', uuid: 'u1')}\n');
+    await untilFound(tester, paneText('first prompt'));
+    expect(find.byType(TextField), findsOneWidget);
+    hold.complete();
+    await untilFound(tester, find.text('This pane is closed.'));
+    expect(paneText('first prompt'), findsOneWidget);
+    expect(find.byType(TextField), findsNothing);
+    expect(find.text('esc'), findsNothing);
     await close(tester);
   });
 

@@ -215,16 +215,24 @@ class _PaneScreenState extends State<PaneScreen> {
     return items == null || items.isNotEmpty || view.startsCut;
   }
 
+  /// What shows the pane now. The banner and the content read only its
+  /// view.
+  _Feed get _feed => _streaming
+      ? _Feed.stream
+      : _chatShown
+      ? _Feed.chat
+      : _Feed.reads;
+
   /// Runs the stream, the transcript read or the poller, whichever shows
   /// the pane, and only while it is shown. The poller rests while the chat
   /// shows: only herdr has transcripts, and herdr marks nothing seen, so
   /// [SeenMarker] needs no reads then.
   void _applySource() {
     if (_poller.source != _readSource) _poller.source = _readSource;
-    final streaming = _streaming;
-    _stream.running = _shown && streaming;
+    final feed = _feed;
+    _stream.running = _shown && feed == _Feed.stream;
     _transcript.running = _shown && _chatting;
-    final polling = _shown && !streaming && !_chatShown;
+    final polling = _shown && feed == _Feed.reads;
     if (polling == _polling) return;
     _polling = polling;
     polling ? _poller.resume() : _poller.pause();
@@ -332,7 +340,15 @@ class _PaneScreenState extends State<PaneScreen> {
     builder: (context, _) {
       final snapshot = widget.connection.snapshot.value;
       final state = widget.connection.state.value;
-      final view = _streaming ? _stream.view.value : _poller.view.value;
+      final feed = _feed;
+      // The chat has no pane text: the poller rests under it, and what it
+      // read last is old. A read still on its way when the chat came can
+      // find the pane closed: that shows, its errors do not.
+      final view = switch (feed) {
+        _Feed.stream => _stream.view.value,
+        _Feed.chat => PaneView(gone: _poller.view.value.gone),
+        _Feed.reads => _poller.view.value,
+      };
       final pane = snapshot?.pane(widget.paneId);
       // Where the toggle goes.
       final toggle = !_exact
@@ -362,7 +378,7 @@ class _PaneScreenState extends State<PaneScreen> {
           child: Column(
             children: [
               ?_statusBanner(state, view),
-              Expanded(child: _content(state, view)),
+              Expanded(child: _content(state, feed, view)),
               if (!view.gone) ...[
                 if (pane?.status == AgentStatus.blocked)
                   _Answers(onKey: _sendKey),
@@ -421,8 +437,7 @@ class _PaneScreenState extends State<PaneScreen> {
     if (lost) {
       return StatusBanner('No link to ${widget.server}. This text may be old.');
     }
-    // The poller rests under the chat: its last error is old.
-    if (view.error case final error? when !_chatShown) {
+    if (view.error case final error?) {
       return StatusBanner('Cannot read this pane.', detail: '$error');
     }
     if (!_exact && _claudeSession != null && _transcript.unavailable.value) {
@@ -448,8 +463,8 @@ class _PaneScreenState extends State<PaneScreen> {
     );
   }
 
-  Widget _content(LinkState state, PaneView view) {
-    if (_chatShown) return _chat(state);
+  Widget _content(LinkState state, _Feed feed, PaneView view) {
+    if (feed == _Feed.chat) return _chat(state);
     final text = view.text;
     if (text == null) {
       if (view.gone || view.error != null) return const SizedBox.shrink();
@@ -714,4 +729,16 @@ class _ExactScreenState extends State<_ExactScreen> {
       ),
     ),
   );
+}
+
+/// What shows a pane.
+enum _Feed {
+  /// The exact screen, pushed by the stream.
+  stream,
+
+  /// The conversation, from the transcript.
+  chat,
+
+  /// The pane's text, read again and again by the poller.
+  reads,
 }

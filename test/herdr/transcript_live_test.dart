@@ -8,6 +8,7 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:dartssh2/dartssh2.dart';
@@ -18,6 +19,7 @@ import 'package:shellherd/herdr/herdr_cache.dart';
 import 'package:shellherd/herdr/herdr_connection.dart';
 import 'package:shellherd/herdr/herdr_link.dart';
 import 'package:shellherd/herdr/transcript/chat_items.dart';
+import 'package:shellherd/herdr/transcript/transcript_command.dart';
 import 'package:shellherd/herdr/transcript/transcript_stream.dart';
 
 import '../support/fake_transcripts.dart';
@@ -141,6 +143,68 @@ Future<void> main() async {
       },
     );
 
+    test('a new link goes on where the last read stopped and gets only '
+        'what was added since', () async {
+      final file = File('${dir.path}/r1.jsonl');
+      // No uuids: a record read twice would show twice.
+      final first = '${claudeUser('first')}\n';
+      await file.writeAsString(first);
+      final reads = <_Recorded>[];
+      TranscriptOpener recording() {
+        final opener = sshTranscriptOpener(ssh);
+        return (session, from) async {
+          final read = _Recorded(await opener(session, from), from);
+          reads.add(read);
+          return read;
+        };
+      }
+
+      var opener = recording();
+      final changes = ValueNotifier(0);
+      final stream = TranscriptStream(
+        () => opener,
+        () => 'r1',
+        changes: changes,
+      )..running = true;
+      addTearDown(stream.dispose);
+      await until(
+        () => stream.view.value.items?.length == 1,
+        'the first message',
+      );
+      // The link goes; a record comes while there is none.
+      stream.running = false;
+      final second = '${claudeAssistant([claudeText('second')])}\n';
+      await file.writeAsString(second, mode: FileMode.append);
+      opener = recording();
+      changes.value++;
+      stream.running = true;
+      await until(
+        () => stream.view.value.items?.length == 2,
+        'the added message',
+      );
+      expect(stream.view.value.items, const [
+        ChatPrompt('first'),
+        ChatReply('second'),
+      ]);
+      expect(reads, hasLength(2));
+      final inode = (await Process.run('stat', [
+        '-c',
+        '%i',
+        file.path,
+      ])).stdout.toString().trim();
+      expect(reads.last.from, (
+        inode: inode,
+        line: 0,
+        offset: utf8.encode(first).length,
+      ));
+      // The last line read comes again, for the check.
+      final size = utf8.encode(first + second).length;
+      expect(
+        utf8.decode(reads.last.received),
+        '$transcriptHeader$size 0 $inode\n$first$second',
+      );
+    });
+
     test('the session after /clear reaches the connection', () async {
       final pane = await herdr.createWorkspace('clear');
       await report(pane, '${dir.path}/before.jsonl', 'before');
@@ -170,4 +234,24 @@ Future<void> main() async {
       );
     });
   });
+}
+
+/// A read that keeps what it received.
+class _Recorded implements TranscriptChannel {
+  _Recorded(this._read, this.from);
+
+  final TranscriptChannel _read;
+
+  /// Where the stream asked the read to go on.
+  final TranscriptMark? from;
+  final received = <int>[];
+
+  @override
+  Stream<List<int>> get output => _read.output.map((bytes) {
+    received.addAll(bytes);
+    return bytes;
+  });
+
+  @override
+  void close() => _read.close();
 }

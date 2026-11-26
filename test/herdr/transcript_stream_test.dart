@@ -4,11 +4,13 @@ library;
 
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shellherd/herdr/api/herdr_client.dart';
 import 'package:shellherd/herdr/transcript/chat_items.dart';
+import 'package:shellherd/herdr/transcript/claude_transcript.dart';
 import 'package:shellherd/herdr/transcript/transcript_stream.dart';
 
 import '../support/fake_transcripts.dart';
@@ -403,5 +405,355 @@ void main() {
     await until(() => transcripts.last.closed, 'transcripts.last.closed');
     // tearDown disposes again: build a fresh stream for it.
     stream = TranscriptStream(() => null, () => null, changes: changes);
+  });
+
+  group('a new read goes on where the last stopped', () {
+    String line(String text) => '${claudeUser(text)}\n';
+    int length(String s) => utf8.encode(s).length;
+
+    Future<void> opened(int n) =>
+        until(() => transcripts.opened.length == n, '$n reads');
+
+    test('after a new link, without what the last read had', () async {
+      stream.running = true;
+      await opened(1);
+      final first = line('one') + line('two');
+      transcripts.last
+        ..header(length(first), inode: '7')
+        ..text(first)
+        // Half a record: the next read has to send it again.
+        ..text(line('three').substring(0, 5));
+      await until(() => items()?.length == 2, 'two items');
+      expect(transcripts.last.from, isNull);
+      final next = FakeTranscripts();
+      opener = next.open;
+      change();
+      await until(() => next.opened.isNotEmpty, 'the new read');
+      expect(next.last.from, (
+        inode: '7',
+        line: length(line('one')),
+        offset: length(first),
+      ));
+      // The read sends the last line read again.
+      final rest = line('three') + line('four');
+      next.last
+        ..header(length(first + rest), start: length(line('one')), inode: '7')
+        ..text(line('two') + rest);
+      await until(() => items()?.length == 4, 'four items');
+      expect(items(), const [
+        ChatPrompt('one'),
+        ChatPrompt('two'),
+        ChatPrompt('three'),
+        ChatPrompt('four'),
+      ]);
+      expect(stream.view.value.startsCut, isFalse);
+    });
+
+    test('after the chat was hidden', () async {
+      stream.running = true;
+      await opened(1);
+      transcripts.last.file([claudeUser('one')]);
+      await until(() => items()?.length == 1, 'one item');
+      stream.running = false;
+      stream.running = true;
+      await opened(2);
+      expect(transcripts.last.from, (
+        inode: '1',
+        line: 0,
+        offset: length(line('one')),
+      ));
+    });
+
+    test('a read the command starts elsewhere starts over', () async {
+      stream.running = true;
+      await opened(1);
+      transcripts.last.file([claudeUser('one')]);
+      await until(() => items()?.length == 1, 'one item');
+      transcripts.last.close();
+      await opened(2);
+      expect(transcripts.last.from, isNotNull);
+      // Another file, or the mark was too far behind: the whole file.
+      final body = line('one') + line('two');
+      transcripts.last
+        ..header(length(body), inode: '2')
+        ..text(body);
+      await until(() => items()?.length == 2, 'two items');
+      expect(items(), const [ChatPrompt('one'), ChatPrompt('two')]);
+    });
+
+    test('a cut read has a mark only once its first line ended', () async {
+      stream.running = true;
+      await opened(1);
+      const start = 1000;
+      transcripts.last
+        ..header(start + 50, start: start, inode: '7')
+        ..text('end of a cut record');
+      await Future<void>.delayed(_settle);
+      transcripts.last.close();
+      await opened(2);
+      expect(transcripts.last.from, isNull);
+      final cut = 'end of a cut record\n';
+      transcripts.last
+        ..header(start + 50, start: start, inode: '7')
+        ..text(cut)
+        ..close();
+      await opened(3);
+      expect(transcripts.last.from, (
+        inode: '7',
+        line: start,
+        offset: start + length(cut),
+      ));
+    });
+
+    test('the line a read goes on with is not shown twice', () async {
+      stream.running = true;
+      await opened(1);
+      final first = line('one') + line('two');
+      transcripts.last
+        ..header(length(first), inode: '7')
+        ..text(first);
+      await until(() => items()?.length == 2, 'two items');
+      transcripts.last.close();
+      await opened(2);
+      expect(transcripts.last.from, (
+        inode: '7',
+        line: length(line('one')),
+        offset: length(first),
+      ));
+      final rest = line('three');
+      transcripts.last
+        ..header(length(first + rest), start: length(line('one')), inode: '7')
+        ..text(line('two'))
+        ..text(rest);
+      await until(() => items()?.length == 3, 'three items');
+      expect(items(), const [
+        ChatPrompt('one'),
+        ChatPrompt('two'),
+        ChatPrompt('three'),
+      ]);
+      transcripts.last.close();
+      await opened(3);
+      expect(transcripts.last.from, (
+        inode: '7',
+        line: length(first),
+        offset: length(first + rest),
+      ));
+    });
+
+    test('a resumed read whose first line differs starts over', () async {
+      stream.running = true;
+      await opened(1);
+      final first = line('one') + line('two');
+      transcripts.last
+        ..header(length(first), inode: '7')
+        ..text(first);
+      await until(() => items()?.length == 2, 'two items');
+      final shown = <List<ChatItem>?>[];
+      stream.view.addListener(() => shown.add(items()));
+      transcripts.last.close();
+      await opened(2);
+      final from = transcripts.last.from!;
+      // The file was written again in place, longer than before.
+      final other = line('other') + line('three') + line('four');
+      transcripts.last
+        ..header(from.line + length(other), start: from.line, inode: '7')
+        ..text(other);
+      await opened(3);
+      expect(transcripts.last.from, isNull);
+      expect(
+        shown,
+        isEmpty,
+        reason: 'the read that started over shows nothing',
+      );
+      expect(transcripts.opened[1].closed, isTrue);
+      final body = line('new one') + other;
+      transcripts.last
+        ..header(length(body), inode: '7')
+        ..text(body);
+      await until(() => items()?.length == 4, 'four items');
+      expect(items(), const [
+        ChatPrompt('new one'),
+        ChatPrompt('other'),
+        ChatPrompt('three'),
+        ChatPrompt('four'),
+      ]);
+    });
+
+    test(
+      'a resumed read whose first line is over the cap starts over',
+      () async {
+        stream.running = true;
+        await opened(1);
+        transcripts.last
+          ..header(length(line('one')), inode: '7')
+          ..text(line('one'));
+        await until(() => items()?.length == 1, 'one item');
+        transcripts.last.close();
+        await opened(2);
+        expect(transcripts.last.from, (
+          inode: '7',
+          line: 0,
+          offset: length(line('one')),
+        ));
+        final huge = '${'x' * maxTranscriptLine}x\n';
+        transcripts.last
+          ..header(length(huge), start: 0, inode: '7')
+          ..text(huge);
+        await opened(3);
+        expect(transcripts.last.from, isNull);
+      },
+    );
+
+    test('a line over the cap leaves no mark until the next line', () async {
+      stream.running = true;
+      await opened(1);
+      final huge = '${'x' * maxTranscriptLine}x\n';
+      final body = line('one') + huge;
+      transcripts.last
+        ..header(length(body), start: 0, inode: '7')
+        ..text(body);
+      await until(() => items()?.length == 1, 'one item');
+      transcripts.last.close();
+      await opened(2);
+      expect(transcripts.last.from, isNull);
+      final more = body + line('two');
+      transcripts.last
+        ..header(length(more), start: 0, inode: '7')
+        ..text(more)
+        ..close();
+      await opened(3);
+      expect(transcripts.last.from, (
+        inode: '7',
+        line: length(body),
+        offset: length(more),
+      ));
+    });
+
+    test('a read that waited for the file has no mark', () async {
+      stream.running = true;
+      await opened(1);
+      transcripts.last
+        ..header(0, inode: '-')
+        ..text(line('one'));
+      await until(() => items()?.length == 1, 'one item');
+      transcripts.last.close();
+      await opened(2);
+      expect(transcripts.last.from, isNull);
+    });
+
+    test('a new session starts from its end', () async {
+      stream.running = true;
+      await opened(1);
+      transcripts.last.file([claudeUser('one')]);
+      await until(() => items()?.length == 1, 'one item');
+      session = 's2';
+      change();
+      await opened(2);
+      expect(transcripts.last.from, isNull);
+    });
+
+    test('reads that drop anywhere end with the chat of one read', () async {
+      // Reads that started over after one went on in a file written again.
+      var startedOver = 0;
+      for (var seed = 0; seed < 40; seed++) {
+        final random = Random(seed);
+        // The command's tail, small so that reads are cut and marks fall
+        // too far behind.
+        final tail = 60 + random.nextInt(500);
+        final file = <int>[];
+        var records = 0;
+        void grow() {
+          for (var n = random.nextInt(4); n > 0; n--) {
+            // No uuid: a record read twice shows twice.
+            file.addAll(
+              utf8.encode(line('m${records++} ü€ ${'x' * random.nextInt(90)}')),
+            );
+          }
+        }
+
+        grow();
+        final drops = random.nextInt(5);
+        var reads = 0;
+        // Where the last read that did not go on started.
+        var fresh = 0;
+        // The last read went on in a file written again since its mark.
+        var wentOnRewritten = false;
+        Future<TranscriptChannel> open(
+          String session,
+          TranscriptMark? from,
+        ) async {
+          final last = ++reads > drops;
+          if (from == null && wentOnRewritten) startedOver++;
+          // Reads after the last that drops change nothing: they come only
+          // after a read whose first line differed.
+          var rewrote = false;
+          if (reads <= drops + 1) {
+            if (reads > 1 && random.nextInt(3) == 0) {
+              // Written again in place, with new records.
+              file.clear();
+              grow();
+              grow();
+              rewrote = true;
+            }
+            grow();
+          }
+          final size = file.length;
+          var start = size > tail + 1 ? size - tail - 1 : 0;
+          wentOnRewritten = false;
+          if (from != null &&
+              from.inode == '7' &&
+              size >= from.offset &&
+              size - from.offset <= tail) {
+            start = from.line;
+            wentOnRewritten = rewrote && from.line < from.offset;
+          } else {
+            fresh = start;
+          }
+          final channel = FakeTranscriptChannel(session, from);
+          final header = utf8.encode('$transcriptHeader$size $start 7\n');
+          final bytes = [...header, ...file.sublist(start)];
+          // A read that drops before its header would fall back.
+          final end = last
+              ? bytes.length
+              : header.length +
+                    random.nextInt(bytes.length - header.length + 1);
+          for (var at = 0; at < end;) {
+            final next = min(end, at + 1 + random.nextInt(80));
+            channel.bytes(bytes.sublist(at, next));
+            at = next;
+          }
+          if (!last) channel.close();
+          return channel;
+        }
+
+        final reader = TranscriptStream(
+          () => open,
+          () => 's',
+          changes: changes,
+          retryDelay: const Duration(milliseconds: 1),
+          maxRetryDelay: const Duration(milliseconds: 4),
+        )..running = true;
+        await until(() => reads > drops, 'seed $seed: the last read');
+        // A read that went on in a file written again starts over: the
+        // read that does is the last that did not go on.
+        List<ChatItem>? want() {
+          if (fresh > file.length) return null;
+          final want = ClaudeTranscript();
+          final lines = utf8
+              .decode(file.sublist(fresh), allowMalformed: true)
+              .split('\n');
+          lines.skip(fresh > 0 ? 1 : 0).forEach(want.add);
+          return want.items;
+        }
+
+        await until(
+          () => listEquals(reader.view.value.items, want()),
+          'seed $seed: the chat of one read from $fresh, '
+          'got ${reader.view.value.items}, want ${want()}',
+        );
+        reader.dispose();
+      }
+      expect(startedOver, greaterThan(0), reason: 'no read started over');
+    });
   });
 }

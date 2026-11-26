@@ -14,6 +14,7 @@ import 'herdr_cache.dart';
 import 'herdr_link.dart';
 import 'pane_stream.dart';
 import 'server_api.dart';
+import 'transcript/transcript_command.dart';
 import 'transcript/transcript_stream.dart';
 
 /// Where a [HerdrConnection] stands. The top bar of the herdr screens shows
