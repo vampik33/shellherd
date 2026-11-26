@@ -44,6 +44,7 @@ class PaneScreen extends StatefulWidget {
     this.onShown,
     this.onClose,
     this.showLink = true,
+    this.onDisconnect,
     this.draft,
     this.server = 'herdr',
     this.exactFirst = false,
@@ -64,6 +65,9 @@ class PaneScreen extends StatefulWidget {
   /// The chip of the link and the Disconnect button; off where the herdr
   /// screen shows them already.
   final bool showLink;
+
+  /// The user pressed Disconnect; the screen goes back to the host list.
+  final VoidCallback? onDisconnect;
 
   /// The text being typed, when the screen below keeps it while the pane
   /// is closed. A send that herdr took empties it.
@@ -371,7 +375,12 @@ class _PaneScreenState extends State<PaneScreen> {
               icon: Icon(toggle.$2),
               onPressed: _toggleExact,
             ),
-            if (widget.showLink) ...linkActions(context, herdrLinkChip(state)),
+            if (widget.showLink)
+              ...linkActions(
+                context,
+                herdrLinkChip(state),
+                onDisconnect: widget.onDisconnect,
+              ),
           ],
         ),
         body: SafeArea(

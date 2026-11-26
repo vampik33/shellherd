@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shellherd/ssh/host.dart';
@@ -44,6 +45,22 @@ void main() {
       expect(Directory('${dir.path}/sub').listSync(), hasLength(1));
     });
 
+    test('updateIf writes only when the change says so', () async {
+      final path = fileNamed('a.json');
+      final f = JsonFile(path);
+      expect(await f.updateIf((d) => false), isFalse);
+      expect(path.existsSync(), isFalse, reason: 'nothing written');
+      expect(await f.updateIf((d) => (d['k'] = 1) == 1), isTrue);
+      expect(await f.read(), {'k': 1});
+      final written = path.lastModifiedSync();
+      await f.updateIf((d) {
+        d['k'] = 2; // changed in memory, but not written
+        return false;
+      });
+      expect(await f.read(), {'k': 1});
+      expect(path.lastModifiedSync(), written);
+    });
+
     test('a failed update does not block the next one', () async {
       final f = JsonFile(fileNamed('a.json'));
       await expectLater(
@@ -56,13 +73,19 @@ void main() {
   });
 
   group('HostStore', () {
-    Host host(String id, {String label = 'workbox', String? session}) => Host(
+    Host host(
+      String id, {
+      String label = 'workbox',
+      String? session,
+      bool disconnected = false,
+    }) => Host(
       id: id,
       label: label,
       address: 'workbox.lan',
       user: 'dev',
       keyId: 'k1',
       herdrSession: session,
+      disconnected: disconnected,
     );
 
     test('saves, replaces in place, keeps order, and removes', () async {
@@ -135,6 +158,142 @@ void main() {
       expect((await store.list()).single.herdrKind, HerdrKind.herdrApp);
     });
 
+    test('a host saved before Disconnect loads as connected', () {
+      final old = host('a').toJson()..remove('disconnected');
+      expect(Host.fromJson(old).disconnected, isFalse);
+    });
+
+    test('only a connected host with notify on is watched', () {
+      Host h({required bool notify, required bool disconnected}) => Host(
+        id: 'a',
+        label: 'l',
+        address: 'a',
+        user: 'u',
+        keyId: 'k',
+        notify: notify,
+        disconnected: disconnected,
+      );
+      expect(h(notify: true, disconnected: false).watched, isTrue);
+      expect(h(notify: true, disconnected: true).watched, isFalse);
+      expect(h(notify: false, disconnected: false).watched, isFalse);
+      expect(h(notify: false, disconnected: true).watched, isFalse);
+    });
+
+    test('setDisconnected changes one host in place and says if it changed, '
+        'and the flag stays for the next store', () async {
+      final path = fileNamed('hosts.json');
+      final store = HostStore(JsonFile(path));
+      await store.save(host('a'));
+      await store.save(host('b', session: 'work'));
+
+      expect(await store.setDisconnected('b', true), isTrue);
+      expect(await store.setDisconnected('b', true), isFalse, reason: 'same');
+      expect(await store.setDisconnected('gone', true), isFalse);
+      final unchanged = path.readAsStringSync();
+      expect(await store.setDisconnected('a', false), isFalse);
+      expect(path.readAsStringSync(), unchanged);
+
+      final hosts = await HostStore(JsonFile(path)).list();
+      expect(hosts.map((h) => h.id), ['a', 'b']);
+      expect(hosts.map((h) => h.disconnected), [false, true]);
+      expect(hosts.last.herdrSession, 'work', reason: 'the rest is kept');
+
+      expect(await store.setDisconnected('b', false), isTrue);
+      expect((await store.get('b'))!.disconnected, isFalse);
+    });
+
+    test('a setDisconnected that runs with a save does not lose it', () async {
+      final store = HostStore(JsonFile(fileNamed('hosts.json')));
+      await store.save(host('a'));
+      await Future.wait([
+        store.setDisconnected('a', true),
+        store.save(host('b')),
+      ]);
+      final hosts = await store.list();
+      expect(hosts.map((h) => h.id), ['a', 'b']);
+      expect(hosts.first.disconnected, isTrue);
+    });
+
+    test('a save over a saved host keeps its disconnect, a new host keeps '
+        'its own', () async {
+      final path = fileNamed('hosts.json');
+      final store = HostStore(JsonFile(path));
+      await store.save(host('a'));
+      await store.setDisconnected('a', true);
+      await store.save(host('a', label: 'renamed'));
+      var saved = (await store.get('a'))!;
+      expect(saved.label, 'renamed');
+      expect(saved.disconnected, isTrue);
+
+      await store.setDisconnected('a', false);
+      await store.save(host('a', disconnected: true));
+      expect((await store.get('a'))!.disconnected, isFalse);
+
+      await store.save(host('b', disconnected: true));
+      expect((await store.get('b'))!.disconnected, isTrue);
+
+      // A host saved before Disconnect came has no flag: it is connected.
+      final json = jsonDecode(path.readAsStringSync()) as Map;
+      ((json['hosts'] as List).first as Map).remove('disconnected');
+      path.writeAsStringSync(jsonEncode(json));
+      await store.save(host('a', label: 'old', disconnected: true));
+      saved = (await store.get('a'))!;
+      expect(saved.label, 'old');
+      expect(saved.disconnected, isFalse);
+    });
+
+    for (final value in [true, false]) {
+      for (final saveFirst in [true, false]) {
+        test('a save from an old copy and a setDisconnected($value) queued '
+            'together both land, the save ${saveFirst ? 'first' : 'last'}', () async {
+          final store = HostStore(JsonFile(fileNamed('hosts.json')));
+          await store.save(host('a', disconnected: !value));
+          final save = host('a', label: 'renamed', disconnected: !value);
+          await Future.wait([
+            if (saveFirst) store.save(save),
+            store.setDisconnected('a', value),
+            if (!saveFirst) store.save(save),
+          ]);
+          final saved = (await store.list()).single;
+          expect(saved.label, 'renamed');
+          expect(saved.disconnected, value);
+        });
+      }
+    }
+
+    test('any host goes through the file and back unchanged', () {
+      // Seeded, so that a failure repeats.
+      final random = Random(7);
+      T pick<T>(List<T> values) => values[random.nextInt(values.length)];
+      String? maybe(String value) => random.nextBool() ? value : null;
+      for (var i = 0; i < 500; i++) {
+        final auth = pick(SshAuth.values);
+        final saved = Host(
+          id: randomId(),
+          label: pick(['workbox', 'ünï · 💻', ' x ']),
+          address: pick(['workbox.lan', '10.0.0.2', 'fe80::1', 'box']),
+          port: 1 + random.nextInt(65535),
+          user: pick(['dev', 'root', 'a b']),
+          auth: auth,
+          keyId: auth == SshAuth.key ? randomId() : null,
+          herdrKind: pick(HerdrKind.values),
+          herdrSession: maybe('work'),
+          herdrSocket: maybe('/run/herdr.sock'),
+          mosh: random.nextBool(),
+          moshServer: pick([Host.defaultMoshServer, '~/bin/mosh-server']),
+          notify: random.nextBool(),
+          disconnected: random.nextBool(),
+        );
+        final json = saved.toJson();
+        final loaded = Host.fromJson(
+          (jsonDecode(jsonEncode(json)) as Map).cast(),
+        );
+        expect(loaded.toJson(), json);
+        expect(loaded.disconnected, saved.disconnected);
+        expect(loaded.watched, saved.watched);
+      }
+    });
+
     test('a password host has no key, and the file holds no secret', () async {
       final store = HostStore(JsonFile(fileNamed('hosts.json')));
       await store.save(
@@ -161,6 +320,7 @@ void main() {
         'mosh': false,
         'moshServer': 'mosh-server',
         'notify': false,
+        'disconnected': false,
       });
     });
 

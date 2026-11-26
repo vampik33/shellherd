@@ -10,6 +10,7 @@ import '../ssh/ids.dart';
 import '../ssh/secret_store.dart';
 import 'notifier.dart';
 import 'notify_control.dart';
+import 'one_at_a_time.dart';
 import 'watch_hub.dart';
 
 // Messages between the app and the service isolate.
@@ -29,7 +30,7 @@ Future<String?> _savedStopButtonId() =>
 
 /// Android: the watchers run in a foreground service, in an isolate of
 /// their own, so they go on when the app is closed. The service runs while
-/// a saved host has [Host.notify] on, and starts again only with the app.
+/// a saved host is [Host.watched], and starts again only with the app.
 /// The Stop button on its notification ends it until then.
 class ServiceNotify implements NotifyControl {
   ServiceNotify(this._hosts) {
@@ -56,13 +57,19 @@ class ServiceNotify implements NotifyControl {
   /// that syncs at the same time save the same id.
   final _newStopButtonId = randomId();
 
+  final _syncs = OneAtATime();
+
+  /// Calls run one after another, so that each reads the hosts and the
+  /// service state only after the earlier one started or stopped it.
   @override
-  Future<bool> sync({bool ask = false}) async {
+  Future<bool> sync({bool ask = false}) => _syncs.run(() => _sync(ask));
+
+  Future<bool> _sync(bool ask) async {
     final (hosts, running) = await (
       _hosts.list(),
       FlutterForegroundTask.isRunningService,
     ).wait;
-    final watch = hosts.any((h) => h.notify);
+    final watch = hosts.any((h) => h.watched);
     if (!watch) {
       if (running) _check(await FlutterForegroundTask.stopService());
       return true;

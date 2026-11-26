@@ -36,6 +36,7 @@ class Host {
     this.mosh = false,
     this.moshServer = defaultMoshServer,
     this.notify = false,
+    this.disconnected = false,
   }) {
     if (label.isEmpty || address.isEmpty || user.isEmpty) {
       throw ArgumentError('label, address and user must not be empty');
@@ -66,6 +67,8 @@ class Host {
     mosh: j['mosh']! as bool,
     moshServer: j['moshServer']! as String,
     notify: j['notify'] as bool? ?? false,
+    // Hosts saved before Disconnect came are connected.
+    disconnected: j['disconnected'] as bool? ?? false,
   );
 
   final String id;
@@ -101,6 +104,13 @@ class Host {
   /// needs the user or is done.
   final bool notify;
 
+  /// The user pressed Disconnect: nothing connects to the host in the
+  /// background until the user opens it again.
+  final bool disconnected;
+
+  /// The background watcher connects to this host.
+  bool get watched => notify && !disconnected;
+
   Map<String, Object?> toJson() => {
     'id': id,
     'label': label,
@@ -115,6 +125,7 @@ class Host {
     'mosh': mosh,
     'moshServer': moshServer,
     'notify': notify,
+    'disconnected': disconnected,
   };
 }
 
@@ -132,16 +143,38 @@ class HostStore {
       (await list()).where((h) => h.id == id).firstOrNull;
 
   /// Adds [host], or replaces the saved host with the same id in place.
+  /// A replaced host keeps its saved [Host.disconnected]: only
+  /// [setDisconnected] changes it, so that a save from a copy read before a
+  /// Disconnect or an open does not undo it. A new host is saved as it is.
   Future<void> save(Host host) => _file.update((data) {
     final hosts = [...?(data['hosts'] as List<Object?>?)];
     final i = hosts.indexWhere((h) => (h! as Map)['id'] == host.id);
+    final json = host.toJson();
     if (i < 0) {
-      hosts.add(host.toJson());
+      hosts.add(json);
     } else {
-      hosts[i] = host.toJson();
+      final saved = hosts[i]! as Map;
+      json['disconnected'] = saved['disconnected'] as bool? ?? false;
+      hosts[i] = json;
     }
     data['hosts'] = hosts;
   });
+
+  /// Sets [Host.disconnected] of the saved host [id] in place. True if it
+  /// changed; false if it was already so or there is no such host, and then
+  /// the file is not written.
+  Future<bool> setDisconnected(String id, bool value) =>
+      _file.updateIf((data) {
+        final host = [
+          for (final h in data['hosts'] as List<Object?>? ?? const [])
+            h! as Map<String, Object?>,
+        ].where((h) => h['id'] == id).firstOrNull;
+        if (host == null || (host['disconnected'] as bool? ?? false) == value) {
+          return false;
+        }
+        host['disconnected'] = value;
+        return true;
+      });
 
   Future<void> remove(String id) => _file.update((data) {
     final hosts = data['hosts'] as List<Object?>?;

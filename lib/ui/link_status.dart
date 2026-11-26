@@ -110,19 +110,29 @@ StatusBanner sshFailureBanner(
   };
 }
 
-/// Closes the screens of a host, and with them their connections, back
-/// to the host list.
-IconButton disconnectButton(BuildContext context) => IconButton(
+/// Calls [onDisconnect], then closes the screens of a host, and with them
+/// their connections, back to the host list.
+IconButton disconnectButton(
+  BuildContext context, {
+  VoidCallback? onDisconnect,
+}) => IconButton(
   tooltip: 'Disconnect',
   icon: const Icon(Icons.link_off),
-  // pop, not maybePop: a herdr screen with a pane open holds back.
-  onPressed: () => Navigator.of(context).popUntil((route) => route.isFirst),
+  onPressed: () {
+    onDisconnect?.call();
+    // pop, not maybePop: a herdr screen with a pane open holds back.
+    Navigator.of(context).popUntil((route) => route.isFirst);
+  },
 );
 
 /// The end of a top bar: the link [chip] and [disconnectButton].
-List<Widget> linkActions(BuildContext context, Widget chip) => [
+List<Widget> linkActions(
+  BuildContext context,
+  Widget chip, {
+  VoidCallback? onDisconnect,
+}) => [
   chip,
-  disconnectButton(context),
+  disconnectButton(context, onDisconnect: onDisconnect),
   const SizedBox(width: 8),
 ];
 

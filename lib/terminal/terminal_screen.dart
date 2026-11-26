@@ -18,6 +18,7 @@ class TerminalScreen extends StatefulWidget {
     required this.host,
     required this.connector,
     this.mosh = false,
+    this.onDisconnect,
   });
 
   final Host host;
@@ -25,6 +26,9 @@ class TerminalScreen extends StatefulWidget {
 
   /// Over mosh: SSH only starts mosh-server.
   final bool mosh;
+
+  /// The user pressed Disconnect; the screen goes back to the host list.
+  final VoidCallback? onDisconnect;
 
   @override
   State<TerminalScreen> createState() => _TerminalScreenState();
@@ -153,7 +157,11 @@ class _TerminalScreenState extends State<TerminalScreen> {
       backgroundColor: _theme.background,
       appBar: AppBar(
         title: Text(widget.host.label),
-        actions: linkActions(context, _followingLink(_chip)),
+        actions: linkActions(
+          context,
+          _followingLink(_chip),
+          onDisconnect: widget.onDisconnect,
+        ),
       ),
       body: SafeArea(
         child: Column(
