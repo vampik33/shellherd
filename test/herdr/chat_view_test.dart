@@ -8,6 +8,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shellherd/herdr/api/herdr_client.dart';
 import 'package:shellherd/herdr/herdr_connection.dart';
+import 'package:shellherd/herdr/transcript/chat_items.dart';
+import 'package:shellherd/herdr/ui/chat_details.dart';
+import 'package:shellherd/herdr/ui/chat_view.dart';
 import 'package:shellherd/herdr/ui/pane_screen.dart';
 
 import '../support/fake_herdr.dart';
@@ -60,6 +63,7 @@ void main() {
   late FakeLink link;
   late FakeTranscripts transcripts;
   late HerdrConnection connection;
+  late ChatDetails details;
 
   FakeHerdr herdr() => link.herdr;
   Finder paneText(String part) => find.textContaining(part, findRichText: true);
@@ -69,8 +73,10 @@ void main() {
     WidgetTester tester, {
     Map<String, Object?>? session,
     bool withTranscripts = true,
+    bool showDetails = true,
   }) async {
     transcripts = FakeTranscripts();
+    details = ChatDetails()..value = showDetails;
     link = FakeLink(
       session ?? _session(),
       null,
@@ -84,7 +90,11 @@ void main() {
     )..connect();
     await tester.pumpWidget(
       MaterialApp(
-        home: PaneScreen(connection: connection, paneId: 'w1:p1'),
+        home: PaneScreen(
+          connection: connection,
+          paneId: 'w1:p1',
+          chatDetails: details,
+        ),
       ),
     );
   }
@@ -92,8 +102,9 @@ void main() {
   Future<void> openChat(
     WidgetTester tester, {
     Map<String, Object?>? session,
+    bool showDetails = true,
   }) async {
-    await open(tester, session: session);
+    await open(tester, session: session, showDetails: showDetails);
     await until(
       tester,
       () => transcripts.opened.isNotEmpty,
@@ -123,6 +134,137 @@ void main() {
     await tester.pump();
     expect(herdr().count('pane.read'), reads);
     await close(tester);
+  });
+
+  testWidgets('thinking and tool calls stay hidden until the switch shows '
+      'them, and hide again', (tester) async {
+    await openChat(tester, showDetails: false);
+    expect(paneText('I found it in auth.dart'), findsOneWidget);
+    expect(find.text('Bash'), findsNothing);
+    expect(find.text('Thinking'), findsNothing);
+    await tester.tap(find.byTooltip('Show thinking and tool calls'));
+    await tester.pump();
+    expect(details.value, isTrue);
+    expect(find.text('Run the login tests'), findsOneWidget);
+    expect(find.text('Thinking'), findsOneWidget);
+    await tester.tap(find.byTooltip('Hide thinking and tool calls'));
+    await tester.pump();
+    expect(details.value, isFalse);
+    expect(find.text('Bash'), findsNothing);
+    expect(paneText('fix the login bug'), findsOneWidget);
+    await close(tester);
+  });
+
+  testWidgets('the switch is only there while the chat shows', (tester) async {
+    await openChat(tester);
+    expect(find.byTooltip('Hide thinking and tool calls'), findsOneWidget);
+    await tester.tap(find.byTooltip('Exact screen'));
+    await tester.pump();
+    expect(find.byTooltip('Hide thinking and tool calls'), findsNothing);
+    await close(tester);
+  });
+
+  /// [ChatView] alone, on a plain screen.
+  Future<void> pumpChat(
+    WidgetTester tester,
+    List<ChatItem> items, {
+    bool showDetails = true,
+  }) => tester.pumpWidget(
+    MaterialApp(
+      home: Scaffold(
+        body: ChatView(items: items, showDetails: showDetails),
+      ),
+    ),
+  );
+
+  testWidgets('without details a turn keeps its order and new replies come', (
+    tester,
+  ) async {
+    await pumpChat(tester, showDetails: false, const [
+      ChatPrompt('first prompt'),
+      ChatThinking('hmm'),
+      ChatTool(id: 't1', name: 'Read', summary: 'a.dart', input: '{}'),
+      ChatReply('first reply'),
+      ChatNote('Interrupted'),
+      ChatPrompt('second prompt'),
+      ChatTool(id: 't2', name: 'Bash', summary: 'ls', input: '{}'),
+    ]);
+    double top(String text) =>
+        tester.getTopLeft(find.textContaining(text, findRichText: true)).dy;
+    expect(find.text('Read'), findsNothing);
+    expect(find.text('Bash'), findsNothing);
+    expect(top('first prompt'), lessThan(top('first reply')));
+    expect(top('first reply'), lessThan(top('Interrupted')));
+    expect(top('Interrupted'), lessThan(top('second prompt')));
+  });
+
+  testWidgets('hiding details at the bottom of a held chat shows what came', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(360, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final tools = [
+      for (var i = 0; i < 200; i++)
+        ChatTool(id: 't$i', name: 'Read', summary: 'f$i', input: '{}'),
+    ];
+    Future<void> show(List<ChatItem> items, {bool showDetails = true}) =>
+        pumpChat(tester, items, showDetails: showDetails);
+    final before = [const ChatPrompt('the prompt'), ...tools];
+    await show(before);
+    await tester.fling(find.byType(ListView), const Offset(0, 3000), 3000);
+    await tester.pumpAndSettle();
+
+    final after = [...before, const ChatReply('the reply')];
+    await show(after);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('the reply', findRichText: true), findsNothing);
+
+    await show(after, showDetails: false);
+    await tester.pumpAndSettle();
+    expect(
+      find.textContaining('the reply', findRichText: true),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('hiding details further up keeps the chat still', (tester) async {
+    tester.view.physicalSize = const Size(360, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    Future<void> show(List<ChatItem> items, {bool showDetails = true}) =>
+        pumpChat(tester, items, showDetails: showDetails);
+    final before = [
+      for (var i = 0; i < 60; i++) ChatPrompt('message $i'),
+      for (var i = 0; i < 20; i++)
+        ChatTool(id: 't$i', name: 'Read', summary: 'f$i', input: '{}'),
+    ];
+    await show(before);
+    await tester.drag(find.byType(ListView), const Offset(0, 150));
+    await tester.pumpAndSettle();
+
+    final after = [...before, const ChatReply('the reply')];
+    await show(after);
+    await show(after, showDetails: false);
+    await tester.pumpAndSettle();
+    final scroll = tester.state<ScrollableState>(find.byType(Scrollable).first);
+    expect(scroll.position.pixels, greaterThan(1));
+    expect(
+      find.textContaining('the reply', findRichText: true, skipOffstage: false),
+      findsNothing,
+    );
+
+    await tester.drag(find.byType(ListView), const Offset(0, -3000));
+    await tester.pumpAndSettle();
+    expect(
+      find.textContaining('the reply', findRichText: true),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('only hidden rows is no conversation yet', (tester) async {
+    await pumpChat(tester, showDetails: false, const [ChatThinking('hmm')]);
+    expect(find.text('No messages yet.'), findsOneWidget);
   });
 
   testWidgets('tool calls and thinking start closed and open on a tap', (

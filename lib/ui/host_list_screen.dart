@@ -213,6 +213,7 @@ Route<void> herdrRoute(AppServices services, Host host, {String? openPane}) {
       onTerminal: () =>
           Navigator.of(context).push(terminalRoute(services, host)),
       openPane: openPane,
+      chatDetails: services.chatDetails,
       onPaneShown: (paneId, shown) =>
           services.notify.paneShown(PaneTarget(host.id, paneId), shown),
       onDisconnect: () => unawaited(services.setDisconnected(host.id, true)),

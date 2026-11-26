@@ -772,8 +772,7 @@ void main() {
       await openPasswordEdit(tester, host);
       await tester.enterText(hostField('Address'), 'new.example');
       await tester.enterText(hostField('Password'), 'new pw');
-      // The write of hosts.json goes through this path, which is now taken.
-      await Directory('${dir.path}/hosts.json.tmp').create();
+      await _blockHostsWrite(dir);
       await tapText(tester, 'Save');
       await untilFound(tester, find.textContaining('Cannot save the host'));
       expect((await services.hosts.list()).single.address, 'pc.example');
@@ -803,7 +802,7 @@ void main() {
       await fillForm(tester);
       await choose(tester, 'Password');
       await tester.enterText(hostField('Password'), 'pw');
-      await Directory('${dir.path}/hosts.json.tmp').create();
+      await _blockHostsWrite(dir);
       await tapText(tester, 'Save');
       await untilFound(tester, find.textContaining('Cannot save the host'));
       expect(secrets.values, isEmpty);
@@ -1076,8 +1075,7 @@ void main() {
       await pumpApp(tester);
       await tester.tap(find.text(host.label));
       await untilFound(tester, find.byType(HerdrScreen));
-      // The write of hosts.json goes through this path, which is now taken.
-      await Directory('${dir.path}/hosts.json.tmp').create();
+      await _blockHostsWrite(dir);
       await tester.tap(disconnect());
       await untilGone(tester, find.byType(HerdrScreen));
       await untilFound(
@@ -1359,4 +1357,12 @@ class _ControlledSecrets extends MemorySecretStore {
     if (failDeletes) throw StateError('delete failed');
     await super.delete(key);
   }
+}
+
+/// Makes the next write of hosts.json in [dir] fail: a directory takes the
+/// path of the file it locks.
+Future<void> _blockHostsWrite(Directory dir) async {
+  final lock = File('${dir.path}/hosts.json.lock');
+  if (lock.existsSync()) lock.deleteSync();
+  await Directory(lock.path).create();
 }

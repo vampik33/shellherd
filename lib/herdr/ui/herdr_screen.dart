@@ -9,6 +9,7 @@ import '../../ui/link_status.dart';
 import '../../ui/palette.dart';
 import '../api/herdr_client.dart';
 import '../herdr_connection.dart';
+import 'chat_details.dart';
 import 'herdr_lists.dart';
 import 'link_chip.dart';
 import 'pane_screen.dart';
@@ -28,6 +29,7 @@ class HerdrScreen extends StatefulWidget {
     this.openPane,
     this.onPaneShown,
     this.onDisconnect,
+    this.chatDetails,
   });
 
   final Host host;
@@ -47,6 +49,9 @@ class HerdrScreen extends StatefulWidget {
 
   /// The user pressed Disconnect; the screen goes back to the host list.
   final VoidCallback? onDisconnect;
+
+  /// See [PaneScreen.chatDetails].
+  final ChatDetails? chatDetails;
 
   @override
   State<HerdrScreen> createState() => _HerdrScreenState();
@@ -225,6 +230,7 @@ class _HerdrScreenState extends State<HerdrScreen> {
     onDisconnect: widget.onDisconnect,
     server: widget.host.herdrKind.label,
     exactFirst: widget.host.herdrKind == HerdrKind.herdr,
+    chatDetails: widget.chatDetails,
   );
 
   void _openPane(String paneId) {

@@ -17,6 +17,7 @@ Future<void> main() async {
     dataDir: await getApplicationSupportDirectory(),
     secrets: SecureSecretStore(),
   );
+  unawaited(services.chatDetails.load());
   runApp(ShellherdApp(services));
   // Notifications set up after the first screen, so they cannot hold it up.
   LocalNotifier? notifier;

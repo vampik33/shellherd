@@ -12,13 +12,15 @@ const _monoStyle = TextStyle(fontFamily: monoFont, fontSize: 12, height: 1.35);
 /// An agent's conversation as a chat: the user's prompts in bubbles on the
 /// right, the agent's replies in markdown on the left, its tool calls as
 /// rows that open on a tap. The newest is at the bottom. While the user
-/// reads further up, the chat stays still.
+/// reads further up, the chat stays still. Without [showDetails], thinking
+/// and tool calls are left out.
 class ChatView extends StatefulWidget {
   const ChatView({
     super.key,
     required this.items,
     this.startsCut = false,
     this.status,
+    this.showDetails = true,
   });
 
   final List<ChatItem> items;
@@ -28,6 +30,9 @@ class ChatView extends StatefulWidget {
 
   /// The agent's state, for the line under the last message.
   final AgentStatus? status;
+
+  /// Shows the agent's thinking and tool calls.
+  final bool showDetails;
 
   @override
   State<ChatView> createState() => _ChatViewState();
@@ -49,7 +54,15 @@ class _ChatViewState extends State<ChatView> {
   @override
   void didUpdateWidget(ChatView old) {
     super.didUpdateWidget(old);
-    if (!_scrolledUp) _shown = widget.items;
+    if (!_scrolledUp) {
+      _shown = widget.items;
+    } else {
+      // A shorter list can end the scroll without telling the listener:
+      // check again once it is laid out.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _release();
+      });
+    }
   }
 
   void _release() {
@@ -65,7 +78,13 @@ class _ChatViewState extends State<ChatView> {
 
   @override
   Widget build(BuildContext context) {
-    final items = _shown;
+    // Without details, thinking and tool calls are left out.
+    final items = widget.showDetails
+        ? _shown
+        : [
+            for (final item in _shown)
+              if (item is! ChatThinking && item is! ChatTool) item,
+          ];
     final working = widget.status == AgentStatus.working;
     if (items.isEmpty && !widget.startsCut && !working) {
       return const Center(
