@@ -78,18 +78,15 @@ class _ChatViewState extends State<ChatView> {
 
   @override
   Widget build(BuildContext context) {
-    final items = _shown;
-    // The places in [items] of the rows shown, oldest first; null for all.
-    final shown = widget.showDetails
-        ? null
+    // Without details, thinking and tool calls are left out.
+    final items = widget.showDetails
+        ? _shown
         : [
-            for (var at = 0; at < items.length; at++)
-              if (items[at] is! ChatThinking && items[at] is! ChatTool) at,
+            for (final item in _shown)
+              if (item is! ChatThinking && item is! ChatTool) item,
           ];
-    final rows = shown?.length ?? items.length;
-    int place(int row) => shown?[row] ?? row;
     final working = widget.status == AgentStatus.working;
-    if (rows == 0 && !widget.startsCut && !working) {
+    if (items.isEmpty && !widget.startsCut && !working) {
       return const Center(
         child: Text('No messages yet.', style: TextStyle(color: Graphite.dim)),
       );
@@ -100,11 +97,9 @@ class _ChatViewState extends State<ChatView> {
     // calls the key of their id, so that one stays open when a new read
     // starts at another record.
     final lead = working ? 1 : 0;
-    final count = lead + rows + (widget.startsCut ? 1 : 0);
+    final count = lead + items.length + (widget.startsCut ? 1 : 0);
     // Built on the first lookup of a tool call's key only.
     Map<Key, int>? toolAt;
-    // The row of each place, built on the first lookup with rows left out.
-    Map<int, int>? rowOf;
     final markdown = _markdownStyle(Theme.of(context));
     return ListView.builder(
       controller: _scroll,
@@ -122,24 +117,19 @@ class _ChatViewState extends State<ChatView> {
               if (items[at] is ChatTool) _key(items, at): at,
           })[key],
         };
-        if (at == null) return null;
-        final row = shown == null
-            ? at
-            : (rowOf ??= {for (final (row, at) in shown.indexed) at: row})[at];
-        return row == null ? null : lead + rows - 1 - row;
+        return at == null ? null : lead + items.length - 1 - at;
       },
       itemBuilder: (context, i) {
         if (i < lead) return const _Working();
-        final row = rows - 1 - (i - lead);
-        if (row < 0) {
+        final at = items.length - 1 - (i - lead);
+        if (at < 0) {
           return const _Note('Earlier messages are not shown.');
         }
-        final at = place(row);
         return KeyedSubtree(
           key: _key(items, at),
           child: _row(
             items[at],
-            previous: row > 0 ? items[place(row - 1)] : null,
+            previous: at > 0 ? items[at - 1] : null,
             markdown: markdown,
           ),
         );

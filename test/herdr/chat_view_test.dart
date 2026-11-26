@@ -164,27 +164,31 @@ void main() {
     await close(tester);
   });
 
+  /// [ChatView] alone, on a plain screen.
+  Future<void> pumpChat(
+    WidgetTester tester,
+    List<ChatItem> items, {
+    bool showDetails = true,
+  }) => tester.pumpWidget(
+    MaterialApp(
+      home: Scaffold(
+        body: ChatView(items: items, showDetails: showDetails),
+      ),
+    ),
+  );
+
   testWidgets('without details a turn keeps its order and new replies come', (
     tester,
   ) async {
-    await tester.pumpWidget(
-      const MaterialApp(
-        home: Scaffold(
-          body: ChatView(
-            showDetails: false,
-            items: [
-              ChatPrompt('first prompt'),
-              ChatThinking('hmm'),
-              ChatTool(id: 't1', name: 'Read', summary: 'a.dart', input: '{}'),
-              ChatReply('first reply'),
-              ChatNote('Interrupted'),
-              ChatPrompt('second prompt'),
-              ChatTool(id: 't2', name: 'Bash', summary: 'ls', input: '{}'),
-            ],
-          ),
-        ),
-      ),
-    );
+    await pumpChat(tester, showDetails: false, const [
+      ChatPrompt('first prompt'),
+      ChatThinking('hmm'),
+      ChatTool(id: 't1', name: 'Read', summary: 'a.dart', input: '{}'),
+      ChatReply('first reply'),
+      ChatNote('Interrupted'),
+      ChatPrompt('second prompt'),
+      ChatTool(id: 't2', name: 'Bash', summary: 'ls', input: '{}'),
+    ]);
     double top(String text) =>
         tester.getTopLeft(find.textContaining(text, findRichText: true)).dy;
     expect(find.text('Read'), findsNothing);
@@ -205,13 +209,7 @@ void main() {
         ChatTool(id: 't$i', name: 'Read', summary: 'f$i', input: '{}'),
     ];
     Future<void> show(List<ChatItem> items, {bool showDetails = true}) =>
-        tester.pumpWidget(
-          MaterialApp(
-            home: Scaffold(
-              body: ChatView(items: items, showDetails: showDetails),
-            ),
-          ),
-        );
+        pumpChat(tester, items, showDetails: showDetails);
     final before = [const ChatPrompt('the prompt'), ...tools];
     await show(before);
     await tester.fling(find.byType(ListView), const Offset(0, 3000), 3000);
@@ -235,13 +233,7 @@ void main() {
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     Future<void> show(List<ChatItem> items, {bool showDetails = true}) =>
-        tester.pumpWidget(
-          MaterialApp(
-            home: Scaffold(
-              body: ChatView(items: items, showDetails: showDetails),
-            ),
-          ),
-        );
+        pumpChat(tester, items, showDetails: showDetails);
     final before = [
       for (var i = 0; i < 60; i++) ChatPrompt('message $i'),
       for (var i = 0; i < 20; i++)
@@ -271,13 +263,7 @@ void main() {
   });
 
   testWidgets('only hidden rows is no conversation yet', (tester) async {
-    await tester.pumpWidget(
-      const MaterialApp(
-        home: Scaffold(
-          body: ChatView(showDetails: false, items: [ChatThinking('hmm')]),
-        ),
-      ),
-    );
+    await pumpChat(tester, showDetails: false, const [ChatThinking('hmm')]);
     expect(find.text('No messages yet.'), findsOneWidget);
   });
 
