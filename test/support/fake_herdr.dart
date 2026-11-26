@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:dartssh2/dartssh2.dart';
 import 'package:shellherd/herdr/api/herdr_client.dart';
@@ -56,6 +57,16 @@ class FakeHerdr {
   /// What `pane.read` answers, by source; [paneText] for the others.
   final paneTexts = <String, String>{};
   var paneText = 'hello';
+
+  /// When set, what a `pane.read` of a source other than `visible`
+  /// answers in place of [paneText]: the last `lines` of these, at most
+  /// [maxReadLines] of them.
+  List<String>? paneLines;
+  int? maxReadLines;
+
+  /// When it gives an error code for the parameters of a `pane.read`,
+  /// that read fails with it.
+  String? Function(Map<String, Object?> params)? readError;
 
   /// While set, `pane.read` replies, errors too, wait for it.
   Completer<void>? holdReads;
@@ -121,8 +132,22 @@ class FakeHerdr {
       case 'pane.read':
         reads.add(params);
         final source = params['source']! as String;
-        final text = paneTexts[source] ?? paneText;
+        final lines = paneLines;
+        var text = paneTexts[source] ?? paneText;
+        if (lines != null && source != 'visible') {
+          var n = params['lines'] as int? ?? lines.length;
+          if (maxReadLines case final most? when most < n) n = most;
+          text = lines.sublist(lines.length - min(n, lines.length)).join('\n');
+        }
         await holdReads?.future;
+        if (readError?.call(params) case final code?) {
+          c.reply({
+            'id': id,
+            'error': {'code': code, 'message': 'fake'},
+          });
+          c.end();
+          return;
+        }
         c.reply({
           'id': id,
           'result': {
@@ -204,6 +229,7 @@ class FakeLink {
     this.screens,
     this.transcripts,
     this.slashCommands,
+    this.transcriptRanges,
   ]) {
     herdr.snapshotJson = snapshot;
   }
@@ -218,6 +244,9 @@ class FakeLink {
 
   /// The slash command lookup of the link; null for none.
   final SlashCommandLookup? slashCommands;
+
+  /// The transcript range reads of the link; null for none.
+  final TranscriptRangeReader? transcriptRanges;
   final done = Completer<void>();
   var closed = false;
 
@@ -225,6 +254,7 @@ class FakeLink {
     herdr.client,
     screens: screens,
     transcripts: transcripts,
+    transcriptRanges: transcriptRanges,
     slashCommands: slashCommands,
     done: done.future,
     close: () {

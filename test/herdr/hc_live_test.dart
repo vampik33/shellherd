@@ -15,6 +15,8 @@ import 'package:shellherd/herdr/api/herdr_client.dart';
 import 'package:shellherd/herdr/hc_cache.dart';
 import 'package:shellherd/herdr/hc_link.dart';
 import 'package:shellherd/herdr/hc_snapshot.dart';
+import 'package:shellherd/herdr/pane_history.dart';
+import 'package:shellherd/herdr/pane_poller.dart';
 import 'package:shellherd/herdr/server_api.dart';
 import 'package:shellherd/herdr/transcript/claude_sessions.dart';
 
@@ -297,6 +299,41 @@ Future<void> main() async {
         lines: 400,
       );
       expect(history, contains('HELLO_42'));
+    });
+
+    test('a deeper read holds the text view\'s read, with older lines above '
+        'it, up to the end of the scrollback', () async {
+      final shell = await client.run(['sh']);
+      final api = HcPaneApi(client);
+      await api.submit(
+        shell,
+        r'seq 1 3000; echo DONE_$((1+1))',
+        toAgent: false,
+      );
+      await eventually(
+        () async => (await api.read(
+          shell,
+          source: ReadSource.visible,
+        )).contains('DONE_2'),
+        'DONE_2',
+      );
+      Future<List<String>> read(int lines) async => (await api.read(
+        shell,
+        source: ReadSource.recentUnwrapped,
+        lines: lines,
+      )).split('\n');
+      final shown = await read(PanePoller.historyLines);
+      // The history asked for, and the screen.
+      expect(shown.length, greaterThan(PanePoller.historyLines));
+      final deeper = await read(historySteps.first);
+      expect(deeper.length, greaterThanOrEqualTo(historySteps.first));
+      expect(olderLines(shown, deeper), deeper.length - shown.length);
+      expect(deeper.first.trim(), isNot('1'));
+      // The rest, and fewer lines than asked for: the text view stops.
+      final all = await read(historySteps[1]);
+      expect(all.length, lessThan(historySteps[1]));
+      expect(all, contains('1'));
+      expect(olderLines(deeper, all), all.length - deeper.length);
     });
 
     test('a terminal that is not there is pane_not_found', () async {

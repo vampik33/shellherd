@@ -21,10 +21,7 @@ class FakeTranscripts {
 
   late final TranscriptOpener open = _open;
 
-  Future<TranscriptChannel> _open(
-    String session,
-    TranscriptMark? from,
-  ) async {
+  Future<TranscriptChannel> _open(String session, TranscriptMark? from) async {
     if (failOpen case final error?) {
       failOpen = null;
       throw error;
@@ -85,6 +82,45 @@ class FakeTranscriptChannel implements TranscriptChannel {
     unawaited(_output.close());
   }
 }
+
+/// A [TranscriptRangeReader] over [file], whose reads the test can fail
+/// or hold.
+class FakeTranscriptRanges {
+  /// The transcript, and its inode.
+  List<int> file = const [];
+  String inode = '1';
+
+  /// Each read asked for, in order.
+  final asked = <(String, TranscriptRange)>[];
+
+  /// When set, the next read throws it.
+  Object? failNext;
+
+  /// When set, reads wait for it.
+  Completer<void>? hold;
+
+  late final TranscriptRangeReader read = _read;
+
+  Future<List<int>> _read(String session, TranscriptRange range) async {
+    asked.add((session, range));
+    await hold?.future;
+    if (failNext case final error?) {
+      failNext = null;
+      throw error;
+    }
+    if (range.inode != inode || range.to > file.length) {
+      throw const TranscriptRangeFailed(
+        'the transcript changed',
+        changed: true,
+      );
+    }
+    return file.sublist(range.from, range.to);
+  }
+}
+
+/// The bytes of a transcript of [lines].
+List<int> transcriptFile(List<String> lines) =>
+    utf8.encode(lines.map((l) => '$l\n').join());
 
 /// Lines of a Claude Code transcript, for tests.
 String claudeUser(

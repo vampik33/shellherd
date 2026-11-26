@@ -330,6 +330,164 @@ void main() {
       }
     });
   });
+
+  group(
+    'transcriptRangeCommand',
+    skip: Platform.isLinux ? false : 'needs sh',
+    () {
+      late Directory home;
+
+      setUp(() async {
+        home = await Directory.systemTemp.createTemp('shellherd-txr-');
+        addTearDown(() => home.delete(recursive: true));
+      });
+
+      Future<File> transcript(List<int> bytes, {String id = _id}) async {
+        final dir = await Directory('${home.path}/.claude/projects/-home-u-app')
+            .create(recursive: true);
+        return File('${dir.path}/$id.jsonl')..writeAsBytesSync(bytes);
+      }
+
+      /// Runs the command as sshd would through [shell]; its output as bytes.
+      Future<(List<int>, int, String)> run(
+        TranscriptRange range, {
+        String shell = '/bin/sh',
+      }) async {
+        final r = await Process.run(
+          shell,
+          ['-c', transcriptRangeCommand(_id, range)],
+          environment: {'HOME': home.path, 'PATH': '/usr/bin:/bin'},
+          includeParentEnvironment: false,
+          stdoutEncoding: null,
+        );
+        return (r.stdout as List<int>, r.exitCode, '${r.stderr}');
+      }
+
+      final content = utf8.encode('{"a":"é"}\n{"b":"日本"}\n{"c":3}\n');
+
+      for (final shell in ['/bin/sh', '/usr/bin/fish']) {
+        test(
+          'prints the bytes of the range after its header ($shell)',
+          skip: File(shell).existsSync() ? false : '$shell is missing',
+          () async {
+            final inode = await inodeOf(await transcript(content));
+            for (final (from, to) in [(0, content.length), (3, 17), (12, 13)]) {
+              final range = (inode: inode, from: from, to: to);
+              final (out, code, _) = await run(range, shell: shell);
+              expect(code, 0);
+              expect(
+                utf8.decode(out).split('\n').first,
+                '$transcriptHeader${content.length} $from $inode',
+              );
+              expect(
+                transcriptRangeBody(out, range),
+                content.sublist(from, to),
+                reason: '$from-$to',
+              );
+            }
+          },
+        );
+      }
+
+      test('a shorter file gives only the header; no file of the inode '
+          'exits 65', () async {
+        final inode = await inodeOf(await transcript(content));
+        final short = (inode: inode, from: 0, to: content.length + 1);
+        final (out, code, _) = await run(short);
+        expect(code, 0);
+        expect(
+          () => transcriptRangeBody(out, short),
+          throwsA(
+            isA<TranscriptRangeFailed>().having(
+              (e) => e.changed,
+              'changed',
+              true,
+            ),
+          ),
+        );
+        final (_, gone, err) = await run((
+          inode: '${int.parse(inode) + 1}',
+          from: 0,
+          to: 4,
+        ));
+        expect(gone, 65);
+        expect(err, contains('with inode'));
+      });
+
+      test('reads the file of the inode where another of the session is '
+          'newer', () async {
+        final inode = await inodeOf(await transcript(content));
+        final dir = await Directory(
+          '${home.path}/.claude/projects/-home-u-other',
+        ).create(recursive: true);
+        File('${dir.path}/$_id.jsonl')
+          ..writeAsStringSync('{"other":1}\n{"other":2}\n{"other":3}\n')
+          ..setLastModifiedSync(DateTime.now().add(const Duration(hours: 1)));
+        final range = (inode: inode, from: 3, to: 17);
+        final (out, code, _) = await run(range);
+        expect(code, 0);
+        expect(transcriptRangeBody(out, range), content.sublist(3, 17));
+      });
+
+      test('without a transcript it exits 65, without projects 66', () async {
+        final range = (inode: '1', from: 0, to: 4);
+        var (_, code, err) = await run(range);
+        expect(code, 66);
+        expect(err, contains('no Claude Code transcripts in'));
+        await transcript(content, id: 'another-session');
+        (_, code, err) = await run(range);
+        expect(code, 65);
+        expect(err, contains('no transcript of session $_id'));
+      });
+
+      test('refuses an id or a range it cannot take', () {
+        const ok = (inode: '12', from: 0, to: 4);
+        expect(() => transcriptRangeCommand('a b', ok), throwsArgumentError);
+        for (final range in [
+          (inode: '1;x', from: 0, to: 4),
+          (inode: '', from: 0, to: 4),
+          (inode: '12', from: -1, to: 4),
+          (inode: '12', from: 4, to: 4),
+          (inode: '12', from: 5, to: 4),
+        ]) {
+          expect(
+            () => transcriptRangeCommand(_id, range),
+            throwsArgumentError,
+            reason: '$range',
+          );
+        }
+      });
+    },
+  );
+
+  group('transcriptRangeBody', () {
+    const range = (inode: '7', from: 10, to: 14);
+
+    test('skips what startup files print before the header', () {
+      final out = utf8.encode(
+        'Welcome!\nnoise $transcriptHeader${20} 10 7\nabcd',
+      );
+      expect(transcriptRangeBody(out, range), utf8.encode('abcd'));
+    });
+
+    test('fails without a header, for another file, or bytes missing', () {
+      for (final text in [
+        'abcd',
+        '${transcriptHeader}20 10 8\nabcd',
+        '${transcriptHeader}13 10 7\nabcd',
+        '${transcriptHeader}20 10 -\nabcd',
+        '${transcriptHeader}20 10 7\nabc',
+        '${transcriptHeader}20 10 7\nabcde',
+        '${transcriptHeader}20 10 7',
+      ]) {
+        expect(
+          () => transcriptRangeBody(utf8.encode(text), range),
+          throwsA(isA<TranscriptRangeFailed>()),
+          reason: text,
+        );
+      }
+    });
+  });
 }
 
 /// The inode of [file], as the command prints it.

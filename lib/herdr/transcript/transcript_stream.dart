@@ -25,8 +25,10 @@ typedef TranscriptMark = ({String inode, int line, int offset});
 /// [from] is not too far behind its end, else at its end. A read that goes
 /// on sends the last line read again, so that the reader can check that
 /// the file still has it there.
-typedef TranscriptOpener =
-    Future<TranscriptChannel> Function(String session, TranscriptMark? from);
+typedef TranscriptOpener = Future<TranscriptChannel> Function(
+  String session,
+  TranscriptMark? from,
+);
 
 /// How much of the end of a transcript a read starts with, past the line
 /// the cut falls in, and how far behind the end a read can go on from where
@@ -137,9 +139,167 @@ class ByteLines {
   }
 }
 
+/// The bytes of a transcript from [from] to [to], in the file with
+/// [inode].
+typedef TranscriptRange = ({String inode, int from, int to});
+
+/// Reads the bytes [TranscriptRange.from] to [TranscriptRange.to] of the
+/// transcript of Claude Code session [session] on the remote host. Throws
+/// when the file is not the one with the range's inode any more, or is
+/// shorter than its end.
+typedef TranscriptRangeReader = Future<List<int>> Function(
+  String session,
+  TranscriptRange range,
+);
+
+/// A range read did not bring the bytes asked for.
+class TranscriptRangeFailed implements Exception {
+  const TranscriptRangeFailed(this.why, {this.changed = false});
+  final String why;
+
+  /// The file is not the one with the range's inode any more, or is
+  /// shorter than its end: a new read must start over.
+  final bool changed;
+
+  @override
+  String toString() => 'TranscriptRangeFailed: $why';
+}
+
+/// How much more than the first read's [transcriptTail] the chat loads
+/// when the user scrolls up: the phone keeps all of it. No load starts
+/// once this much came; the last one can bring more, up to [transcriptTail]
+/// or the line it ends in.
+const maxEarlierBytes = 18 * 1024 * 1024;
+
+/// What a read of the bytes before the part of a transcript held gave.
+typedef EarlierLines = ({
+  /// The whole lines, oldest first, without their newlines.
+  List<List<int>> lines,
+
+  /// Where the part held starts now.
+  int start,
+
+  /// [start] lies inside a line that is too long to keep; the bytes
+  /// before it up to that line's start are dropped.
+  bool inLine,
+});
+
+/// The lines of [bytes], the bytes of a transcript from [readFrom] to
+/// where the part held starts. That is the start of a line, or with
+/// [inLine] a place in a line longer than [maxLine], which is dropped.
+///
+/// Past the start of the file, the bytes start one byte before the first
+/// line they may hold: the line they start in is cut, and dropped. Lines
+/// longer than [maxLine] are dropped, as [ByteLines] does.
+///
+/// Null when [bytes] lie inside one line that may be short enough to keep:
+/// a read of more must find its start.
+EarlierLines? earlierLines(
+  List<int> bytes, {
+  required int readFrom,
+  required bool inLine,
+  int maxLine = maxTranscriptLine,
+}) {
+  // Without [inLine], the bytes end with the newline of the line before
+  // the part held.
+  if (bytes.isEmpty || (!inLine && bytes.last != 0x0a)) {
+    throw ArgumentError.value(bytes, 'bytes', 'do not end a line');
+  }
+  final newlines = [
+    for (var i = 0; i < bytes.length; i++)
+      if (bytes[i] == 0x0a) i,
+  ];
+  if (newlines.isEmpty) {
+    // All of it lies inside the line being dropped.
+    if (readFrom == 0) return (lines: const [], start: 0, inLine: false);
+    if (!inLine && bytes.length - 1 <= maxLine) return null;
+    return (lines: const [], start: readFrom + 1, inLine: true);
+  }
+  final lastEnd = newlines.last;
+  final ends = inLine ? newlines : newlines.sublist(0, newlines.length - 1);
+  if (readFrom > 0 && ends.isEmpty) {
+    // One line, up to the part held: its start is further back.
+    if (bytes.length - 1 <= maxLine) return null;
+    return (lines: const [], start: readFrom + 1, inLine: true);
+  }
+  final lines = <List<int>>[];
+  var lineStart = 0;
+  for (final end in [...ends, if (!inLine) lastEnd]) {
+    if (lineStart > 0 || readFrom == 0) {
+      if (end - lineStart <= maxLine) lines.add(bytes.sublist(lineStart, end));
+    }
+    lineStart = end + 1;
+  }
+  // Past the start of the file, the first line was cut: the part held
+  // starts after it.
+  return (
+    lines: lines,
+    start: readFrom == 0 ? 0 : readFrom + newlines.first + 1,
+    inLine: false,
+  );
+}
+
+/// Reads the lines before [start] with [read], [chunk] bytes at first and
+/// twice as many while they lie inside one line that may be short enough
+/// to keep. [read] gets the range of bytes to read, from and to; each read
+/// after the first gets only the bytes before the last.
+Future<EarlierLines> readEarlier(
+  Future<List<int>> Function(int from, int to) read, {
+  required int start,
+  required bool inLine,
+  int chunk = transcriptTail,
+  int maxLine = maxTranscriptLine,
+}) async {
+  if (start <= 0) throw ArgumentError.value(start, 'start', 'nothing before');
+  var size = chunk;
+  var readFrom = start;
+  var bytes = const <int>[];
+  while (true) {
+    final from = max(0, start - size);
+    // One byte before, to know whether a line starts at [from].
+    final before = from == 0 ? 0 : from - 1;
+    final more = await read(before, readFrom);
+    if (more.length != readFrom - before) {
+      throw StateError('read ${more.length} bytes of ${readFrom - before}');
+    }
+    bytes = [...more, ...bytes];
+    readFrom = before;
+    final found = earlierLines(
+      bytes,
+      readFrom: readFrom,
+      inLine: inLine,
+      maxLine: maxLine,
+    );
+    if (found != null) return found;
+    size = min(size * 2, maxLine + 1);
+  }
+}
+
+/// How far loading the earlier part of a transcript got.
+enum EarlierLoad {
+  /// Nothing loads: more can be asked for.
+  idle,
+  loading,
+
+  /// The last load failed: the user can try again.
+  failed,
+
+  /// [maxEarlierBytes] are loaded: no more is.
+  capped,
+
+  /// Nothing can load them now, for example before the read found where
+  /// its first line starts.
+  none,
+}
+
 /// What the app knows of a transcript.
 class TranscriptView {
-  const TranscriptView({this.items, this.startsCut = false});
+  const TranscriptView({
+    this.items,
+    this.startsCut = false,
+    this.firstKey = 0,
+    this.earlier = EarlierLoad.idle,
+  });
 
   /// Oldest first; null until a read started.
   final List<ChatItem>? items;
@@ -147,6 +307,14 @@ class TranscriptView {
   /// The read began after the start of the file: older messages are not
   /// shown.
   final bool startsCut;
+
+  /// A number for the first of [items], one less for each item loaded in
+  /// front of it, so that an item keeps its number while earlier ones
+  /// load.
+  final int firstKey;
+
+  /// How loading the messages before [items] goes.
+  final EarlierLoad earlier;
 }
 
 /// The conversation of the Claude Code session in one pane, read from its
@@ -168,6 +336,7 @@ class TranscriptStream {
     this._opener,
     this._session, {
     required this.changes,
+    this._ranges,
     this.openTimeout = const Duration(seconds: 15),
     this.retryDelay = const Duration(seconds: 1),
     this.maxRetryDelay = const Duration(seconds: 30),
@@ -182,6 +351,10 @@ class TranscriptStream {
 
   /// The Claude Code session of the pane; null while it has none.
   final String? Function() _session;
+
+  /// The range reads of the current link, for [loadEarlier]; null without
+  /// a link, or where it has none.
+  final TranscriptRangeReader? Function()? _ranges;
 
   /// When the opener or the session can have changed.
   final Listenable changes;
@@ -248,6 +421,84 @@ class TranscriptStream {
     live.dispose();
   }
 
+  /// Loads the lines before those [view] shows, [transcriptTail] bytes at a
+  /// time, and puts their items in front, while the read [startsCut] and
+  /// less than [maxEarlierBytes] more came so far. [TranscriptView.earlier]
+  /// says how it goes. Does nothing while a load runs, or before a read
+  /// showed what it started with.
+  ///
+  /// A load that ends after the session changed, or after a read started
+  /// over, is dropped.
+  Future<void> loadEarlier() async {
+    final kept = _kept;
+    final ranges = _ranges?.call();
+    final session = _session();
+    if (_closed || kept == null || !kept.shown || ranges == null) return;
+    final inode = kept.inode;
+    final start = kept.start;
+    if (session == null || inode == null || start == null || start == 0) {
+      return;
+    }
+    if (kept.earlier == EarlierLoad.loading) return;
+    if (kept.earlierBytes >= maxEarlierBytes) {
+      kept.earlier = EarlierLoad.capped;
+      _show(kept);
+      return;
+    }
+    kept.earlier = EarlierLoad.loading;
+    _show(kept);
+    bool current() => !_closed && identical(_kept, kept);
+    try {
+      final found = await readEarlier(
+        (from, to) => ranges(session, (inode: inode, from: from, to: to)),
+        start: start,
+        inLine: kept.inLine,
+      );
+      if (!current()) return;
+      kept.firstKey -= kept.transcript.prepend(
+        found.lines.map((l) => utf8.decode(l, allowMalformed: true)),
+      );
+      kept.earlierBytes += start - found.start;
+      kept.start = found.start;
+      kept.inLine = found.inLine;
+      kept.cut = found.start > 0;
+      kept.earlier = kept.cut && kept.earlierBytes >= maxEarlierBytes
+          ? EarlierLoad.capped
+          : EarlierLoad.idle;
+    } catch (e) {
+      if (!current()) return;
+      debugPrint('shellherd: cannot load earlier messages of $session: $e');
+      if (e is TranscriptRangeFailed && e.changed) {
+        // The read holds a file that is not there any more: a new one
+        // starts from its end.
+        _kept = null;
+        _stop();
+        _start();
+        return;
+      }
+      kept.earlier = EarlierLoad.failed;
+    }
+    if (!kept.cut || kept.earlier == EarlierLoad.capped) {
+      // Nothing more goes in front.
+      kept.transcript.keepRecords = false;
+    }
+    _show(kept);
+  }
+
+  /// Shows what [kept] holds.
+  void _show(_Kept kept) {
+    kept.shown = true;
+    view.value = TranscriptView(
+      items: kept.transcript.items,
+      startsCut: kept.cut,
+      firstKey: kept.firstKey,
+      earlier:
+          kept.start == null || kept.inode == null || _ranges?.call() == null
+          ? EarlierLoad.none
+          : kept.earlier,
+    );
+  }
+
   void _follow() {
     if (_closed) return;
     final opener = _opener();
@@ -302,7 +553,6 @@ class TranscriptStream {
     final from = kept?.mark;
     var transcript = ClaudeTranscript();
     var header = false;
-    var startsCut = false;
     // The first line of a read that starts past the start of the file and
     // not where the last one stopped is the end of a cut record.
     var dropFirst = false;
@@ -321,10 +571,7 @@ class TranscriptStream {
     Timer? firstLine;
     void publish() {
       _publish = null;
-      view.value = TranscriptView(
-        items: transcript.items,
-        startsCut: startsCut,
-      );
+      _show(kept!);
       // After the read ended, what it brought shows, but nothing follows.
       live.value = current() && _channel != null;
     }
@@ -362,13 +609,16 @@ class TranscriptStream {
             initial = at.size - start;
             if (from != null && inode == from.inode && start == from.line) {
               transcript = kept!.transcript;
-              startsCut = kept.cut;
               check = from.line < from.offset;
             } else {
               // The command starts a cut one byte early, so that the
               // first line, dropped, ends where a whole record starts.
-              startsCut = dropFirst = start > 0;
-              kept = _kept = _Kept(transcript, cut: startsCut);
+              dropFirst = start > 0;
+              kept = _kept = _Kept(transcript, cut: dropFirst, inode: inode);
+              // A cut read holds from the end of its first line.
+              if (!dropFirst) kept.start = start;
+              // Only a cut read can get earlier lines in front.
+              transcript.keepRecords = dropFirst;
               if (!dropFirst && inode != null) {
                 kept.mark = (inode: inode, line: start, offset: start);
               }
@@ -387,6 +637,7 @@ class TranscriptStream {
           }
           final lineStart = start + received;
           received += length;
+          if (dropFirst && lineStart == start) kept!.start = start + received;
           // Only whole lines count: the next read starts a line. A dropped
           // line cannot be checked: the next one sets the mark again.
           if (inode != null) {
@@ -440,12 +691,33 @@ class TranscriptStream {
 /// What the reads of a session made so far, for the next read to go on
 /// with.
 class _Kept {
-  _Kept(this.transcript, {required this.cut});
+  _Kept(this.transcript, {required this.cut, required this.inode});
 
   final ClaudeTranscript transcript;
 
   /// The transcript starts after the start of the file.
-  final bool cut;
+  bool cut;
+
+  /// The file read; null while there was none.
+  final String? inode;
+
+  /// Where the first line of [transcript] starts in the file; null until
+  /// the read found it.
+  int? start;
+
+  /// [start] lies inside a line too long to keep: see [EarlierLines].
+  bool inLine = false;
+
+  /// The bytes [loadEarlier] put in front so far.
+  int earlierBytes = 0;
+
+  /// See [TranscriptView.firstKey].
+  int firstKey = 0;
+
+  EarlierLoad earlier = EarlierLoad.idle;
+
+  /// The view showed it: what the read started with all came.
+  bool shown = false;
 
   /// Where the last read stopped; null while a read cannot go on from it.
   /// While it is set, [transcript] holds exactly the lines before its

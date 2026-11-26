@@ -23,6 +23,7 @@ void main() {
   late FakeTranscripts transcripts;
   late ValueNotifier<int> changes;
   TranscriptOpener? opener;
+  TranscriptRangeReader? rangeReader;
   String? session;
   late TranscriptStream stream;
 
@@ -30,11 +31,13 @@ void main() {
     transcripts = FakeTranscripts();
     changes = ValueNotifier(0);
     opener = transcripts.open;
+    rangeReader = null;
     session = 's1';
     stream = TranscriptStream(
       () => opener,
       () => session,
       changes: changes,
+      ranges: () => rangeReader,
       openTimeout: const Duration(milliseconds: 300),
       retryDelay: const Duration(milliseconds: 10),
     );
@@ -780,4 +783,270 @@ void main() {
       expect(stream.live.value, isFalse);
     },
   );
+
+  group('loadEarlier', () {
+    late FakeTranscriptRanges ranges;
+    setUp(() {
+      ranges = FakeTranscriptRanges();
+      rangeReader = ranges.read;
+    });
+
+    String prompt(int i) => claudeUser('m$i', uuid: 'u$i');
+    List<ChatItem> prompts(Iterable<int> at) => [
+      for (final i in at) ChatPrompt('m$i'),
+    ];
+
+    /// Where line [n] of [lines] starts.
+    int lineStart(List<String> lines, int n) =>
+        transcriptFile(lines.take(n).toList()).length;
+
+    /// Serves [lines] as the file, read from [cut], as the command does
+    /// for a file bigger than its tail, and waits until it shows.
+    Future<void> readCut(List<String> lines, int cut) async {
+      ranges.file = transcriptFile(lines);
+      stream.running = true;
+      await until(() => transcripts.opened.isNotEmpty, 'a read');
+      transcripts.last
+        ..header(ranges.file.length, start: cut)
+        ..bytes(ranges.file.sublist(cut));
+      await until(() => items() != null, 'the chat');
+    }
+
+    test('puts the messages before a cut read in front', () async {
+      final lines = [for (var i = 0; i < 4; i++) prompt(i)];
+      // The read starts inside line 1, which it drops.
+      await readCut(lines, lineStart(lines, 1) + 3);
+      expect(items(), prompts([2, 3]));
+      expect(stream.view.value.startsCut, isTrue);
+      expect(stream.view.value.firstKey, 0);
+      await stream.loadEarlier();
+      expect(ranges.asked, [
+        ('s1', (inode: '1', from: 0, to: lineStart(lines, 2))),
+      ]);
+      expect(items(), prompts([0, 1, 2, 3]));
+      expect(stream.view.value.startsCut, isFalse);
+      expect(stream.view.value.firstKey, -2);
+      expect(stream.view.value.earlier, EarlierLoad.idle);
+      // Nothing is before the start.
+      await stream.loadEarlier();
+      expect(ranges.asked, hasLength(1));
+    });
+
+    test('a cut that falls on a line start loads from it', () async {
+      final lines = [for (var i = 0; i < 3; i++) prompt(i)];
+      // One byte before line 1: the newline of line 0.
+      await readCut(lines, lineStart(lines, 1) - 1);
+      expect(items(), prompts([1, 2]));
+      await stream.loadEarlier();
+      expect(ranges.asked.single.$2.to, lineStart(lines, 1));
+      expect(items(), prompts([0, 1, 2]));
+    });
+
+    test('goes back the tail at a time, up to the cap', () async {
+      final big = 'x' * (1024 * 1024);
+      final lines = [
+        for (var i = 0; i < 24; i++) claudeUser('$i$big', uuid: 'u$i'),
+        prompt(99),
+      ];
+      await readCut(lines, lineStart(lines, 24) - 1);
+      expect(items(), prompts([99]));
+      var loads = 0;
+      while (stream.view.value.earlier == EarlierLoad.idle) {
+        await stream.loadEarlier();
+        expect(++loads, lessThan(30));
+      }
+      expect(stream.view.value.earlier, EarlierLoad.capped);
+      expect(stream.view.value.startsCut, isTrue);
+      final loaded = lineStart(lines, 24) - ranges.asked.last.$2.from - 1;
+      expect(loaded, greaterThanOrEqualTo(maxEarlierBytes - big.length));
+      expect(loaded, lessThan(maxEarlierBytes + transcriptTail));
+      // Each read ends inside the one before, at the line after its cut
+      // first line, and is at most the tail and the byte before it.
+      for (var i = 0; i < ranges.asked.length; i++) {
+        final range = ranges.asked[i].$2;
+        expect(range.to - range.from, lessThanOrEqualTo(transcriptTail + 1));
+        if (i > 0) {
+          final before = ranges.asked[i - 1].$2;
+          expect(range.to, inInclusiveRange(before.from + 1, before.to));
+        }
+      }
+      // Whole messages, in order, and the key of the last kept.
+      final shown = items()!;
+      expect(shown.last, const ChatPrompt('m99'));
+      expect(stream.view.value.firstKey, -(shown.length - 1));
+      final first = int.parse((shown.first as ChatPrompt).text.split('x')[0]);
+      expect(shown, [
+        for (var i = first; i < 24; i++) ChatPrompt('$i$big'),
+        const ChatPrompt('m99'),
+      ]);
+      final asked = ranges.asked.length;
+      await stream.loadEarlier();
+      expect(ranges.asked, hasLength(asked), reason: 'no read past the cap');
+    });
+
+    test('lines that come during a load stay after the earlier ones', () async {
+      final lines = [for (var i = 0; i < 3; i++) prompt(i)];
+      await readCut(lines, lineStart(lines, 1) + 2);
+      ranges.hold = Completer();
+      final load = stream.loadEarlier();
+      expect(stream.view.value.earlier, EarlierLoad.loading);
+      transcripts.last.text('${prompt(3)}\n');
+      await until(() => items()?.length == 2, 'the new line');
+      ranges.hold!.complete();
+      await load;
+      expect(items(), prompts([0, 1, 2, 3]));
+    });
+
+    test('one load at a time', () async {
+      final lines = [for (var i = 0; i < 3; i++) prompt(i)];
+      await readCut(lines, lineStart(lines, 1) + 2);
+      ranges.hold = Completer();
+      final first = stream.loadEarlier();
+      await stream.loadEarlier();
+      expect(ranges.asked, hasLength(1));
+      ranges.hold!.complete();
+      await first;
+      expect(items(), prompts([0, 1, 2]));
+    });
+
+    test('a failed load says so and can be tried again', () async {
+      final lines = [for (var i = 0; i < 3; i++) prompt(i)];
+      await readCut(lines, lineStart(lines, 1) + 2);
+      ranges.failNext = StateError('link stalled');
+      await stream.loadEarlier();
+      expect(stream.view.value.earlier, EarlierLoad.failed);
+      expect(items(), prompts([2]));
+      expect(stream.view.value.startsCut, isTrue);
+      await stream.loadEarlier();
+      expect(stream.view.value.earlier, EarlierLoad.idle);
+      expect(items(), prompts([0, 1, 2]));
+    });
+
+    test(
+      'a file that is not the one read any more starts the read over',
+      () async {
+        final lines = [for (var i = 0; i < 3; i++) prompt(i)];
+        await readCut(lines, lineStart(lines, 1) + 2);
+        ranges.inode = '2';
+        await stream.loadEarlier();
+        expect(transcripts.opened.first.closed, isTrue);
+        await until(() => transcripts.opened.length == 2, 'a new read');
+        expect(transcripts.last.from, isNull, reason: 'from the end again');
+        transcripts.last.file([prompt(7)]);
+        await until(() => listEquals(items(), prompts([7])), 'the new file');
+        expect(stream.view.value.earlier, EarlierLoad.idle);
+      },
+    );
+
+    test('a read that has not found where its lines start cannot load '
+        'earlier ones, and says so', () async {
+      final lines = [for (var i = 0; i < 2; i++) prompt(i)];
+      ranges.file = transcriptFile(lines);
+      stream.running = true;
+      await until(() => transcripts.opened.isNotEmpty, 'a read');
+      // The cut falls in the last line, which has not ended yet.
+      final cut = lineStart(lines, 1) + 2;
+      transcripts.last
+        ..header(ranges.file.length - 1, start: cut)
+        ..bytes(ranges.file.sublist(cut, ranges.file.length - 1));
+      await until(() => items() != null, 'the chat');
+      expect(stream.view.value.startsCut, isTrue);
+      expect(stream.view.value.earlier, EarlierLoad.none);
+      await stream.loadEarlier();
+      expect(ranges.asked, isEmpty);
+      // Once it ends, they can.
+      transcripts.last.text('\n${prompt(2)}\n');
+      await until(() => items()?.length == 1, 'the next line');
+      expect(stream.view.value.earlier, EarlierLoad.idle);
+    });
+
+    test('a range read that finds no file of the inode starts over', () async {
+      final lines = [for (var i = 0; i < 3; i++) prompt(i)];
+      await readCut(lines, lineStart(lines, 1) + 2);
+      ranges.failNext = const TranscriptRangeFailed('gone', changed: true);
+      await stream.loadEarlier();
+      await until(() => transcripts.opened.length == 2, 'a new read');
+    });
+
+    test('a load that ends after the session changed is dropped', () async {
+      final lines = [for (var i = 0; i < 3; i++) prompt(i)];
+      await readCut(lines, lineStart(lines, 1) + 2);
+      ranges.hold = Completer();
+      final load = stream.loadEarlier();
+      session = 's2';
+      change();
+      expect(items(), isNull);
+      ranges.hold!.complete();
+      await load;
+      expect(items(), isNull);
+      expect(stream.view.value.earlier, EarlierLoad.idle);
+    });
+
+    test('a load that ends after the read started over is dropped', () async {
+      final lines = [for (var i = 0; i < 3; i++) prompt(i)];
+      await readCut(lines, lineStart(lines, 1) + 2);
+      ranges.hold = Completer();
+      final load = stream.loadEarlier();
+      // The next read finds another file: it starts over.
+      transcripts.last.close();
+      await until(() => transcripts.opened.length == 2, 'the next read');
+      transcripts.last.file([prompt(7)]);
+      await until(() => listEquals(items(), prompts([7])), 'the new file');
+      ranges.hold!.complete();
+      await load;
+      expect(items(), prompts([7]));
+      expect(stream.view.value.earlier, EarlierLoad.idle);
+      expect(stream.view.value.firstKey, 0);
+    });
+
+    test('a read that goes on keeps what loaded', () async {
+      final lines = [for (var i = 0; i < 3; i++) prompt(i)];
+      await readCut(lines, lineStart(lines, 1) + 2);
+      await stream.loadEarlier();
+      expect(items(), prompts([0, 1, 2]));
+      transcripts.last.close();
+      await until(() => transcripts.opened.length == 2, 'the next read');
+      final from = transcripts.last.from!;
+      final more = transcriptFile([...lines, prompt(3)]);
+      transcripts.last
+        ..header(more.length, start: from.line)
+        ..bytes(more.sublist(from.line));
+      await until(() => items()?.length == 4, 'the line added');
+      expect(items(), prompts([0, 1, 2, 3]));
+      expect(stream.view.value.startsCut, isFalse);
+      expect(stream.view.value.firstKey, -2);
+    });
+
+    test('does nothing for a read from the start', () async {
+      final lines = [for (var i = 0; i < 2; i++) prompt(i)];
+      await readCut(lines, 0);
+      await stream.loadEarlier();
+      expect(ranges.asked, isEmpty);
+      expect(stream.view.value.earlier, EarlierLoad.idle);
+    });
+
+    test('does nothing without a range reader, and says so', () async {
+      rangeReader = null;
+      final lines = [for (var i = 0; i < 3; i++) prompt(i)];
+      await readCut(lines, lineStart(lines, 1) + 2);
+      await stream.loadEarlier();
+      expect(ranges.asked, isEmpty);
+      expect(stream.view.value.earlier, EarlierLoad.none);
+    });
+
+    test('does nothing before the read showed what it started with', () async {
+      final lines = [for (var i = 0; i < 3; i++) prompt(i)];
+      ranges.file = transcriptFile(lines);
+      stream.running = true;
+      await until(() => transcripts.opened.isNotEmpty, 'a read');
+      final cut = lineStart(lines, 1) + 2;
+      // Only part of what the read starts with.
+      transcripts.last
+        ..header(ranges.file.length, start: cut)
+        ..bytes(ranges.file.sublist(cut, lineStart(lines, 2) + 1));
+      await Future<void>.delayed(_settle);
+      await stream.loadEarlier();
+      expect(ranges.asked, isEmpty);
+    });
+  });
 }

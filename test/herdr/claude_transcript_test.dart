@@ -400,6 +400,122 @@ void main() {
     });
   });
 
+  group('ClaudeTranscript.prepend', () {
+    /// A random transcript line: prompts, replies, tool calls and results
+    /// whose ids repeat across the file, records seen twice, records it
+    /// drops, and lines that are no record.
+    String randomLine(Random r) {
+      String? uuid() => r.nextInt(5) == 0 ? null : 'u${r.nextInt(40)}';
+      String toolId() => 't${r.nextInt(12)}';
+      return switch (r.nextInt(10)) {
+        0 => claudeUser('prompt ${r.nextInt(100)}', uuid: uuid()),
+        1 => claudeAssistant([
+          claudeText('reply ${r.nextInt(100)}'),
+        ], uuid: uuid()),
+        2 || 3 => claudeAssistant([
+          claudeToolUse(toolId(), 'Bash', {'command': 'c${r.nextInt(9)}'}),
+        ], uuid: uuid()),
+        4 || 5 => claudeUser([
+          claudeToolResult(
+            toolId(),
+            'out ${r.nextInt(100)}',
+            isError: r.nextBool(),
+          ),
+        ], uuid: uuid()),
+        6 => claudeUser(
+          'summary',
+          uuid: uuid(),
+          extra: {'isCompactSummary': true},
+        ),
+        7 => claudeUser('side', uuid: uuid(), extra: {'isSidechain': true}),
+        8 => claudeAssistant([
+          {'type': 'thinking', 'thinking': 'hm ${r.nextInt(9)}'},
+          claudeToolUse(toolId(), 'Read', {'file_path': '/f'}),
+        ], uuid: uuid()),
+        _ => r.nextBool() ? '' : 'not json {',
+      };
+    }
+
+    test('earlier lines put in front give what one read of all gives', () {
+      for (var seed = 0; seed < 500; seed++) {
+        final r = Random(seed);
+        final lines = [for (var i = r.nextInt(60); i > 0; i--) randomLine(r)];
+        // Read from a random line, then the lines before it in random
+        // pieces, the nearest first, as the stream loads them.
+        final cuts = {
+          for (var i = r.nextInt(4); i > 0; i--) r.nextInt(lines.length + 1),
+        }.toList()..sort();
+        final bounds = [0, ...cuts, lines.length];
+        final t = ClaudeTranscript();
+        lines.skip(bounds[bounds.length - 2]).forEach(t.add);
+        for (var i = bounds.length - 2; i > 0; i--) {
+          final before = t.items.length;
+          final front = t.prepend(lines.sublist(bounds[i - 1], bounds[i]));
+          expect(front, inInclusiveRange(0, t.items.length), reason: '$seed');
+          expect(
+            t.items.length - front,
+            lessThanOrEqualTo(before),
+            reason: '$seed',
+          );
+        }
+        expect(t.items, parse(lines), reason: 'seed $seed');
+        // Lines added after the earlier ones go on as one read would.
+        final more = [for (var i = 0; i < 5; i++) randomLine(r)];
+        more.forEach(t.add);
+        expect(t.items, parse([...lines, ...more]), reason: 'seed $seed');
+      }
+    });
+
+    test('a result whose call comes in front gets its call', () {
+      final t = ClaudeTranscript()
+        ..add(claudeUser([claudeToolResult('t1', 'done')], uuid: 'u2'));
+      expect(t.items, isEmpty);
+      final front = t.prepend([
+        claudeAssistant([
+          claudeToolUse('t1', 'Bash', {'command': 'ls'}),
+        ], uuid: 'u1'),
+      ]);
+      expect(front, 1);
+      expect(t.items, [
+        const ChatTool(
+          id: 't1',
+          name: 'Bash',
+          summary: 'ls',
+          input: 'ls',
+          result: ToolResult('done', isError: false),
+        ),
+      ]);
+    });
+
+    test('a record seen in front drops its later copy', () {
+      final t = ClaudeTranscript()..add(claudeUser('again', uuid: 'u1'));
+      final front = t.prepend([claudeUser('first', uuid: 'u1')]);
+      expect(front, 1);
+      expect(t.items, [const ChatPrompt('first')]);
+    });
+
+    test('without kept records, nothing goes in front', () {
+      final t = ClaudeTranscript()..add(claudeUser('hi', uuid: 'u1'));
+      t.keepRecords = false;
+      t.add(claudeUser('more', uuid: 'u2'));
+      expect(() => t.prepend([claudeUser('early')]), throwsStateError);
+      expect(t.items, [const ChatPrompt('hi'), const ChatPrompt('more')]);
+    });
+
+    test('lines that are no record change nothing', () {
+      final t = ClaudeTranscript()..add(claudeUser('hi', uuid: 'u1'));
+      expect(
+        t.prepend([
+          '',
+          'junk',
+          claudeUser('side', extra: {'isMeta': true}),
+        ]),
+        0,
+      );
+      expect(t.items, [const ChatPrompt('hi')]);
+    });
+  });
+
   test('transcriptStart reads only a header', () {
     const h = transcriptHeader;
     expect(transcriptStart('${h}123 0 77'), (size: 123, start: 0, inode: '77'));

@@ -929,6 +929,139 @@ void main() {
     await close(tester);
   });
 
+  group('older lines', () {
+    final paneList = find
+        .descendant(
+          of: find.byType(ListView).first,
+          matching: find.byType(Scrollable),
+        )
+        .first;
+
+    /// Scrolls until [found] shows, a step at a time so as not to pass
+    /// it: up for a positive [step], down for a negative one.
+    Future<void> scrollTo(
+      WidgetTester tester,
+      Finder found, {
+      double step = 300,
+    }) async {
+      await tester.scrollUntilVisible(
+        found,
+        step,
+        scrollable: paneList,
+        maxScrolls: 400,
+      );
+      await untilStill(tester);
+    }
+
+    Future<void> scrollUpTo(WidgetTester tester, Finder found) =>
+        scrollTo(tester, found);
+
+    List<int> depths() => [
+      for (final r in herdr().reads)
+        if (r['lines'] case final int n when n != 400) n,
+    ];
+
+    Future<void> openLong(
+      WidgetTester tester, {
+      int lines = 3000,
+      int? maxReadLines,
+    }) async {
+      tester.view.physicalSize = const Size(360, 640);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await open(tester);
+      herdr()
+        ..paneLines = [for (var i = 0; i < lines; i++) 'row $i\r']
+        ..maxReadLines = maxReadLines;
+      await untilFound(tester, paneText('row ${lines - 1}'));
+    }
+
+    testWidgets('load above at the top, and the text stays still', (
+      tester,
+    ) async {
+      await openLong(tester);
+      // Far enough from the top that nothing loads yet.
+      await scrollUpTo(tester, paneText('row 2680'));
+      expect(depths(), isEmpty);
+      // New output, which the deep read brings, stays below, not shown
+      // while the user reads up here.
+      herdr().paneLines = [for (var i = 0; i < 3005; i++) 'row $i\r'];
+      // The test client gives up on a read after 2 s.
+      herdr().holdReads = Completer();
+      await scrollUpTo(tester, paneText('row 2600'));
+      await untilFound(tester, find.text('Loading older lines…'));
+      await untilStill(tester, paneText('row 2600'));
+      final before = tester.getTopLeft(paneText('row 2600')).dy;
+
+      herdr().holdReads!.complete();
+      herdr().holdReads = null;
+      await untilGone(tester, find.text('Loading older lines…'));
+      await tester.pump();
+      expect(tester.getTopLeft(paneText('row 2600')).dy, before);
+      expect(depths(), [2000]);
+
+      // The next step brings the rest: it is shorter than it asked for.
+      await scrollUpTo(tester, paneText('row 0'));
+      // A spinner would show if another step were to load.
+      await untilGone(tester, find.text('Loading older lines…'));
+      expect(depths(), [2000, 5000]);
+      expect(paneText('row 999'), findsNothing, reason: 'far below');
+      await close(tester);
+    });
+
+    testWidgets('a read that brings no more ends the loads, as herdr\'s '
+        'cap of its reads does', (tester) async {
+      await openLong(tester, maxReadLines: 1000);
+      await scrollUpTo(tester, paneText('row 2000'));
+      await untilGone(tester, find.text('Loading older lines…'));
+      expect(depths(), [2000]);
+      expect(paneText('row 1999'), findsNothing);
+      await close(tester);
+    });
+
+    testWidgets('a short text loads nothing more', (tester) async {
+      await openLong(tester, lines: 40);
+      await scrollUpTo(tester, paneText('row 0'));
+      expect(depths(), isEmpty);
+      expect(find.text('Loading older lines…'), findsNothing);
+      await close(tester);
+    });
+
+    testWidgets('a failed load offers to try again', (tester) async {
+      await openLong(tester);
+      herdr().readError = (params) =>
+          params['lines'] == 2000 ? 'internal' : null;
+      await scrollUpTo(tester, paneText('row 2600'));
+      await untilFound(
+        tester,
+        find.text('Cannot load older lines. Tap to try again.'),
+      );
+      herdr().readError = null;
+      await tester.tap(find.text('Cannot load older lines. Tap to try again.'));
+      await scrollUpTo(tester, paneText('row 1000'));
+      // Row 1000 is the top now: the next step may load already.
+      expect(depths().take(2), [2000, 2000]);
+      await close(tester);
+    });
+
+    testWidgets('back at the bottom, the text follows the pane again', (
+      tester,
+    ) async {
+      await openLong(tester);
+      await scrollUpTo(tester, paneText('row 2600'));
+      await until(tester, () => depths().length == 1, 'a load');
+      await scrollUpTo(tester, paneText('row 2500'));
+      herdr().paneLines = [for (var i = 0; i < 3001; i++) 'row $i\r'];
+      await scrollTo(tester, paneText('row 3000'), step: -300);
+      // The live text is the last 400 lines again: the next top loads
+      // from the first step.
+      await scrollUpTo(tester, paneText('row 2601'));
+      await until(tester, () => depths().length == 2, 'a load');
+      expect(depths(), [2000, 2000]);
+      await close(tester);
+    });
+  });
+
   testWidgets('long names and long lines fit a phone', (tester) async {
     tester.view.physicalSize = const Size(320, 640);
     tester.view.devicePixelRatio = 1;

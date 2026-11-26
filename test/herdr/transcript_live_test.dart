@@ -19,6 +19,7 @@ import 'package:shellherd/herdr/herdr_cache.dart';
 import 'package:shellherd/herdr/herdr_connection.dart';
 import 'package:shellherd/herdr/herdr_link.dart';
 import 'package:shellherd/herdr/transcript/chat_items.dart';
+import 'package:shellherd/herdr/transcript/claude_transcript.dart';
 import 'package:shellherd/herdr/transcript/transcript_command.dart';
 import 'package:shellherd/herdr/transcript/transcript_stream.dart';
 
@@ -117,6 +118,48 @@ Future<void> main() async {
         'the appended message',
       );
       expect(stream.view.value.items!.last, const ChatReply('second'));
+    });
+
+    test('a big transcript loads back to its start over ssh, the same as '
+        'one read of all of it', () async {
+      // Six MiB: several loads of the tail.
+      final pad = 'é' * 100000;
+      final lines = [
+        for (var i = 0; i < 60; i++)
+          i.isEven
+              ? claudeUser('prompt $i $pad', uuid: 'u$i')
+              : claudeAssistant([
+                  claudeToolUse('t$i', 'Bash', {'command': 'echo $i'}),
+                ], uuid: 'a$i'),
+        for (var i = 1; i < 60; i += 2)
+          claudeUser([claudeToolResult('t$i', 'out $i')], uuid: 'r$i'),
+      ];
+      await File('${dir.path}/big.jsonl')
+          .writeAsString(lines.map((l) => '$l\n').join());
+      final opener = sshTranscriptOpener(ssh);
+      final ranges = sshTranscriptRangeReader(ssh);
+      final stream = TranscriptStream(
+        () => opener,
+        () => 'big',
+        changes: ValueNotifier(0),
+        ranges: () => ranges,
+      )..running = true;
+      addTearDown(stream.dispose);
+      await until(
+        () => stream.view.value.items?.isNotEmpty ?? false,
+        'the end of the transcript',
+      );
+      expect(stream.view.value.startsCut, isTrue);
+      var loads = 0;
+      while (stream.view.value.startsCut) {
+        await stream.loadEarlier();
+        expect(stream.view.value.earlier, EarlierLoad.idle);
+        expect(++loads, lessThan(10));
+      }
+      expect(loads, greaterThan(1));
+      final want = ClaudeTranscript();
+      lines.forEach(want.add);
+      expect(stream.view.value.items, want.items);
     });
 
     test(

@@ -38,5 +38,22 @@ Future<void> untilGone(WidgetTester tester, Finder finder) => until(
   'end of ${finder.toString(describeSelf: true)}',
 );
 
+/// Pumps until no list scrolls: the fling after a drag has come to rest.
+/// With [anchor], also until it stays in place from one frame to the next:
+/// the stretch of a drag past the end of a list eases back after it.
+Future<void> untilStill(WidgetTester tester, [Finder? anchor]) {
+  Offset? last;
+  return until(tester, () {
+    final scrolling = tester
+        .stateList<ScrollableState>(find.byType(Scrollable))
+        .any((s) => s.position.isScrollingNotifier.value);
+    if (anchor == null) return !scrolling;
+    final at = anchor.evaluate().isEmpty ? null : tester.getTopLeft(anchor);
+    final still = !scrolling && at != null && at == last;
+    last = at;
+    return still;
+  }, 'the scroll to come to rest');
+}
+
 /// A field of the host form.
 Finder hostField(String label) => find.widgetWithText(TextFormField, label);

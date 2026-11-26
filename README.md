@@ -16,8 +16,11 @@ shellherd is an independent project and is not affiliated with herdr.
   panes; a herdr pane's screen updates live as it changes.
 - A Claude Code agent in herdr or the Herdr app shows as a chat: its
   prompts, replies and tool calls, read from its transcript. Other panes
-  show their text. Thinking and tool calls are hidden until you show them
-  with the switch in the chat's top bar; the app remembers your choice.
+  show their text; scroll to its top to load older lines (herdr gives at
+  most 1000, the Herdr app up to 10,000). Thinking and tool calls are
+  hidden until you show them with the switch in the chat's top bar; the
+  app remembers your choice. A long conversation opens at its end; scroll
+  up to load older messages.
 - Slash commands from the chat: type `/` (or tap the `/` button) to pick
   one of Claude Code's own commands, your commands and skills, or those of
   your enabled plugins, read from the computer.
