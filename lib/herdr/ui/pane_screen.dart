@@ -129,6 +129,7 @@ class _PaneScreenState extends State<PaneScreen> {
       _stream.view,
       _stream.unavailable,
     ])..addListener(_applySource);
+    widget.connection.state.addListener(_clearNoLinkFailure);
     // Before the first read: with a stream, the poller does not read.
     _applySource();
     _poller.start();
@@ -185,9 +186,20 @@ class _PaneScreenState extends State<PaneScreen> {
     polling ? _poller.resume() : _poller.pause();
   }
 
+  /// Once the link is up, "Nothing was sent" for want of it is old news.
+  void _clearNoLinkFailure() {
+    if (widget.connection.state.value is LinkLive &&
+        _failure?.$1 == _noLinkFailure) {
+      setState(() => _failure = null);
+    }
+  }
+
+  String get _noLinkFailure => 'No link to ${widget.server}. Nothing was sent.';
+
   @override
   void dispose() {
     _changes.removeListener(_applySource);
+    widget.connection.state.removeListener(_clearNoLinkFailure);
     _uncovered?.removeListener(_followShown);
     _lifecycle.dispose();
     _seen.dispose();
@@ -219,7 +231,7 @@ class _PaneScreenState extends State<PaneScreen> {
       return true;
     } on PaneInputNotSent catch (e) {
       if (e.noLink && mounted) {
-        setState(() => _failure = ('No link to ${widget.server}. Nothing was sent.', null));
+        setState(() => _failure = (_noLinkFailure, null));
       }
     } on HerdrException catch (e) {
       if (mounted) setState(() => _failure = _sendFailure(e));

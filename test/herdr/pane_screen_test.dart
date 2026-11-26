@@ -632,6 +632,64 @@ void main() {
     await close(tester);
   });
 
+  testWidgets('a tap during the first connect is forgotten once it is up', (
+    tester,
+  ) async {
+    link = FakeLink(_session());
+    herdr().paneText = 'last line';
+    final gate = Completer<void>();
+    connection = HerdrConnection(
+      () async {
+        await gate.future;
+        return link.open;
+      },
+      backoff: (_) => const Duration(minutes: 1),
+      debounce: const Duration(milliseconds: 1),
+    )..connect();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: PaneScreen(connection: connection, paneId: 'w1:p1'),
+      ),
+    );
+    await untilFound(tester, chip('connecting'));
+    await tester.tap(find.text('esc'));
+    await untilFound(tester, find.text('No link to herdr. Nothing was sent.'));
+
+    gate.complete();
+    await untilFound(tester, chip('live'));
+    await untilGone(tester, find.text('No link to herdr. Nothing was sent.'));
+    expect(herdr().inputs, isEmpty);
+    await close(tester);
+  });
+
+  testWidgets('a reconnect clears "nothing was sent" but no other failure', (
+    tester,
+  ) async {
+    await open(tester);
+    link.done.complete();
+    await untilFound(tester, chip('retrying'));
+    await tester.tap(find.text('esc'));
+    await untilFound(tester, find.text('No link to herdr. Nothing was sent.'));
+    link = FakeLink(_session());
+    herdr().paneText = 'last line';
+    connection.connect();
+    await untilFound(tester, chip('live'));
+    await untilGone(tester, find.text('No link to herdr. Nothing was sent.'));
+
+    herdr().errors['pane.send_keys'] = ['agent_blocked'];
+    await tester.tap(find.text('esc'));
+    const blocked =
+        'The agent is waiting for an answer. Your text was not sent.';
+    await untilFound(tester, find.text(blocked));
+    link.done.complete();
+    await untilFound(tester, chip('retrying'));
+    link = FakeLink(_session());
+    connection.connect();
+    await untilFound(tester, chip('live'));
+    expect(find.text(blocked), findsOneWidget);
+    await close(tester);
+  });
+
   testWidgets('messages name the server of the host', (tester) async {
     await open(tester, server: 'Herdr app');
     link.done.complete();
