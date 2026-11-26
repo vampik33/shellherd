@@ -169,7 +169,7 @@ void main() {
     await open(tester);
     expect(find.text('prompt claude…'), findsOneWidget);
     await type(tester, 'fix the bug');
-    await tester.tap(find.text('send'));
+    await tester.tap(find.byTooltip('Send'));
     await until(tester, () => typed(tester).isEmpty, 'the field to empty');
     expect(herdr().inputs.single.$1, 'agent.prompt');
     expect(herdr().inputs.single.$2['text'], 'fix the bug');
@@ -182,7 +182,7 @@ void main() {
     await open(tester, session: _session(status: 'idle', names: const {}));
     expect(find.text('type to the shell…'), findsOneWidget);
     await type(tester, 'ls');
-    await tester.tap(find.text('send'));
+    await tester.tap(find.byTooltip('Send'));
     await until(tester, () => herdr().inputs.isNotEmpty, 'the input');
     expect(herdr().inputs.single.$1, 'pane.send_input');
     expect(herdr().inputs.single.$2['keys'], ['enter']);
@@ -191,8 +191,9 @@ void main() {
 
   testWidgets('send needs text', (tester) async {
     await open(tester);
-    FilledButton button() =>
-        tester.widget<FilledButton>(find.byType(FilledButton));
+    IconButton button() => tester.widget<IconButton>(
+      find.widgetWithIcon(IconButton, Icons.arrow_upward),
+    );
     expect(button().onPressed, isNull);
     await type(tester, '   ');
     expect(button().onPressed, isNull);
@@ -205,11 +206,15 @@ void main() {
     await open(tester);
     herdr().holdInput = Completer();
     await type(tester, 'one');
-    await tester.tap(find.text('send'));
+    await tester.tap(find.byTooltip('Send'));
     await until(tester, () => herdr().inputs.isNotEmpty, 'the input');
     await tester.pump();
     expect(
-      tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
+      tester
+          .widget<IconButton>(
+            find.widgetWithIcon(IconButton, Icons.arrow_upward),
+          )
+          .onPressed,
       isNull,
     );
     herdr().holdInput!.complete();
@@ -222,7 +227,7 @@ void main() {
     await open(tester);
     herdr().holdInput = Completer();
     await type(tester, 'one');
-    await tester.tap(find.text('send'));
+    await tester.tap(find.byTooltip('Send'));
     await until(tester, () => herdr().inputs.isNotEmpty, 'the input');
     await type(tester, 'one more');
     herdr().holdInput!.complete();
@@ -230,7 +235,11 @@ void main() {
     await until(
       tester,
       () =>
-          tester.widget<FilledButton>(find.byType(FilledButton)).onPressed !=
+          tester
+              .widget<IconButton>(
+                find.widgetWithIcon(IconButton, Icons.arrow_upward),
+              )
+              .onPressed !=
           null,
       'the send to end',
     );
@@ -242,7 +251,7 @@ void main() {
     await open(tester);
     herdr().errors['agent.prompt'] = ['agent_blocked'];
     await type(tester, 'precious');
-    await tester.tap(find.text('send'));
+    await tester.tap(find.byTooltip('Send'));
     await untilFound(
       tester,
       find.text('The agent is waiting for an answer. Your text was not sent.'),
@@ -262,7 +271,7 @@ void main() {
     await open(tester);
     herdr().errors['agent.prompt'] = ['agent_not_ready'];
     await type(tester, 'precious');
-    await tester.tap(find.text('send'));
+    await tester.tap(find.byTooltip('Send'));
     await untilFound(
       tester,
       find.text(
@@ -278,7 +287,7 @@ void main() {
     await open(tester);
     herdr().torn.add('agent.prompt');
     await type(tester, 'maybe');
-    await tester.tap(find.text('send'));
+    await tester.tap(find.byTooltip('Send'));
     await untilFound(
       tester,
       find.text('No answer from herdr. The input may have arrived anyway.'),
@@ -291,14 +300,14 @@ void main() {
     await open(tester);
     herdr().broken.add('agent.prompt');
     await type(tester, 'again');
-    await tester.tap(find.text('send'));
+    await tester.tap(find.byTooltip('Send'));
     await untilFound(
       tester,
       find.text('No answer from herdr. The input may have arrived anyway.'),
     );
     herdr().broken.clear();
     await tester.pump();
-    await tester.tap(find.text('send'));
+    await tester.tap(find.byTooltip('Send'));
     await until(tester, () => typed(tester).isEmpty, 'the field to empty');
     expect(herdr().inputs.single.$2['text'], 'again');
     await close(tester);

@@ -215,7 +215,11 @@ class _HerdrScreenState extends State<HerdrScreen> {
     onClose: wide ? null : _closePane,
     showLink: !wide,
     server: widget.host.herdrKind.label,
-    exactFirst: widget.host.herdrKind == HerdrKind.herdr,
+    // A herdr pane opens on its live screen, the pane of a Claude Code
+    // session on its chat.
+    exactFirst:
+        widget.host.herdrKind == HerdrKind.herdr &&
+        _link.snapshot.value?.pane(paneId)?.agentSession?.claudeSession == null,
   );
 
   void _openPane(String paneId) {

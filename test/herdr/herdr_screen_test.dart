@@ -384,6 +384,43 @@ void main() {
     await close(tester);
   });
 
+  testWidgets('the pane of a Claude Code session opens on its chat', (
+    tester,
+  ) async {
+    const session = {
+      'source': 'herdr:claude',
+      'agent': 'claude',
+      'kind': 'id',
+      'value': 's1',
+    };
+    script.add(
+      () => FakeLink(
+        fakeSnapshot(
+          workspaces: [fakeWorkspace('w1', 1, 'api', 'working')],
+          tabs: [fakeTab('w1', 'server', 'working')],
+          panes: [
+            fakePane('w1:p1', 'w1', 'working', {
+              'agent': 'claude',
+              'agent_session': session,
+            }),
+          ],
+          agents: [
+            fakeAgent('w1:p1', 'w1', 'working', {'name': 'chatty'}),
+          ],
+        ),
+      ),
+    );
+    await pumpScreen(tester);
+    await live(tester);
+    await tester.tap(find.text('chatty'));
+    await untilFound(tester, find.byType(PaneScreen));
+    expect(
+      tester.widget<PaneScreen>(find.byType(PaneScreen)).exactFirst,
+      isFalse,
+    );
+    await close(tester);
+  });
+
   testWidgets('a tap on a pane opens it, and back returns', (tester) async {
     await pumpScreen(tester);
     await live(tester);
@@ -614,14 +651,14 @@ void main() {
       await openInSidebar(tester, 'my pane');
       await tester.enterText(find.byType(TextField), 'sent one');
       await tester.pump();
-      await tester.tap(find.text('send'));
+      await tester.tap(find.byTooltip('Send'));
       await until(tester, () => typed(tester).isEmpty, 'the send');
       expect(herdr.count('agent.prompt'), 1);
 
       herdr.errors['agent.prompt'] = ['agent_blocked'];
       await tester.enterText(find.byType(TextField), 'refused one');
       await tester.pump();
-      await tester.tap(find.text('send'));
+      await tester.tap(find.byTooltip('Send'));
       await untilFound(tester, find.textContaining('was not sent'));
 
       await openInSidebar(tester, 'reviewer');

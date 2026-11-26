@@ -112,6 +112,7 @@ class Pane {
     this.cwd,
     this.terminalTitle,
     this.turn,
+    this.agentSession,
   });
 
   factory Pane.fromJson(Map<String, Object?> j) => Pane(
@@ -125,6 +126,7 @@ class Pane {
     label: jsonOptional<String>(j, 'label'),
     cwd: jsonOptional<String>(j, 'cwd'),
     terminalTitle: jsonOptional<String>(j, 'terminal_title_stripped'),
+    agentSession: AgentSession.tryParse(j['agent_session']),
   );
 
   /// Public pane id such as `w1:p2`.
@@ -145,9 +147,65 @@ class Pane {
   /// turns; null for herdr.
   final int? turn;
 
+  /// The session the agent reported to herdr; null when it reported none,
+  /// or for the Herdr app.
+  final AgentSession? agentSession;
+
   /// The best name there is for this pane.
   String get displayName =>
       label ?? title ?? displayAgent ?? agent ?? terminalTitle ?? id;
+}
+
+/// The session an agent reported to herdr, by herdr's integration hook.
+class AgentSession {
+  const AgentSession({
+    required this.agent,
+    required this.kind,
+    required this.value,
+  });
+
+  factory AgentSession.fromJson(Map<String, Object?> j) => AgentSession(
+    agent: jsonField<String>(j, 'agent'),
+    kind: AgentSessionKind.fromWire(jsonField<String>(j, 'kind')),
+    value: jsonField<String>(j, 'value'),
+  );
+
+  /// The session in [json]; null when there is none or it is malformed.
+  /// Only the chat view needs it, so a bad one must not fail the snapshot.
+  static AgentSession? tryParse(Object? json) {
+    if (json is! Map<String, Object?>) return null;
+    try {
+      return AgentSession.fromJson(json);
+    } on HerdrProtocolException {
+      return null;
+    }
+  }
+
+  /// The agent kind, such as `claude`.
+  final String agent;
+  final AgentSessionKind kind;
+
+  /// The session id or the path of its transcript, by [kind]. For Claude
+  /// Code herdr keeps the id, even when its hook also reports the path.
+  final String value;
+
+  /// The id of a Claude Code session, when that is what this is.
+  String? get claudeSession =>
+      agent == 'claude' && kind == AgentSessionKind.id ? value : null;
+}
+
+enum AgentSessionKind {
+  id,
+  path,
+  unknown;
+
+  /// Maps a wire value; a value this build does not know maps to [unknown].
+  static AgentSessionKind fromWire(String value) {
+    for (final k in values) {
+      if (k.name == value) return k;
+    }
+    return unknown;
+  }
 }
 
 class Agent {
