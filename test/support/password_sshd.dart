@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'poll.dart';
+
 /// What a [PasswordSshd] offers; see test/support/password_sshd.py.
 enum PasswordMode { password, kbdint, both, otp, two, none, check, stuck }
 
@@ -66,6 +68,18 @@ class PasswordSshd {
       process.kill(ProcessSignal.sigkill);
       rethrow;
     }
+  }
+
+  /// [answers] once [count] have come. The server prints each answer
+  /// before it sends the result, but on its stdout, which the test reads
+  /// apart from the SSH connection: a login can return before its answer
+  /// is read, as under the load of the full suite.
+  Future<List<String>> answered(int count) async {
+    await until(
+      () => answers.length >= count,
+      '$count answers from the server',
+    );
+    return answers;
   }
 
   Future<void> stop() async {

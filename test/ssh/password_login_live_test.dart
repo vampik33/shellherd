@@ -87,7 +87,7 @@ Future<void> main() async {
     test('by the password method, after the first-use key prompt', () async {
       final host = await serve(PasswordMode.password);
       await logsIn(host);
-      expect(sshd!.answers, ['password ok']);
+      expect(await sshd!.answered(1), ['password ok']);
       expect(asked, hasLength(1));
       await logsIn(host);
       expect(asked, hasLength(1), reason: 'the key is trusted now');
@@ -95,22 +95,26 @@ Future<void> main() async {
 
     test('by keyboard-interactive', () async {
       await logsIn(await serve(PasswordMode.kbdint));
-      expect(sshd!.answers, ['kbdint 1 ok']);
+      expect(await sshd!.answered(1), ['kbdint 1 ok']);
     });
 
     test('a server with both methods gets the password once', () async {
       await logsIn(await serve(PasswordMode.both));
-      expect(sshd!.answers, ['password ok']);
+      expect(await sshd!.answered(1), ['password ok']);
     });
 
     test('a wrong password is tried once per method', () async {
       await refused(await serve(PasswordMode.both, saved: 'wrong'));
-      expect(sshd!.answers, ['password bad', 'kbdint 1 bad']);
+      expect(await sshd!.answered(2), ['password bad', 'kbdint 1 bad']);
     });
 
     test('a code prompt after the password gets no answer', () async {
       await refused(await serve(PasswordMode.otp));
-      expect(sshd!.answers, ['kbdint 1 more'], reason: 'the password only');
+      expect(
+        await sshd!.answered(1),
+        ['kbdint 1 more'],
+        reason: 'the password only',
+      );
     });
 
     test('a round of two prompts gets no password', () async {

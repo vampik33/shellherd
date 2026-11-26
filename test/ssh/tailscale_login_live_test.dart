@@ -89,7 +89,7 @@ Future<void> main() async {
         await connector(onCheck: checks.add)
             .open(await serve(PasswordMode.none)),
       );
-      expect(sshd!.answers, ['none ok']);
+      expect(await sshd!.answered(1), ['none ok']);
       expect(checks, isEmpty);
     });
 
@@ -98,7 +98,7 @@ Future<void> main() async {
       final client = await connector(onCheck: checks.add)
           .open(await serve(PasswordMode.check));
       open.add(client);
-      expect(sshd!.answers, ['none ok']);
+      expect(await sshd!.answered(1), ['none ok']);
       expect(checks, hasLength(1));
       expect(checks.single.url, _checkUrl);
       expect(checks.single.host.id, 'h1');
