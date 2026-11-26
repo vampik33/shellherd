@@ -18,6 +18,7 @@ import 'package:shellherd/herdr/herdr_cache.dart';
 import 'package:shellherd/herdr/herdr_connection.dart';
 import 'package:shellherd/herdr/herdr_link.dart';
 import 'package:shellherd/herdr/transcript/chat_items.dart';
+import 'package:shellherd/herdr/transcript/transcript_command.dart';
 import 'package:shellherd/herdr/transcript/transcript_stream.dart';
 
 import '../support/fake_transcripts.dart';

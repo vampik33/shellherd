@@ -7,7 +7,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:shellherd/herdr/herdr_link.dart';
+import 'package:shellherd/herdr/transcript/transcript_command.dart';
 import 'package:shellherd/herdr/transcript/transcript_stream.dart';
 
 import '../support/poll.dart';

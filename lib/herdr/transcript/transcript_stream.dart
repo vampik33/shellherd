@@ -5,20 +5,14 @@ import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 
+import '../../ssh/ssh_exec.dart';
 import '../api/herdr_client.dart';
 import 'chat_items.dart';
 import 'claude_transcript.dart';
 
-/// One running read of a transcript: the header line, then the end of the
-/// file and each line added to it.
-abstract interface class TranscriptChannel {
-  /// What the read prints. Ends when it exits; with an error when it
-  /// failed.
-  Stream<List<int>> get output;
-
-  /// Ends the read.
-  void close();
-}
+/// One running read of a transcript: its output is the header line, then
+/// the end of the file and each line added to it.
+typedef TranscriptChannel = ExecChannel;
 
 /// Starts a read of the transcript of Claude Code session [session] on the
 /// remote host.

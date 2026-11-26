@@ -6,7 +6,6 @@ import 'package:dartssh2/dartssh2.dart';
 import '../ssh/ssh_exec.dart';
 import 'api/herdr_client.dart';
 import 'pane_stream.dart';
-import 'transcript/transcript_stream.dart';
 
 /// A [HerdrDialer] that reaches the herdr socket at [socketPath] on the
 /// remote host through [ssh].
@@ -177,61 +176,10 @@ ScreenOpener sshScreenOpener(
   String socketPath, {
   Duration timeout = const Duration(seconds: 15),
 }) =>
-    (paneId, size) async => _SshExecChannel(
+    (paneId, size) async => SshExecChannel(
       await openExec(ssh, observeCommand(socketPath, paneId, size), timeout),
       'terminal session observe',
     );
-
-/// A [TranscriptOpener] that runs [transcriptCommand] on the remote host,
-/// each read on its own exec channel.
-TranscriptOpener sshTranscriptOpener(
-  SSHClient ssh, {
-  Duration timeout = const Duration(seconds: 15),
-}) =>
-    (session) async => _SshExecChannel(
-      await openExec(ssh, transcriptCommand(session), timeout),
-      'transcript read',
-    );
-
-/// A command on its own exec channel, whose output a screen stream or a
-/// transcript reads.
-class _SshExecChannel implements ScreenChannel, TranscriptChannel {
-  _SshExecChannel(this._session, this._what) {
-    _stderr = utf8.decoder
-        .bind(_session.stderr)
-        .join()
-        .catchError((Object _) => '');
-  }
-
-  final SSHSession _session;
-
-  /// The command, in errors.
-  final String _what;
-  late final Future<String> _stderr;
-
-  /// stdout, then an error that names the exit code and what the command
-  /// wrote to stderr when it failed.
-  @override
-  Stream<List<int>> get output async* {
-    yield* _session.stdout;
-    await _session.done.timeout(const Duration(seconds: 5), onTimeout: () {});
-    final code = _session.exitCode;
-    if (code != null && code != 0) {
-      throw HerdrConnectException(
-        _what,
-        'exit $code: ${(await _stderr).trim()}',
-      );
-    }
-  }
-
-  /// Ends stdin first: the command stops its program when stdin ends,
-  /// which it also does when the SSH connection goes.
-  @override
-  void close() {
-    unawaited(_session.stdin.close().catchError((Object _) {}));
-    _session.channel.destroy();
-  }
-}
 
 /// Characters herdr uses in pane ids. Only these reach the command: a
 /// quote or a backslash would also break the quoting for fish, which reads
@@ -259,7 +207,7 @@ String observeCommand(String socketPath, String paneId, PaneSize size) {
     'export HERDR_SOCKET_PATH',
     'for h in herdr "\$HOME/.local/bin/herdr"; do',
     '  command -v "\$h" >/dev/null 2>&1 || continue',
-    for (final line in _untilStdinEnds(
+    for (final line in untilStdinEnds(
       '"\$h" terminal session observe $paneId'
       ' --cols ${size.cols} --rows ${size.rows}',
     ))
@@ -267,70 +215,6 @@ String observeCommand(String socketPath, String paneId, PaneSize size) {
     'done',
     'echo "herdr is not on the PATH or in ~/.local/bin" >&2',
     'exit 127',
-  ].join('\n');
-  return 'sh -c ${shQuote(inner)}';
-}
-
-/// Lines of `sh` that run [command] in the background and stop it when
-/// stdin ends, then exit with its status. A program that loses its reader
-/// can keep running until it next prints, maybe never; stdin ends when the
-/// app closes the channel or the SSH connection goes.
-List<String> _untilStdinEnds(String command) => [
-  'exec 3<&0',
-  '$command </dev/null 3<&- &',
-  'p=\$!',
-  '{ cat <&3 >/dev/null 2>&1; kill \$p 2>/dev/null; } >/dev/null 2>&1 &',
-  'w=\$!',
-  'exec 3<&-',
-  'wait \$p; s=\$?',
-  'kill \$w 2>/dev/null',
-  'exit \$s',
-];
-
-/// Claude Code session ids are UUIDs. Only these characters reach the
-/// command, as with [_paneTarget].
-final _sessionId = RegExp(r'^[A-Za-z0-9_-]{1,128}$');
-
-/// Finds the transcript of Claude Code session [session] on the remote host,
-/// `<config>/projects/<project>/<session>.jsonl` with the config directory
-/// in CLAUDE_CONFIG_DIR or `~/.claude` (the newest if there are several),
-/// and prints a header line with its size ([transcriptHeader]), then its
-/// last [transcriptTail] bytes and the one before them, and each line added
-/// to it, until stdin ends.
-///
-/// Claude Code writes the file with the first message, after herdr learns
-/// of the session: until the file is there, the header says 0 and the
-/// command waits for it. Without the projects directory, Claude Code keeps
-/// its transcripts elsewhere: it exits 66 then.
-///
-/// Through `sh`, because the login shell can be fish. Throws
-/// [ArgumentError] for an id it does not take.
-String transcriptCommand(String session) {
-  if (!_sessionId.hasMatch(session)) {
-    throw ArgumentError.value(session, 'session', 'not a session id');
-  }
-  final inner = [
-    'd="\${CLAUDE_CONFIG_DIR:-\$HOME/.claude}/projects"',
-    '[ -d "\$d" ] || { echo "no Claude Code transcripts in \$d" >&2; exit 66; }',
-    'find_f() {',
-    '  f=',
-    '  for g in "\$d"/*/$session.jsonl; do',
-    '    [ -r "\$g" ] || continue',
-    '    { [ -z "\$f" ] || [ "\$g" -nt "\$f" ]; } && f=\$g',
-    '  done',
-    '}',
-    'find_f',
-    'if [ -n "\$f" ]; then',
-    '  echo "$transcriptHeader\$(wc -c < "\$f")"',
-    '  from=${transcriptTail + 1}',
-    'else',
-    '  echo "${transcriptHeader}0"',
-    '  from=+1',
-    'fi',
-    ..._untilStdinEnds(
-      '{ while [ -z "\$f" ]; do sleep 1; find_f; done; '
-      'exec tail -c "\$from" -F -- "\$f"; }',
-    ),
   ].join('\n');
   return 'sh -c ${shQuote(inner)}';
 }
