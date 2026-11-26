@@ -357,18 +357,28 @@ class _PaneScreenState extends State<PaneScreen> {
     final text = view.text;
     if (text == null) {
       if (view.gone || view.error != null) return const SizedBox.shrink();
+      final String? label;
+      switch (state) {
+        // Nothing retries: the banner says what is wrong.
+        case LinkNoServer() || LinkFailed():
+          return const SizedBox.shrink();
+        // The banner says the link is lost.
+        case LinkReconnecting():
+          label = null;
+        case LinkOffline() || LinkConnecting():
+          label = 'Connecting to ${widget.server}…';
+        case LinkSyncing() || LinkLive():
+          label = 'Loading the pane…';
+      }
       return Center(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             const CircularProgressIndicator(),
-            const SizedBox(height: 12),
-            Text(
-              state is LinkOffline || state is LinkConnecting
-                  ? 'Connecting to ${widget.server}…'
-                  : 'Loading the pane…',
-              style: const TextStyle(color: Graphite.dim),
-            ),
+            if (label != null) ...[
+              const SizedBox(height: 12),
+              Text(label, style: const TextStyle(color: Graphite.dim)),
+            ],
           ],
         ),
       );

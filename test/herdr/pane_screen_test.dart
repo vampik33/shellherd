@@ -4,6 +4,7 @@ library;
 
 import 'dart:async';
 
+import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shellherd/herdr/api/herdr_client.dart';
@@ -580,6 +581,35 @@ void main() {
     expect(find.text('Connecting to herdr…'), findsNothing);
     await close(tester);
   });
+
+  for (final (label, error) in <(String, Object)>[
+    ('no herdr', HerdrConnectException('ping', SSHChannelOpenError(2, 'x'))),
+    ('failed', const HerdrProtocolException('bad')),
+  ]) {
+    testWidgets('a first connect that ends $label shows no loading', (
+      tester,
+    ) async {
+      connection = HerdrConnection(
+        () async => throw error,
+        backoff: (_) => const Duration(minutes: 1),
+        debounce: const Duration(milliseconds: 1),
+      )..connect();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: PaneScreen(connection: connection, paneId: 'w1:p1'),
+        ),
+      );
+      await untilFound(tester, chip(label));
+      expect(
+        find.text('No link to herdr. This text may be old.'),
+        findsOneWidget,
+      );
+      expect(find.text('Loading the pane…'), findsNothing);
+      expect(find.text('Connecting to herdr…'), findsNothing);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      await close(tester);
+    });
+  }
 
   testWidgets('a dropped link dims the text; a tap sends nothing', (
     tester,
