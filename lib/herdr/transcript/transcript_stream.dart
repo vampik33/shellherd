@@ -215,16 +215,14 @@ EarlierLines? earlierLines(
     if (!inLine && bytes.length - 1 <= maxLine) return null;
     return (lines: const [], start: readFrom + 1, inLine: true);
   }
-  final lastEnd = newlines.last;
-  final ends = inLine ? newlines : newlines.sublist(0, newlines.length - 1);
-  if (readFrom > 0 && ends.isEmpty) {
+  if (readFrom > 0 && !inLine && newlines.length == 1) {
     // One line, up to the part held: its start is further back.
     if (bytes.length - 1 <= maxLine) return null;
     return (lines: const [], start: readFrom + 1, inLine: true);
   }
   final lines = <List<int>>[];
   var lineStart = 0;
-  for (final end in [...ends, if (!inLine) lastEnd]) {
+  for (final end in newlines) {
     if (lineStart > 0 || readFrom == 0) {
       if (end - lineStart <= maxLine) lines.add(bytes.sublist(lineStart, end));
     }

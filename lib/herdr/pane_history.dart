@@ -31,7 +31,8 @@ int? olderLines(List<String> shown, List<String> deeper) {
   final anchor = shown.length < _anchorLines ? shown.length : _anchorLines;
   if (anchor == 0 || deeper.length < anchor) return null;
   final want = [for (final line in shown.take(_maxCompared)) _key(line)];
-  final keys = [for (final line in deeper) _key(line)];
+  // Most places fail at their first line: strip only the lines compared.
+  final keys = List<String?>.filled(deeper.length, null);
   var at = deeper.length - shown.length;
   if (at > deeper.length - anchor) at = deeper.length - anchor;
   int? best;
@@ -41,7 +42,8 @@ int? olderLines(List<String> shown, List<String> deeper) {
     var most = deeper.length - at;
     if (most > want.length) most = want.length;
     var run = 0;
-    while (run < most && keys[at + run] == want[run]) {
+    while (run < most &&
+        (keys[at + run] ??= _key(deeper[at + run])) == want[run]) {
       run++;
     }
     if (run < anchor) continue;
