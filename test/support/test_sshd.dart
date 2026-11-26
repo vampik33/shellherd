@@ -44,7 +44,12 @@ class TestSshd {
   /// Starts on [port], or on a free port. A restart on the same port with
   /// a new host key looks to a client like a changed server key. With
   /// [rsa] the server also has an RSA host key, after the ed25519 one.
-  static Future<TestSshd> start({int? port, bool rsa = false}) async {
+  /// [env] is set for every session (sshd's SetEnv; no spaces in values).
+  static Future<TestSshd> start({
+    int? port,
+    bool rsa = false,
+    Map<String, String> env = const {},
+  }) async {
     final sshd = binary ?? (throw StateError('no sshd binary'));
     final dir = await Directory.systemTemp.createTemp('shellherd-sshd-');
     TestSshd? server;
@@ -74,6 +79,7 @@ UsePAM no
 PasswordAuthentication no
 KbdInteractiveAuthentication no
 AllowStreamLocalForwarding yes
+${[for (final MapEntry(:key, :value) in env.entries) 'SetEnv $key=$value'].join('\n')}
 ''');
 
       final log = StringBuffer();

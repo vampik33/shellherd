@@ -1,0 +1,260 @@
+{"type": "last-prompt"}
+{"type": "mode"}
+{"type": "permission-mode"}
+{"type": "repl-mode"}
+{"type": "session-owner"}
+{"type": "attachment", "isSidechain": false, "uuid": "uuid-0001"}
+{"type": "attachment", "isSidechain": false, "uuid": "uuid-0002", "parentUuid": "uuid-0001"}
+{"type": "file-history-snapshot"}
+{"type": "atis-latch"}
+{"type": "user", "isSidechain": false, "uuid": "uuid-0003", "parentUuid": "uuid-0002", "message": {"role": "user", "content": "prompt 1"}}
+{"type": "attachment", "isSidechain": false, "uuid": "uuid-0004", "parentUuid": "uuid-0003"}
+{"type": "attachment", "isSidechain": false, "uuid": "uuid-0005", "parentUuid": "uuid-0004"}
+{"type": "attachment", "isSidechain": false, "uuid": "uuid-0006", "parentUuid": "uuid-0005"}
+{"type": "attachment", "isSidechain": false, "uuid": "uuid-0007", "parentUuid": "uuid-0006"}
+{"type": "attachment", "isSidechain": false, "uuid": "uuid-0008", "parentUuid": "uuid-0007"}
+{"type": "attachment", "isSidechain": false, "uuid": "uuid-0009", "parentUuid": "uuid-0008"}
+{"type": "attachment", "isSidechain": false, "uuid": "uuid-0010", "parentUuid": "uuid-0009"}
+{"type": "attachment", "isSidechain": false, "uuid": "uuid-0011", "parentUuid": "uuid-0010"}
+{"type": "attachment", "isSidechain": false, "uuid": "uuid-0012", "parentUuid": "uuid-0011"}
+{"type": "attachment", "isSidechain": false, "uuid": "uuid-0013", "parentUuid": "uuid-0012"}
+{"type": "attachment", "isSidechain": false, "uuid": "uuid-0014", "parentUuid": "uuid-0013"}
+{"type": "attachment", "isSidechain": false, "uuid": "uuid-0015", "parentUuid": "uuid-0014"}
+{"type": "attachment", "isSidechain": false, "uuid": "uuid-0016", "parentUuid": "uuid-0015"}
+{"type": "last-prompt"}
+{"type": "mode"}
+{"type": "permission-mode"}
+{"type": "repl-mode"}
+{"type": "session-owner"}
+{"type": "atis-latch"}
+{"type": "api-request-shape"}
+{"type": "api-request-blob"}
+{"type": "api-request-blob"}
+{"type": "api-request"}
+{"type": "last-prompt"}
+{"type": "mode"}
+{"type": "permission-mode"}
+{"type": "repl-mode"}
+{"type": "session-owner"}
+{"type": "atis-latch"}
+{"type": "tools-used"}
+{"type": "tools-used"}
+{"type": "assistant", "isSidechain": false, "uuid": "uuid-0017", "parentUuid": "uuid-0016", "message": {"role": "assistant", "id": "msg_0018", "content": [{"type": "thinking", "thinking": "thought 2", "signature": "sig"}]}}
+{"type": "assistant", "isSidechain": false, "uuid": "uuid-0019", "parentUuid": "uuid-0017", "message": {"role": "assistant", "id": "msg_0018", "content": [{"type": "tool_use", "id": "toolu_0020", "name": "REPL", "input": {"code": "value 3", "description": "value 4"}}]}}
+{"type": "user", "isSidechain": false, "uuid": "uuid-0021", "parentUuid": "uuid-0019", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_0020", "content": "result 5", "is_error": false}]}}
+{"type": "attachment", "isSidechain": false, "uuid": "uuid-0022", "parentUuid": "uuid-0021"}
+{"type": "last-prompt"}
+{"type": "mode"}
+{"type": "permission-mode"}
+{"type": "repl-mode"}
+{"type": "session-owner"}
+{"type": "atis-latch"}
+{"type": "queue-operation"}
+{"type": "queue-operation"}
+{"type": "attachment", "isSidechain": false, "uuid": "uuid-0023", "parentUuid": "uuid-0022"}
+{"type": "assistant", "isSidechain": false, "isApiErrorMessage": false, "uuid": "uuid-0024", "parentUuid": "uuid-0023", "message": {"role": "assistant", "id": "msg_0025", "content": [{"type": "tool_use", "id": "toolu_0026", "name": "Bash", "input": {"command": "value 6"}}]}}
+{"type": "user", "isSidechain": false, "uuid": "uuid-0027", "parentUuid": "uuid-0024", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_0026", "content": "result 7", "is_error": false}]}}
+{"type": "assistant", "isSidechain": false, "isApiErrorMessage": false, "uuid": "uuid-0028", "parentUuid": "uuid-0027", "message": {"role": "assistant", "id": "msg_0029", "content": [{"type": "tool_use", "id": "toolu_0030", "name": "Bash", "input": {"command": "value 8"}}]}}
+{"type": "user", "isSidechain": false, "uuid": "uuid-0031", "parentUuid": "uuid-0028", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_0030", "content": "result 9", "is_error": false}]}}
+{"type": "api-request-blob"}
+{"type": "api-request-blob"}
+{"type": "api-request"}
+{"type": "tools-used"}
+{"type": "queue-operation"}
+{"type": "queue-operation"}
+{"type": "assistant", "isSidechain": false, "uuid": "uuid-0032", "parentUuid": "uuid-0031", "message": {"role": "assistant", "id": "msg_0033", "content": [{"type": "tool_use", "id": "toolu_0034", "name": "REPL", "input": {"code": "value 10", "description": "value 11"}}]}}
+{"type": "user", "isSidechain": false, "uuid": "uuid-0035", "parentUuid": "uuid-0032", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_0034", "content": "result 12", "is_error": false}]}}
+{"type": "attachment", "isSidechain": false, "uuid": "uuid-0036", "parentUuid": "uuid-0035"}
+{"type": "attachment", "isSidechain": false, "uuid": "uuid-0037", "parentUuid": "uuid-0036"}
+{"type": "last-prompt"}
+{"type": "mode"}
+{"type": "permission-mode"}
+{"type": "repl-mode"}
+{"type": "session-owner"}
+{"type": "atis-latch"}
+{"type": "assistant", "isSidechain": false, "isApiErrorMessage": false, "uuid": "uuid-0038", "parentUuid": "uuid-0037", "message": {"role": "assistant", "id": "msg_0039", "content": [{"type": "tool_use", "id": "toolu_0040", "name": "Read", "input": {"file_path": "value 13"}}]}}
+{"type": "user", "isSidechain": false, "uuid": "uuid-0041", "parentUuid": "uuid-0038", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_0040", "content": "result 14", "is_error": false}]}}
+{"type": "assistant", "isSidechain": false, "isApiErrorMessage": false, "uuid": "uuid-0042", "parentUuid": "uuid-0041", "message": {"role": "assistant", "id": "msg_0043", "content": [{"type": "tool_use", "id": "toolu_0044", "name": "Read", "input": {"file_path": "value 15"}}]}}
+{"type": "user", "isSidechain": false, "uuid": "uuid-0045", "parentUuid": "uuid-0042", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_0044", "content": "result 16", "is_error": false}]}}
+{"type": "api-request-blob"}
+{"type": "api-request-blob"}
+{"type": "api-request"}
+{"type": "last-prompt"}
+{"type": "mode"}
+{"type": "permission-mode"}
+{"type": "repl-mode"}
+{"type": "session-owner"}
+{"type": "atis-latch"}
+{"type": "tools-used"}
+{"type": "queue-operation"}
+{"type": "queue-operation"}
+{"type": "assistant", "isSidechain": false, "uuid": "uuid-0046", "parentUuid": "uuid-0045", "message": {"role": "assistant", "id": "msg_0047", "content": [{"type": "thinking", "thinking": "thought 17", "signature": "sig"}]}}
+{"type": "assistant", "isSidechain": false, "uuid": "uuid-0048", "parentUuid": "uuid-0046", "message": {"role": "assistant", "id": "msg_0047", "content": [{"type": "tool_use", "id": "toolu_0049", "name": "REPL", "input": {"code": "value 18", "description": "value 19"}}]}}
+{"type": "user", "isSidechain": false, "uuid": "uuid-0050", "parentUuid": "uuid-0048", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_0049", "content": "result 20", "is_error": false}]}}
+{"type": "assistant", "isSidechain": false, "uuid": "uuid-0051", "parentUuid": "uuid-0050", "message": {"role": "assistant", "id": "msg_0047", "content": [{"type": "tool_use", "id": "toolu_0052", "name": "Poll", "input": {}}]}}
+{"type": "attachment", "isSidechain": false, "uuid": "uuid-0053", "parentUuid": "uuid-0051"}
+{"type": "user", "isSidechain": false, "uuid": "uuid-0054", "parentUuid": "uuid-0051", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_0052", "content": "result 21", "is_error": false}]}}
+{"type": "assistant", "isSidechain": false, "isApiErrorMessage": false, "uuid": "uuid-0055", "parentUuid": "uuid-0054", "message": {"role": "assistant", "id": "msg_0056", "content": [{"type": "tool_use", "id": "toolu_0057", "name": "Bash", "input": {"command": "value 22"}}]}}
+{"type": "user", "isSidechain": false, "uuid": "uuid-0058", "parentUuid": "uuid-0055", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_0057", "content": "result 23", "is_error": false}]}}
+{"type": "assistant", "isSidechain": false, "isApiErrorMessage": false, "uuid": "uuid-0059", "parentUuid": "uuid-0058", "message": {"role": "assistant", "id": "msg_0060", "content": [{"type": "tool_use", "id": "toolu_0061", "name": "Bash", "input": {"command": "value 24"}}]}}
+{"type": "user", "isSidechain": false, "uuid": "uuid-0062", "parentUuid": "uuid-0059", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_0061", "content": "result 25", "is_error": false}]}}
+{"type": "assistant", "isSidechain": false, "isApiErrorMessage": false, "uuid": "uuid-0063", "parentUuid": "uuid-0062", "message": {"role": "assistant", "id": "msg_0064", "content": [{"type": "tool_use", "id": "toolu_0065", "name": "Read", "input": {"file_path": "value 26"}}]}}
+{"type": "user", "isSidechain": false, "uuid": "uuid-0066", "parentUuid": "uuid-0063", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_0065", "content": "result 27", "is_error": false}]}}
+{"type": "assistant", "isSidechain": false, "isApiErrorMessage": false, "uuid": "uuid-0067", "parentUuid": "uuid-0066", "message": {"role": "assistant", "id": "msg_0068", "content": [{"type": "tool_use", "id": "toolu_0069", "name": "Bash", "input": {"command": "value 28"}}]}}
+{"type": "user", "isSidechain": false, "uuid": "uuid-0070", "parentUuid": "uuid-0067", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_0069", "content": "result 29", "is_error": false}]}}
+{"type": "last-prompt"}
+{"type": "mode"}
+{"type": "permission-mode"}
+{"type": "repl-mode"}
+{"type": "session-owner"}
+{"type": "atis-latch"}
+{"type": "attachment", "isSidechain": false, "uuid": "uuid-0071", "parentUuid": "uuid-0070"}
+{"type": "api-request-blob"}
+{"type": "api-request-blob"}
+{"type": "api-request"}
+{"type": "queue-operation"}
+{"type": "queue-operation"}
+{"type": "assistant", "isSidechain": false, "uuid": "uuid-0072", "parentUuid": "uuid-0071", "message": {"role": "assistant", "id": "msg_0073", "content": [{"type": "thinking", "thinking": "thought 30", "signature": "sig"}]}}
+{"type": "assistant", "isSidechain": false, "uuid": "uuid-0074", "parentUuid": "uuid-0072", "message": {"role": "assistant", "id": "msg_0073", "content": [{"type": "tool_use", "id": "toolu_0075", "name": "REPL", "input": {"code": "value 31", "description": "value 32"}}]}}
+{"type": "user", "isSidechain": false, "uuid": "uuid-0076", "parentUuid": "uuid-0074", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_0075", "content": "result 33", "is_error": false}]}}
+{"type": "assistant", "isSidechain": false, "uuid": "uuid-0077", "parentUuid": "uuid-0076", "message": {"role": "assistant", "id": "msg_0073", "content": [{"type": "tool_use", "id": "toolu_0078", "name": "Poll", "input": {}}]}}
+{"type": "attachment", "isSidechain": false, "uuid": "uuid-0079", "parentUuid": "uuid-0077"}
+{"type": "user", "isSidechain": false, "uuid": "uuid-0080", "parentUuid": "uuid-0077", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_0078", "content": "result 34", "is_error": false}]}}
+{"type": "assistant", "isSidechain": false, "isApiErrorMessage": false, "uuid": "uuid-0081", "parentUuid": "uuid-0080", "message": {"role": "assistant", "id": "msg_0082", "content": [{"type": "tool_use", "id": "toolu_0083", "name": "Bash", "input": {"command": "value 35"}}]}}
+{"type": "user", "isSidechain": false, "uuid": "uuid-0084", "parentUuid": "uuid-0081", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_0083", "content": "result 36", "is_error": false}]}}
+{"type": "assistant", "isSidechain": false, "isApiErrorMessage": false, "uuid": "uuid-0085", "parentUuid": "uuid-0084", "message": {"role": "assistant", "id": "msg_0086", "content": [{"type": "tool_use", "id": "toolu_0087", "name": "Bash", "input": {"command": "value 37"}}]}}
+{"type": "user", "isSidechain": false, "uuid": "uuid-0088", "parentUuid": "uuid-0085", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_0087", "content": "result 38", "is_error": false}]}}
+{"type": "assistant", "isSidechain": false, "isApiErrorMessage": false, "uuid": "uuid-0089", "parentUuid": "uuid-0088", "message": {"role": "assistant", "id": "msg_0090", "content": [{"type": "tool_use", "id": "toolu_0091", "name": "Bash", "input": {"command": "value 39"}}]}}
+{"type": "user", "isSidechain": false, "uuid": "uuid-0092", "parentUuid": "uuid-0089", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_0091", "content": "result 40", "is_error": false}]}}
+{"type": "last-prompt"}
+{"type": "mode"}
+{"type": "permission-mode"}
+{"type": "repl-mode"}
+{"type": "session-owner"}
+{"type": "atis-latch"}
+{"type": "api-request-blob"}
+{"type": "api-request-blob"}
+{"type": "api-request"}
+{"type": "queue-operation"}
+{"type": "queue-operation"}
+{"type": "assistant", "isSidechain": false, "uuid": "uuid-0093", "parentUuid": "uuid-0092", "message": {"role": "assistant", "id": "msg_0094", "content": [{"type": "thinking", "thinking": "thought 41", "signature": "sig"}]}}
+{"type": "assistant", "isSidechain": false, "uuid": "uuid-0095", "parentUuid": "uuid-0093", "message": {"role": "assistant", "id": "msg_0094", "content": [{"type": "tool_use", "id": "toolu_0096", "name": "REPL", "input": {"code": "value 42", "description": "value 43"}}]}}
+{"type": "user", "isSidechain": false, "uuid": "uuid-0097", "parentUuid": "uuid-0095", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_0096", "content": "result 44", "is_error": false}]}}
+{"type": "assistant", "isSidechain": false, "uuid": "uuid-0098", "parentUuid": "uuid-0097", "message": {"role": "assistant", "id": "msg_0094", "content": [{"type": "tool_use", "id": "toolu_0099", "name": "Poll", "input": {}}]}}
+{"type": "attachment", "isSidechain": false, "uuid": "uuid-0100", "parentUuid": "uuid-0098"}
+{"type": "user", "isSidechain": false, "uuid": "uuid-0101", "parentUuid": "uuid-0098", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_0099", "content": "result 45", "is_error": false}]}}
+{"type": "assistant", "isSidechain": false, "isApiErrorMessage": false, "uuid": "uuid-0102", "parentUuid": "uuid-0101", "message": {"role": "assistant", "id": "msg_0103", "content": [{"type": "tool_use", "id": "toolu_0104", "name": "Bash", "input": {"command": "value 46"}}]}}
+{"type": "user", "isSidechain": false, "uuid": "uuid-0105", "parentUuid": "uuid-0102", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_0104", "content": "result 47", "is_error": false}]}}
+{"type": "last-prompt"}
+{"type": "mode"}
+{"type": "permission-mode"}
+{"type": "repl-mode"}
+{"type": "session-owner"}
+{"type": "atis-latch"}
+{"type": "attachment", "isSidechain": false, "uuid": "uuid-0106", "parentUuid": "uuid-0105"}
+{"type": "api-request-blob"}
+{"type": "api-request-blob"}
+{"type": "api-request-blob"}
+{"type": "api-request"}
+{"type": "tools-used"}
+{"type": "file-history-delta"}
+{"type": "file-history-delta"}
+{"type": "queue-operation"}
+{"type": "queue-operation"}
+{"type": "assistant", "isSidechain": false, "uuid": "uuid-0107", "parentUuid": "uuid-0106", "message": {"role": "assistant", "id": "msg_0108", "content": [{"type": "thinking", "thinking": "thought 48", "signature": "sig"}]}}
+{"type": "assistant", "isSidechain": false, "uuid": "uuid-0109", "parentUuid": "uuid-0107", "message": {"role": "assistant", "id": "msg_0108", "content": [{"type": "thinking", "thinking": "thought 49", "signature": "sig"}]}}
+{"type": "assistant", "isSidechain": false, "uuid": "uuid-0110", "parentUuid": "uuid-0109", "message": {"role": "assistant", "id": "msg_0108", "content": [{"type": "tool_use", "id": "toolu_0111", "name": "REPL", "input": {"code": "value 50", "description": "value 51", "timeout": 400000}}]}}
+{"type": "user", "isSidechain": false, "uuid": "uuid-0112", "parentUuid": "uuid-0110", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_0111", "content": "result 52", "is_error": false}]}}
+{"type": "assistant", "isSidechain": false, "uuid": "uuid-0113", "parentUuid": "uuid-0112", "message": {"role": "assistant", "id": "msg_0108", "content": [{"type": "tool_use", "id": "toolu_0114", "name": "Poll", "input": {}}]}}
+{"type": "attachment", "isSidechain": false, "uuid": "uuid-0115", "parentUuid": "uuid-0113"}
+{"type": "user", "isSidechain": false, "uuid": "uuid-0116", "parentUuid": "uuid-0113", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_0114", "content": "result 53", "is_error": false}]}}
+{"type": "assistant", "isSidechain": false, "isApiErrorMessage": false, "uuid": "uuid-0117", "parentUuid": "uuid-0116", "message": {"role": "assistant", "id": "msg_0118", "content": [{"type": "tool_use", "id": "toolu_0119", "name": "Read", "input": {"file_path": "value 54"}}]}}
+{"type": "user", "isSidechain": false, "uuid": "uuid-0120", "parentUuid": "uuid-0117", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_0119", "content": "result 55", "is_error": false}]}}
+{"type": "assistant", "isSidechain": false, "isApiErrorMessage": false, "uuid": "uuid-0121", "parentUuid": "uuid-0120", "message": {"role": "assistant", "id": "msg_0122", "content": [{"type": "tool_use", "id": "toolu_0123", "name": "Edit", "input": {"file_path": "value 56", "old_string": "value 57", "new_string": "value 58", "replace_all": false}}]}}
+{"type": "user", "isSidechain": false, "uuid": "uuid-0124", "parentUuid": "uuid-0121", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_0123", "content": "result 59", "is_error": false}]}}
+{"type": "last-prompt"}
+{"type": "mode"}
+{"type": "permission-mode"}
+{"type": "repl-mode"}
+{"type": "session-owner"}
+{"type": "atis-latch"}
+{"type": "assistant", "isSidechain": false, "isApiErrorMessage": false, "uuid": "uuid-0125", "parentUuid": "uuid-0124", "message": {"role": "assistant", "id": "msg_0126", "content": [{"type": "tool_use", "id": "toolu_0127", "name": "Edit", "input": {"file_path": "value 60", "old_string": "value 61", "new_string": "value 62", "replace_all": false}}]}}
+{"type": "user", "isSidechain": false, "uuid": "uuid-0128", "parentUuid": "uuid-0125", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_0127", "content": "result 63", "is_error": false}]}}
+{"type": "assistant", "isSidechain": false, "isApiErrorMessage": false, "uuid": "uuid-0129", "parentUuid": "uuid-0128", "message": {"role": "assistant", "id": "msg_0130", "content": [{"type": "tool_use", "id": "toolu_0131", "name": "Edit", "input": {"file_path": "value 64", "old_string": "value 65", "new_string": "value 66", "replace_all": false}}]}}
+{"type": "user", "isSidechain": false, "uuid": "uuid-0132", "parentUuid": "uuid-0129", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_0131", "content": "result 67", "is_error": false}]}}
+{"type": "assistant", "isSidechain": false, "isApiErrorMessage": false, "uuid": "uuid-0133", "parentUuid": "uuid-0132", "message": {"role": "assistant", "id": "msg_0134", "content": [{"type": "tool_use", "id": "toolu_0135", "name": "Bash", "input": {"command": "value 68"}}]}}
+{"type": "user", "isSidechain": false, "uuid": "uuid-0136", "parentUuid": "uuid-0133", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_0135", "content": "result 69", "is_error": false}]}}
+{"type": "assistant", "isSidechain": false, "isApiErrorMessage": false, "uuid": "uuid-0137", "parentUuid": "uuid-0136", "message": {"role": "assistant", "id": "msg_0138", "content": [{"type": "tool_use", "id": "toolu_0139", "name": "Bash", "input": {"command": "value 70"}}]}}
+{"type": "user", "isSidechain": false, "uuid": "uuid-0140", "parentUuid": "uuid-0137", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_0139", "content": "result 71", "is_error": false}]}}
+{"type": "assistant", "isSidechain": false, "isApiErrorMessage": false, "uuid": "uuid-0141", "parentUuid": "uuid-0140", "message": {"role": "assistant", "id": "msg_0142", "content": [{"type": "tool_use", "id": "toolu_0143", "name": "Bash", "input": {"command": "value 72"}}]}}
+{"type": "user", "isSidechain": false, "uuid": "uuid-0144", "parentUuid": "uuid-0141", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_0143", "content": "result 73", "is_error": false}]}}
+{"type": "assistant", "isSidechain": false, "isApiErrorMessage": false, "uuid": "uuid-0145", "parentUuid": "uuid-0144", "message": {"role": "assistant", "id": "msg_0146", "content": [{"type": "tool_use", "id": "toolu_0147", "name": "Bash", "input": {"command": "value 74"}}]}}
+{"type": "user", "isSidechain": false, "uuid": "uuid-0148", "parentUuid": "uuid-0145", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_0147", "content": "result 75", "is_error": false}]}}
+{"type": "api-request-blob"}
+{"type": "api-request-blob"}
+{"type": "api-request"}
+{"type": "queue-operation"}
+{"type": "queue-operation"}
+{"type": "assistant", "isSidechain": false, "uuid": "uuid-0149", "parentUuid": "uuid-0148", "message": {"role": "assistant", "id": "msg_0150", "content": [{"type": "thinking", "thinking": "thought 76", "signature": "sig"}]}}
+{"type": "assistant", "isSidechain": false, "uuid": "uuid-0151", "parentUuid": "uuid-0149", "message": {"role": "assistant", "id": "msg_0150", "content": [{"type": "text", "text": "reply 77"}]}}
+{"type": "assistant", "isSidechain": false, "uuid": "uuid-0152", "parentUuid": "uuid-0151", "message": {"role": "assistant", "id": "msg_0150", "content": [{"type": "tool_use", "id": "toolu_0153", "name": "REPL", "input": {"code": "value 78", "description": "value 79", "timeout": 600000}}]}}
+{"type": "user", "isSidechain": false, "uuid": "uuid-0154", "parentUuid": "uuid-0152", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_0153", "content": "result 80", "is_error": false}]}}
+{"type": "assistant", "isSidechain": false, "uuid": "uuid-0155", "parentUuid": "uuid-0154", "message": {"role": "assistant", "id": "msg_0150", "content": [{"type": "tool_use", "id": "toolu_0156", "name": "Poll", "input": {}}]}}
+{"type": "attachment", "isSidechain": false, "uuid": "uuid-0157", "parentUuid": "uuid-0155"}
+{"type": "user", "isSidechain": false, "uuid": "uuid-0158", "parentUuid": "uuid-0155", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_0156", "content": "result 81", "is_error": false}]}}
+{"type": "assistant", "isSidechain": false, "isApiErrorMessage": false, "uuid": "uuid-0159", "parentUuid": "uuid-0158", "message": {"role": "assistant", "id": "msg_0160", "content": [{"type": "tool_use", "id": "toolu_0161", "name": "Edit", "input": {"file_path": "value 82", "old_string": "value 83", "new_string": "value 84", "replace_all": false}}]}}
+{"type": "user", "isSidechain": false, "uuid": "uuid-0162", "parentUuid": "uuid-0159", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_0161", "content": "result 85", "is_error": false}]}}
+{"type": "assistant", "isSidechain": false, "isApiErrorMessage": false, "uuid": "uuid-0163", "parentUuid": "uuid-0162", "message": {"role": "assistant", "id": "msg_0164", "content": [{"type": "tool_use", "id": "toolu_0165", "name": "Bash", "input": {"command": "value 86"}}]}}
+{"type": "user", "isSidechain": false, "uuid": "uuid-0166", "parentUuid": "uuid-0163", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_0165", "content": "result 87", "is_error": false}]}}
+{"type": "assistant", "isSidechain": false, "isApiErrorMessage": false, "uuid": "uuid-0167", "parentUuid": "uuid-0166", "message": {"role": "assistant", "id": "msg_0168", "content": [{"type": "tool_use", "id": "toolu_0169", "name": "Edit", "input": {"file_path": "value 88", "old_string": "value 89", "new_string": "value 90", "replace_all": false}}]}}
+{"type": "user", "isSidechain": false, "uuid": "uuid-0170", "parentUuid": "uuid-0167", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_0169", "content": "result 91", "is_error": false}]}}
+{"type": "last-prompt"}
+{"type": "mode"}
+{"type": "permission-mode"}
+{"type": "repl-mode"}
+{"type": "session-owner"}
+{"type": "atis-latch"}
+{"type": "assistant", "isSidechain": false, "isApiErrorMessage": false, "uuid": "uuid-0171", "parentUuid": "uuid-0170", "message": {"role": "assistant", "id": "msg_0172", "content": [{"type": "tool_use", "id": "toolu_0173", "name": "Bash", "input": {"command": "value 92"}}]}}
+{"type": "user", "isSidechain": false, "uuid": "uuid-0174", "parentUuid": "uuid-0171", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_0173", "content": "result 93", "is_error": false}]}}
+{"type": "assistant", "isSidechain": false, "isApiErrorMessage": false, "uuid": "uuid-0175", "parentUuid": "uuid-0174", "message": {"role": "assistant", "id": "msg_0176", "content": [{"type": "tool_use", "id": "toolu_0177", "name": "Bash", "input": {"command": "value 94"}}]}}
+{"type": "user", "isSidechain": false, "uuid": "uuid-0178", "parentUuid": "uuid-0175", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_0177", "content": "result 95", "is_error": false}]}}
+{"type": "assistant", "isSidechain": false, "isApiErrorMessage": false, "uuid": "uuid-0179", "parentUuid": "uuid-0178", "message": {"role": "assistant", "id": "msg_0180", "content": [{"type": "tool_use", "id": "toolu_0181", "name": "Bash", "input": {"command": "value 96"}}]}}
+{"type": "user", "isSidechain": false, "uuid": "uuid-0182", "parentUuid": "uuid-0179", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_0181", "content": "result 97", "is_error": false}]}}
+{"type": "assistant", "isSidechain": false, "isApiErrorMessage": false, "uuid": "uuid-0183", "parentUuid": "uuid-0182", "message": {"role": "assistant", "id": "msg_0184", "content": [{"type": "tool_use", "id": "toolu_0185", "name": "Bash", "input": {"command": "value 98"}}]}}
+{"type": "user", "isSidechain": false, "uuid": "uuid-0186", "parentUuid": "uuid-0183", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_0185", "content": "result 99", "is_error": false}]}}
+{"type": "api-request-blob"}
+{"type": "api-request-blob"}
+{"type": "api-request"}
+{"type": "assistant", "isSidechain": false, "uuid": "uuid-0187", "parentUuid": "uuid-0186", "message": {"role": "assistant", "id": "msg_0188", "content": [{"type": "thinking", "thinking": "thought 100", "signature": "sig"}]}}
+{"type": "assistant", "isSidechain": false, "uuid": "uuid-0189", "parentUuid": "uuid-0187", "message": {"role": "assistant", "id": "msg_0188", "content": [{"type": "text", "text": "reply 101"}]}}
+{"type": "attachment", "isSidechain": false, "uuid": "uuid-0190", "parentUuid": "uuid-0189"}
+{"type": "system", "isSidechain": false, "subtype": "stop_hook_summary", "uuid": "uuid-0191", "parentUuid": "uuid-0190"}
+{"type": "system", "isSidechain": false, "isMeta": false, "subtype": "turn_duration", "uuid": "uuid-0192", "parentUuid": "uuid-0191"}
+{"type": "system", "isSidechain": false, "isMeta": false, "subtype": "informational", "uuid": "uuid-0193", "parentUuid": "uuid-0192"}
+{"type": "user", "isSidechain": false, "uuid": "uuid-0194", "parentUuid": "uuid-0193", "message": {"role": "user", "content": "prompt 102"}}
+{"type": "file-history-snapshot"}
+{"type": "api-request"}
+{"type": "queue-operation"}
+{"type": "queue-operation"}
+{"type": "assistant", "isSidechain": false, "uuid": "uuid-0195", "parentUuid": "uuid-0194", "message": {"role": "assistant", "id": "msg_0196", "content": [{"type": "thinking", "thinking": "thought 103", "signature": "sig"}]}}
+{"type": "assistant", "isSidechain": false, "uuid": "uuid-0197", "parentUuid": "uuid-0195", "message": {"role": "assistant", "id": "msg_0196", "content": [{"type": "tool_use", "id": "toolu_0198", "name": "REPL", "input": {"code": "value 104", "description": "value 105"}}]}}
+{"type": "user", "isSidechain": false, "uuid": "uuid-0199", "parentUuid": "uuid-0197", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_0198", "content": "result 106", "is_error": false}]}}
+{"type": "assistant", "isSidechain": false, "uuid": "uuid-0200", "parentUuid": "uuid-0199", "message": {"role": "assistant", "id": "msg_0196", "content": [{"type": "tool_use", "id": "toolu_0201", "name": "Poll", "input": {}}]}}
+{"type": "attachment", "isSidechain": false, "uuid": "uuid-0202", "parentUuid": "uuid-0200"}
+{"type": "user", "isSidechain": false, "uuid": "uuid-0203", "parentUuid": "uuid-0200", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_0201", "content": "result 107", "is_error": false}]}}
+{"type": "assistant", "isSidechain": false, "isApiErrorMessage": false, "uuid": "uuid-0204", "parentUuid": "uuid-0203", "message": {"role": "assistant", "id": "msg_0205", "content": [{"type": "tool_use", "id": "toolu_0206", "name": "Read", "input": {"file_path": "value 108"}}]}}
+{"type": "user", "isSidechain": false, "uuid": "uuid-0207", "parentUuid": "uuid-0204", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_0206", "content": "result 109", "is_error": false}]}}
+{"type": "assistant", "isSidechain": false, "isApiErrorMessage": false, "uuid": "uuid-0208", "parentUuid": "uuid-0207", "message": {"role": "assistant", "id": "msg_0209", "content": [{"type": "tool_use", "id": "toolu_0210", "name": "Bash", "input": {"command": "value 110"}}]}}
+{"type": "user", "isSidechain": false, "uuid": "uuid-0211", "parentUuid": "uuid-0208", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_0210", "content": "result 111", "is_error": false}]}}
+{"type": "assistant", "isSidechain": false, "isApiErrorMessage": false, "uuid": "uuid-0212", "parentUuid": "uuid-0211", "message": {"role": "assistant", "id": "msg_0213", "content": [{"type": "tool_use", "id": "toolu_0214", "name": "Bash", "input": {"command": "value 112"}}]}}
+{"type": "user", "isSidechain": false, "uuid": "uuid-0215", "parentUuid": "uuid-0212", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_0214", "content": "result 113", "is_error": false}]}}
+{"type": "assistant", "isSidechain": false, "isApiErrorMessage": false, "uuid": "uuid-0216", "parentUuid": "uuid-0215", "message": {"role": "assistant", "id": "msg_0217", "content": [{"type": "tool_use", "id": "toolu_0218", "name": "Bash", "input": {"command": "value 114"}}]}}
+{"type": "user", "isSidechain": false, "uuid": "uuid-0219", "parentUuid": "uuid-0216", "message": {"role": "user", "content": [{"type": "tool_result", "tool_use_id": "toolu_0218", "content": "result 115", "is_error": true}]}}
+{"type": "last-prompt"}
+{"type": "mode"}
+{"type": "permission-mode"}
+{"type": "repl-mode"}
+{"type": "session-owner"}
+{"type": "atis-latch"}
+{"type": "api-request-blob"}
+{"type": "api-request-blob"}

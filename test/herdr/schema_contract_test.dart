@@ -117,4 +117,39 @@ Future<void> main() async {
       );
     });
   });
+
+  group(
+    'the agent session matches herdr api schema',
+    skip: root == null ? 'herdr is not on PATH' : false,
+    () {
+      late JsonSchema sessionSchema;
+
+      setUpAll(() {
+        final success = jsonEncode(
+          (root!['schemas']! as Map)['success_response'],
+        ).replaceAll(r'#/schemas/success_response/$defs/', r'#/$defs/');
+        final defs = (jsonDecode(success) as Map<String, Object?>)[r'$defs'];
+        sessionSchema = JsonSchema.create({
+          r'$ref': r'#/$defs/AgentSessionInfo',
+          r'$defs': defs,
+        }, schemaVersion: SchemaVersion.draft2020_12);
+      });
+
+      test('the shape Pane reads is one herdr sends', () {
+        const session = {
+          'source': 'herdr:claude',
+          'agent': 'claude',
+          'kind': 'id',
+          'value': '0d6c1f3e-1b2a-4c5d-8e9f-0a1b2c3d4e5f',
+        };
+        expect(sessionSchema.validate(session).isValid, isTrue);
+        expect(AgentSession.fromJson(session).claudeSession, session['value']);
+        // The gate rejects what herdr would not send.
+        expect(
+          sessionSchema.validate({...session, 'kind': 'file'}).isValid,
+          isFalse,
+        );
+      });
+    },
+  );
 }

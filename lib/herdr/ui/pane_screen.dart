@@ -12,7 +12,9 @@ import '../pane_poller.dart';
 import '../pane_stream.dart';
 import '../seen_marker.dart';
 import '../server_api.dart';
+import '../transcript/transcript_stream.dart';
 import 'ansi_text.dart';
+import 'chat_view.dart';
 import 'herdr_lists.dart';
 import 'link_chip.dart';
 
@@ -70,8 +72,9 @@ class PaneScreen extends StatefulWidget {
   /// The server's name in messages: herdr, or the Herdr app.
   final String server;
 
-  /// Opens on the exact screen instead of the text view: where the server
-  /// streams it, that view is live.
+  /// Opens a pane without a Claude Code session on the exact screen
+  /// instead of the text view: where the server streams it, that view is
+  /// live. The pane of a session opens on its chat.
   final bool exactFirst;
 
   @override
@@ -81,6 +84,7 @@ class PaneScreen extends StatefulWidget {
 class _PaneScreenState extends State<PaneScreen> {
   late final PanePoller _poller;
   late final PaneStream _stream;
+  late final TranscriptStream _transcript;
   late final PaneSender _sender;
   late final AppLifecycleListener _lifecycle;
   late final Listenable _changes;
@@ -105,7 +109,6 @@ class _PaneScreenState extends State<PaneScreen> {
     super.initState();
     PaneApi? api() => widget.connection.api;
     _poller = PanePoller(api, widget.paneId);
-    _poller.source = _readSource;
     _sender = PaneSender(api, widget.paneId, onSent: _poller.kick);
     _lifecycle = AppLifecycleListener(
       onHide: () => _setAppShown(false),
@@ -123,11 +126,18 @@ class _PaneScreenState extends State<PaneScreen> {
       _paneSize,
       changes: link,
     );
+    _transcript = TranscriptStream(
+      () => widget.connection.transcripts,
+      () => _claudeSession,
+      changes: link,
+    );
     _changes = Listenable.merge([
       link,
       _poller.view,
       _stream.view,
       _stream.unavailable,
+      _transcript.view,
+      _transcript.unavailable,
     ])..addListener(_applySource);
     widget.connection.state.addListener(_clearNoLinkFailure);
     // Before the first read: with a stream, the poller does not read.
@@ -175,12 +185,46 @@ class _PaneScreenState extends State<PaneScreen> {
   PaneSize? _paneSize() =>
       widget.connection.snapshot.value?.paneSizes[widget.paneId];
 
-  /// Runs the stream or the poller, whichever shows the pane, and only
-  /// while it is shown.
+  Pane? get _pane => widget.connection.snapshot.value?.pane(widget.paneId);
+
+  /// The Claude Code session of the pane, whose transcript the chat shows.
+  String? get _claudeSession => _pane?.agentSession?.claudeSession;
+
+  /// The pane has a transcript the chat can show: one of a Claude Code
+  /// session that herdr knows of, whose read did not fail.
+  bool get _chatAvailable =>
+      _claudeSession != null && !_transcript.unavailable.value;
+
+  /// The chat shows in place of the text view while a read can run. It
+  /// keeps its messages only while the link is down.
+  bool get _chatting =>
+      !_exact &&
+      _chatAvailable &&
+      (_transcript.canRead ||
+          (widget.connection.state.value is! LinkLive &&
+              _transcript.view.value.items != null));
+
+  /// The chat is on the screen: it runs and has a message, or loads. Until
+  /// the first message, for example before Claude Code wrote its
+  /// transcript, the pane shows its text; so it does while the agent is
+  /// blocked, as only the pane shows the question it asks.
+  bool get _chatShown {
+    if (!_chatting || _pane?.status == AgentStatus.blocked) return false;
+    final view = _transcript.view.value;
+    final items = view.items;
+    return items == null || items.isNotEmpty || view.startsCut;
+  }
+
+  /// Runs the stream, the transcript read or the poller, whichever shows
+  /// the pane, and only while it is shown. The poller rests while the chat
+  /// shows: only herdr has transcripts, and herdr marks nothing seen, so
+  /// [SeenMarker] needs no reads then.
   void _applySource() {
+    if (_poller.source != _readSource) _poller.source = _readSource;
     final streaming = _streaming;
     _stream.running = _shown && streaming;
-    final polling = _shown && !streaming;
+    _transcript.running = _shown && _chatting;
+    final polling = _shown && !streaming && !_chatShown;
     if (polling == _polling) return;
     _polling = polling;
     polling ? _poller.resume() : _poller.pause();
@@ -207,19 +251,27 @@ class _PaneScreenState extends State<PaneScreen> {
     _sender.cancel();
     _poller.dispose();
     _stream.dispose();
+    _transcript.dispose();
     if (widget.draft == null) _composer.dispose();
     super.dispose();
   }
 
-  /// The exact screen, else the text view.
-  late var _exact = widget.exactFirst;
+  /// The user's own choice of the exact screen or not; null until they
+  /// toggle.
+  bool? _exactChosen;
+
+  /// The exact screen, else the chat or the text view: the user's choice,
+  /// else the exact screen when [PaneScreen.exactFirst] and the pane has no
+  /// Claude Code session. The snapshot can name the session only after the
+  /// pane opened, for example from a notification.
+  bool get _exact =>
+      _exactChosen ?? (widget.exactFirst && _claudeSession == null);
 
   ReadSource get _readSource =>
       _exact ? ReadSource.visible : ReadSource.recentUnwrapped;
 
   void _toggleExact() => setState(() {
-    _exact = !_exact;
-    _poller.source = _readSource;
+    _exactChosen = !_exact;
     _applySource();
   });
 
@@ -282,6 +334,12 @@ class _PaneScreenState extends State<PaneScreen> {
       final state = widget.connection.state.value;
       final view = _streaming ? _stream.view.value : _poller.view.value;
       final pane = snapshot?.pane(widget.paneId);
+      // Where the toggle goes.
+      final toggle = !_exact
+          ? ('Exact screen', Icons.fit_screen_outlined)
+          : _chatAvailable
+          ? ('Chat', Icons.chat_bubble_outline)
+          : ('Text view', Icons.notes);
       return Scaffold(
         appBar: AppBar(
           automaticallyImplyLeading: false,
@@ -293,8 +351,8 @@ class _PaneScreenState extends State<PaneScreen> {
           actions: [
             if (_exact) _feedIcon(state),
             IconButton(
-              tooltip: _exact ? 'Text view' : 'Exact screen',
-              icon: Icon(_exact ? Icons.notes : Icons.fit_screen_outlined),
+              tooltip: toggle.$1,
+              icon: Icon(toggle.$2),
               onPressed: _toggleExact,
             ),
             if (widget.showLink) ...linkActions(context, herdrLinkChip(state)),
@@ -363,45 +421,73 @@ class _PaneScreenState extends State<PaneScreen> {
     if (lost) {
       return StatusBanner('No link to ${widget.server}. This text may be old.');
     }
-    if (view.error case final error?) {
+    // The poller rests under the chat: its last error is old.
+    if (view.error case final error? when !_chatShown) {
       return StatusBanner('Cannot read this pane.', detail: '$error');
+    }
+    if (!_exact && _claudeSession != null && _transcript.unavailable.value) {
+      return StatusBanner(
+        'Cannot read the conversation. This is the pane\'s text.',
+        detail: _transcript.whyUnavailable,
+      );
     }
     return null;
   }
 
+  Widget _chat(LinkState state) {
+    final transcript = _transcript.view.value;
+    final items = transcript.items;
+    if (items == null) return _loading(state, 'Loading the conversation…');
+    return Opacity(
+      opacity: state is LinkLive ? 1 : 0.5,
+      child: ChatView(
+        items: items,
+        startsCut: transcript.startsCut,
+        status: _pane?.status,
+      ),
+    );
+  }
+
   Widget _content(LinkState state, PaneView view) {
+    if (_chatShown) return _chat(state);
     final text = view.text;
     if (text == null) {
       if (view.gone || view.error != null) return const SizedBox.shrink();
-      final String? label;
-      switch (state) {
-        // Nothing retries: the banner says what is wrong.
-        case LinkNoServer() || LinkFailed():
-          return const SizedBox.shrink();
-        // The banner says the link is lost.
-        case LinkReconnecting():
-          label = null;
-        case LinkOffline() || LinkConnecting():
-          label = 'Connecting to ${widget.server}…';
-        case LinkSyncing() || LinkLive():
-          label = 'Loading the pane…';
-      }
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const CircularProgressIndicator(),
-            if (label != null) ...[
-              const SizedBox(height: 12),
-              Text(label, style: const TextStyle(color: Graphite.dim)),
-            ],
-          ],
-        ),
-      );
+      return _loading(state, 'Loading the pane…');
     }
     return Opacity(
       opacity: state is LinkLive && !view.gone ? 1 : 0.5,
       child: _exact ? _ExactScreen(text) : _ReflowedText(text),
+    );
+  }
+
+  /// A spinner while the content first loads, with [loading] once the
+  /// link is up.
+  Widget _loading(LinkState state, String loading) {
+    final String? label;
+    switch (state) {
+      // Nothing retries: the banner says what is wrong.
+      case LinkNoServer() || LinkFailed():
+        return const SizedBox.shrink();
+      // The banner says the link is lost.
+      case LinkReconnecting():
+        label = null;
+      case LinkOffline() || LinkConnecting():
+        label = 'Connecting to ${widget.server}…';
+      case LinkSyncing() || LinkLive():
+        label = loading;
+    }
+    return Center(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const CircularProgressIndicator(),
+          if (label != null) ...[
+            const SizedBox(height: 12),
+            Text(label, style: const TextStyle(color: Graphite.dim)),
+          ],
+        ],
+      ),
     );
   }
 
@@ -418,7 +504,16 @@ class _PaneScreenState extends State<PaneScreen> {
             style: const TextStyle(fontFamily: monoFont, fontSize: 14),
             decoration: InputDecoration(
               isDense: true,
-              border: const OutlineInputBorder(),
+              filled: true,
+              fillColor: Graphite.raised,
+              contentPadding: const EdgeInsets.symmetric(
+                horizontal: 14,
+                vertical: 10,
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(20),
+                borderSide: BorderSide.none,
+              ),
               hintText: pane?.agent == null
                   ? 'type to the shell…'
                   : 'prompt ${pane!.displayAgent ?? pane.agent}…',
@@ -428,11 +523,12 @@ class _PaneScreenState extends State<PaneScreen> {
         const SizedBox(width: 6),
         ListenableBuilder(
           listenable: _composer,
-          builder: (context, _) => FilledButton(
+          builder: (context, _) => IconButton.filled(
+            tooltip: 'Send',
             onPressed: _sending || _composer.text.trim().isEmpty
                 ? null
                 : () => unawaited(_submit(pane)),
-            child: const Text('send'),
+            icon: const Icon(Icons.arrow_upward),
           ),
         ),
       ],

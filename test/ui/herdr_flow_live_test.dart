@@ -114,7 +114,7 @@ Future<void> main() async {
       await untilFound(tester, find.byType(TextField));
       await tester.enterText(find.byType(TextField), input);
       await tester.pump();
-      await tester.tap(find.text('send'));
+      await tester.tap(find.byTooltip('Send'));
     }
 
     await submit(r'echo mark-$((40+2))');
@@ -181,7 +181,7 @@ Future<void> main() async {
       Future<void> submit(String input) async {
         await tester.enterText(find.byType(TextField), input);
         await tester.pump();
-        await tester.tap(find.text('send'));
+        await tester.tap(find.byTooltip('Send'));
       }
 
       await submit(r'echo wide-$((40+2))');

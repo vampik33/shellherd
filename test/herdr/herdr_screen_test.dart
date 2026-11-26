@@ -20,6 +20,7 @@ import 'package:shellherd/ui/palette.dart';
 
 import '../support/fake_herdr.dart';
 import '../support/fake_snapshots.dart';
+import '../support/fake_transcripts.dart';
 import '../support/live_widgets.dart';
 
 Map<String, Object?> _busySession() => fakeSnapshot(
@@ -44,6 +45,26 @@ Map<String, Object?> _busySession() => fakeSnapshot(
       'agent': 'claude',
       'title': 'Allow edit?',
     }),
+  ],
+);
+
+/// A herdr whose one pane runs a Claude Code session.
+Map<String, Object?> _claudeSession() => fakeSnapshot(
+  workspaces: [fakeWorkspace('w1', 1, 'api', 'working')],
+  tabs: [fakeTab('w1', 'server', 'working')],
+  panes: [
+    fakePane('w1:p1', 'w1', 'working', {
+      'agent': 'claude',
+      'agent_session': {
+        'source': 'herdr:claude',
+        'agent': 'claude',
+        'kind': 'id',
+        'value': 's1',
+      },
+    }),
+  ],
+  agents: [
+    fakeAgent('w1:p1', 'w1', 'working', {'name': 'chatty'}),
   ],
 );
 
@@ -384,6 +405,42 @@ void main() {
     await close(tester);
   });
 
+  testWidgets('the pane of a Claude Code session opens on its chat', (
+    tester,
+  ) async {
+    final transcripts = FakeTranscripts();
+    script.add(() => FakeLink(_claudeSession(), null, transcripts.open));
+    await pumpScreen(tester);
+    await live(tester);
+    await tester.tap(find.text('chatty'));
+    await until(tester, () => transcripts.opened.isNotEmpty, 'a read');
+    transcripts.last.file([claudeUser('from the chat')]);
+    await untilFound(tester, find.textContaining('from the chat'));
+    expect(find.byTooltip('Exact screen'), findsOneWidget);
+    await close(tester);
+  });
+
+  testWidgets('a Claude Code pane opened before the first snapshot opens on '
+      'its chat once the snapshot names its session', (tester) async {
+    final transcripts = FakeTranscripts();
+    final snapshots = Completer<void>();
+    script.add(
+      () =>
+          FakeLink(_claudeSession(), null, transcripts.open)
+            ..herdr.holdSnapshots = snapshots,
+    );
+    await pumpScreen(tester, openPane: 'w1:p1');
+    await untilFound(tester, find.byType(PaneScreen));
+    // Without the snapshot, a herdr pane opens on its exact screen.
+    expect(find.byTooltip('Text view'), findsOneWidget);
+    snapshots.complete();
+    await until(tester, () => transcripts.opened.isNotEmpty, 'a read');
+    transcripts.last.file([claudeUser('from the chat')]);
+    await untilFound(tester, find.textContaining('from the chat'));
+    expect(find.byTooltip('Exact screen'), findsOneWidget);
+    await close(tester);
+  });
+
   testWidgets('a tap on a pane opens it, and back returns', (tester) async {
     await pumpScreen(tester);
     await live(tester);
@@ -614,14 +671,14 @@ void main() {
       await openInSidebar(tester, 'my pane');
       await tester.enterText(find.byType(TextField), 'sent one');
       await tester.pump();
-      await tester.tap(find.text('send'));
+      await tester.tap(find.byTooltip('Send'));
       await until(tester, () => typed(tester).isEmpty, 'the send');
       expect(herdr.count('agent.prompt'), 1);
 
       herdr.errors['agent.prompt'] = ['agent_blocked'];
       await tester.enterText(find.byType(TextField), 'refused one');
       await tester.pump();
-      await tester.tap(find.text('send'));
+      await tester.tap(find.byTooltip('Send'));
       await untilFound(tester, find.textContaining('was not sent'));
 
       await openInSidebar(tester, 'reviewer');

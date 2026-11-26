@@ -14,6 +14,7 @@ import 'herdr_cache.dart';
 import 'herdr_link.dart';
 import 'pane_stream.dart';
 import 'server_api.dart';
+import 'transcript/transcript_stream.dart';
 
 /// Where a [HerdrConnection] stands. The top bar of the herdr screens shows
 /// it.
@@ -80,6 +81,7 @@ class OpenLink {
     required this.done,
     required this.close,
     this.screens,
+    this.transcripts,
   });
 
   /// A link to herdr.
@@ -88,9 +90,11 @@ class OpenLink {
     required Future<void> done,
     required void Function() close,
     ScreenOpener? screens,
+    TranscriptOpener? transcripts,
   }) => OpenLink(
     api: HerdrPaneApi(client),
     screens: screens,
+    transcripts: transcripts,
     cache: (onSnapshot, {required debounce, required refreshEvery}) =>
         HerdrCache(
           client,
@@ -121,6 +125,10 @@ class OpenLink {
   /// Starts live screen streams of panes; null where the server has none.
   final ScreenOpener? screens;
 
+  /// Starts reads of agent transcripts; null where the server reports
+  /// none.
+  final TranscriptOpener? transcripts;
+
   final CacheFactory cache;
 
   /// Completes, with or without an error, when the link ends.
@@ -150,6 +158,7 @@ LinkOpener sshLinkOpener(
         return OpenLink.herdr(
           link.client,
           screens: sshScreenOpener(ssh, link.socketPath, timeout: timeout),
+          transcripts: sshTranscriptOpener(ssh, timeout: timeout),
           done: ssh.done,
           close: ssh.close,
         );
@@ -209,6 +218,10 @@ class HerdrConnection {
   /// The screen streams of the live link, for the open screen; null while
   /// there is none, or where the server has none.
   ScreenOpener? get screens => _live?.screens;
+
+  /// The transcript reads of the live link, for the open screen; null while
+  /// there is none, or where the server has none.
+  TranscriptOpener? get transcripts => _live?.transcripts;
 
   /// Identifies the current run of [_run]. An older run sees that it is
   /// over and stops without touching the state.
