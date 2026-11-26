@@ -14,6 +14,7 @@ import '../seen_marker.dart';
 import '../server_api.dart';
 import '../transcript/transcript_stream.dart';
 import 'ansi_text.dart';
+import 'chat_details.dart';
 import 'chat_view.dart';
 import 'herdr_lists.dart';
 import 'link_chip.dart';
@@ -48,6 +49,7 @@ class PaneScreen extends StatefulWidget {
     this.draft,
     this.server = 'herdr',
     this.exactFirst = false,
+    this.chatDetails,
   });
 
   /// Owned by the screen below this one.
@@ -81,6 +83,10 @@ class PaneScreen extends StatefulWidget {
   /// live. The pane of a session opens on its chat.
   final bool exactFirst;
 
+  /// Whether the chat shows thinking and tool calls; the app's saved
+  /// choice. Without it, the screen keeps its own, hidden at first.
+  final ChatDetails? chatDetails;
+
   @override
   State<PaneScreen> createState() => _PaneScreenState();
 }
@@ -110,6 +116,8 @@ class _PaneScreenState extends State<PaneScreen> {
 
   /// The chat is on the screen and current, for [_seen].
   final _chatCurrent = ValueNotifier(false);
+
+  late final _details = widget.chatDetails ?? ChatDetails();
 
   @override
   void initState() {
@@ -151,6 +159,7 @@ class _PaneScreenState extends State<PaneScreen> {
       _transcript.view,
       _transcript.unavailable,
       _transcript.live,
+      _details,
     ])..addListener(_applySource);
     widget.connection.state.addListener(_clearNoLinkFailure);
     // Before the first read: with a stream, the poller does not read.
@@ -269,6 +278,7 @@ class _PaneScreenState extends State<PaneScreen> {
     _lifecycle.dispose();
     _seen.dispose();
     _chatCurrent.dispose();
+    if (widget.chatDetails == null) _details.dispose();
     widget.onShown?.call(false);
     _sender.cancel();
     _poller.dispose();
@@ -380,6 +390,7 @@ class _PaneScreenState extends State<PaneScreen> {
           title: _Header(paneId: widget.paneId, pane: pane, snapshot: snapshot),
           actions: [
             if (_exact) _feedIcon(state),
+            if (feed == _Feed.chat) _detailsToggle(),
             IconButton(
               tooltip: toggle.$1,
               icon: Icon(toggle.$2),
@@ -410,6 +421,20 @@ class _PaneScreenState extends State<PaneScreen> {
       );
     },
   );
+
+  /// Shows or hides the agent's thinking and tool calls in the chat.
+  Widget _detailsToggle() {
+    final shown = _details.value;
+    return IconButton(
+      tooltip: shown
+          ? 'Hide thinking and tool calls'
+          : 'Show thinking and tool calls',
+      isSelected: shown,
+      icon: const Icon(Icons.psychology_outlined),
+      selectedIcon: const Icon(Icons.psychology, color: Graphite.accent),
+      onPressed: () => unawaited(_details.choose(!shown)),
+    );
+  }
 
   /// How the exact screen gets here: pushed live, or read again and again.
   /// A tap says why.
@@ -478,6 +503,7 @@ class _PaneScreenState extends State<PaneScreen> {
         items: items,
         startsCut: transcript.startsCut,
         status: _pane?.status,
+        showDetails: _details.value,
       ),
     );
   }

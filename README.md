@@ -16,7 +16,8 @@ shellherd is an independent project and is not affiliated with herdr.
   panes; a herdr pane's screen updates live as it changes.
 - A Claude Code agent in herdr or the Herdr app shows as a chat: its
   prompts, replies and tool calls, read from its transcript. Other panes
-  show their text.
+  show their text. Thinking and tool calls are hidden until you show them
+  with the switch in the chat's top bar; the app remembers your choice.
 - A background service that notifies you when an agent is blocked or done.
 
 ## Requirements

@@ -12,13 +12,15 @@ const _monoStyle = TextStyle(fontFamily: monoFont, fontSize: 12, height: 1.35);
 /// An agent's conversation as a chat: the user's prompts in bubbles on the
 /// right, the agent's replies in markdown on the left, its tool calls as
 /// rows that open on a tap. The newest is at the bottom. While the user
-/// reads further up, the chat stays still.
+/// reads further up, the chat stays still. Without [showDetails], thinking
+/// and tool calls are left out.
 class ChatView extends StatefulWidget {
   const ChatView({
     super.key,
     required this.items,
     this.startsCut = false,
     this.status,
+    this.showDetails = true,
   });
 
   final List<ChatItem> items;
@@ -28,6 +30,9 @@ class ChatView extends StatefulWidget {
 
   /// The agent's state, for the line under the last message.
   final AgentStatus? status;
+
+  /// Shows the agent's thinking and tool calls.
+  final bool showDetails;
 
   @override
   State<ChatView> createState() => _ChatViewState();
@@ -66,8 +71,17 @@ class _ChatViewState extends State<ChatView> {
   @override
   Widget build(BuildContext context) {
     final items = _shown;
+    // The places in [items] of the rows shown, oldest first; null for all.
+    final shown = widget.showDetails
+        ? null
+        : [
+            for (var at = 0; at < items.length; at++)
+              if (items[at] is! ChatThinking && items[at] is! ChatTool) at,
+          ];
+    final rows = shown?.length ?? items.length;
+    int place(int row) => shown?[row] ?? row;
     final working = widget.status == AgentStatus.working;
-    if (items.isEmpty && !widget.startsCut && !working) {
+    if (rows == 0 && !widget.startsCut && !working) {
       return const Center(
         child: Text('No messages yet.', style: TextStyle(color: Graphite.dim)),
       );
@@ -78,9 +92,11 @@ class _ChatViewState extends State<ChatView> {
     // calls the key of their id, so that one stays open when a new read
     // starts at another record.
     final lead = working ? 1 : 0;
-    final count = lead + items.length + (widget.startsCut ? 1 : 0);
+    final count = lead + rows + (widget.startsCut ? 1 : 0);
     // Built on the first lookup of a tool call's key only.
     Map<Key, int>? toolAt;
+    // The row of each place, built on the first lookup with rows left out.
+    Map<int, int>? rowOf;
     final markdown = _markdownStyle(Theme.of(context));
     return ListView.builder(
       controller: _scroll,
@@ -98,19 +114,24 @@ class _ChatViewState extends State<ChatView> {
               if (items[at] is ChatTool) _key(items, at): at,
           })[key],
         };
-        return at == null ? null : lead + items.length - 1 - at;
+        if (at == null) return null;
+        final row = shown == null
+            ? at
+            : (rowOf ??= {for (final (row, at) in shown.indexed) at: row})[at];
+        return row == null ? null : lead + rows - 1 - row;
       },
       itemBuilder: (context, i) {
         if (i < lead) return const _Working();
-        final at = items.length - 1 - (i - lead);
-        if (at < 0) {
+        final row = rows - 1 - (i - lead);
+        if (row < 0) {
           return const _Note('Earlier messages are not shown.');
         }
+        final at = place(row);
         return KeyedSubtree(
           key: _key(items, at),
           child: _row(
             items[at],
-            previous: at > 0 ? items[at - 1] : null,
+            previous: row > 0 ? items[place(row - 1)] : null,
             markdown: markdown,
           ),
         );

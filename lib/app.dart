@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import 'herdr/ui/chat_details.dart';
 import 'notify/notifier.dart';
 import 'notify/notify_control.dart';
 import 'ssh/json_file.dart';
@@ -24,11 +25,17 @@ class AppServices {
       keys = KeyStore(secrets),
       knownHosts = KnownHosts(
         JsonFile(File('${dataDir.path}/known_hosts.json')),
+      ),
+      chatDetails = ChatDetails(
+        JsonFile(File('${dataDir.path}/settings.json')),
       );
 
   final HostStore hosts;
   final KeyStore keys;
   final KnownHosts knownHosts;
+
+  /// Whether chats show thinking and tool calls; main loads it.
+  final ChatDetails chatDetails;
 
   /// main sets the one of the platform before the first screen.
   NotifyControl notify = const NoNotify();
