@@ -86,11 +86,11 @@ class _ChatViewState extends State<ChatView> {
       if (front > 0) {
         final rest = widget.items.skip(front).take(_shown.length).toList();
         // Earlier lines can drop a later copy of a record they hold; then
-        // what shows is the new items, as many as before.
+        // what shows is the new items, under numbers none had before.
         _shown = listEquals(rest, _shown)
             ? [...widget.items.take(front), ..._shown]
             : widget.items.take(front + _shown.length).toList();
-        _shownFirst -= front;
+        _shownFirst = widget.firstKey;
       }
       // A shorter list can end the scroll without telling the listener:
       // check again once it is laid out.

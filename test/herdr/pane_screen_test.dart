@@ -1060,6 +1060,60 @@ void main() {
       expect(depths(), [2000, 2000]);
       await close(tester);
     });
+
+    /// Scrolls up to row 2600, the top of the text, with the reads held,
+    /// then lets them go; returns where row 2600 stood while they were.
+    Future<double> loadAtTop(WidgetTester tester) async {
+      await scrollUpTo(tester, paneText('row 2680'));
+      herdr().holdReads = Completer();
+      await scrollUpTo(tester, paneText('row 2600'));
+      await untilFound(tester, find.text('Loading older lines…'));
+      await untilStill(tester, paneText('row 2600'));
+      final before = tester.getTopLeft(paneText('row 2600')).dy;
+      herdr().holdReads!.complete();
+      herdr().holdReads = null;
+      await untilGone(tester, find.text('Loading older lines…'));
+      await tester.pump();
+      return before;
+    }
+
+    testWidgets('a read without the top of the text goes on to the next '
+        'step, and the text stays still', (tester) async {
+      await openLong(tester);
+      // So much new output that the read of 2000 does not reach row 2600;
+      // the read of 5000 has all of it.
+      herdr().paneLines = [for (var i = 0; i < 4700; i++) 'row $i\r'];
+      final before = await loadAtTop(tester);
+      expect(tester.getTopLeft(paneText('row 2600')).dy, before);
+      expect(depths(), [2000, 5000]);
+      await scrollUpTo(tester, paneText('row 0'));
+      await close(tester);
+    });
+
+    testWidgets('where no step holds the top of the text, the text stays and '
+        'the top says so', (tester) async {
+      await openLong(tester);
+      herdr().paneLines = [for (var i = 0; i < 12000; i++) 'other $i\r'];
+      // The top row changes its height: where the rows stand may too.
+      await loadAtTop(tester);
+      expect(depths(), [2000, 5000, 10000]);
+      expect(find.text('Older lines are not loaded.'), findsOneWidget);
+      expect(paneText('row 2600'), findsOneWidget);
+      expect(paneText('other'), findsNothing);
+      await close(tester);
+    });
+
+    testWidgets('a full read that starts at the top of the text goes on to '
+        'the next step', (tester) async {
+      await openLong(tester);
+      // The read of 2000 starts at row 2600: nothing older in it.
+      herdr().paneLines = [for (var i = 0; i < 4600; i++) 'row $i\r'];
+      final before = await loadAtTop(tester);
+      expect(tester.getTopLeft(paneText('row 2600')).dy, before);
+      expect(depths(), [2000, 5000]);
+      await scrollUpTo(tester, paneText('row 0'));
+      await close(tester);
+    });
   });
 
   testWidgets('long names and long lines fit a phone', (tester) async {

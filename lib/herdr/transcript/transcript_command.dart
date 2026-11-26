@@ -139,7 +139,8 @@ const _maxNoise = 64 * 1024;
 /// [range], the start of [range] and that inode), then the bytes of [range]
 /// when the file reaches its end; [transcriptRangeBody] checks. The file is
 /// the one a [transcriptCommand] read, even where another of the session
-/// is newer now. Exits 65 without one, 66 without the projects directory.
+/// is newer now, and the bytes are those of the file checked, opened once.
+/// Exits 65 without one, 66 without the projects directory.
 ///
 /// Throws [ArgumentError] for an id or a range it does not take.
 String transcriptRangeCommand(String session, TranscriptRange range) {
@@ -160,10 +161,14 @@ String transcriptRangeCommand(String session, TranscriptRange range) {
     '  [ "\$i" = ${range.inode} ] && { f=\$g; break; }',
     'done',
     '[ -n "\$f" ] || { echo "no transcript of session $session with inode ${range.inode}" >&2; exit 65; }',
+    // Opened once: an inode that matches after the open is that of fd 3,
+    // whatever is renamed over the path then. `command` keeps a failed
+    // open from ending sh before the exit.
+    'command exec 3< "\$f" || exit 65',
     ..._sizeAndInode,
     'echo "$transcriptHeader\$size ${range.from} \${ino:--}"',
     '[ "\$ino" = ${range.inode} ] && [ "\$size" -ge ${range.to} ] || exit 0',
-    'tail -c +${range.from + 1} -- "\$f" | head -c ${range.to - range.from}',
+    'tail -c +${range.from + 1} <&3 | head -c ${range.to - range.from}',
   ].join('\n');
   return 'sh -c ${shQuote(inner)}';
 }

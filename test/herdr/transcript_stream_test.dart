@@ -832,6 +832,32 @@ void main() {
       expect(ranges.asked, hasLength(1));
     });
 
+    test('earlier lines that drop a later copy of a record give the items '
+        'numbers none had', () async {
+      final lines = [
+        prompt(0),
+        prompt(1),
+        prompt(2),
+        // A later copy of record u1, which the earlier lines hold.
+        claudeUser('m1', uuid: 'u1'),
+        prompt(3),
+        prompt(4),
+      ];
+      await readCut(lines, lineStart(lines, 2) + 3);
+      final was = items()!;
+      final wasFirst = stream.view.value.firstKey;
+      expect(was, prompts([1, 3, 4]));
+      await stream.loadEarlier();
+      expect(items(), prompts([0, 1, 2, 3, 4]));
+      final first = stream.view.value.firstKey;
+      for (var i = 0; i < items()!.length; i++) {
+        final old = first + i - wasFirst;
+        if (old >= 0 && old < was.length) {
+          expect(items()![i], was[old], reason: 'key ${first + i}');
+        }
+      }
+    });
+
     test('a cut that falls on a line start loads from it', () async {
       final lines = [for (var i = 0; i < 3; i++) prompt(i)];
       // One byte before line 1: the newline of line 0.

@@ -792,7 +792,8 @@ class _Answers extends StatelessWidget {
 /// Whole lines that wrap at the width of the phone, the newest at the
 /// bottom. While the user reads further up, the text stays still; at the
 /// top of a text of [PanePoller.historyLines] lines, older lines load
-/// above, the steps of [historySteps] at a time.
+/// above, the steps of [historySteps] at a time, deeper in one load where
+/// a step finds none.
 class _ReflowedText extends StatefulWidget {
   const _ReflowedText(this.text, {required this.readHistory});
 
@@ -836,42 +837,45 @@ class _ReflowedTextState extends State<_ReflowedText> {
   }
 
   /// Reads the next step of [historySteps] and puts the lines older than
-  /// [_shown] above it, which stays as it is; or the whole read, where it
-  /// does not hold the start of [_shown].
+  /// [_shown] above it, which stays as it is. A full read that does not
+  /// hold the start of [_shown], or nothing before it, goes on to the next
+  /// step; [_shown] never takes a read that does not hold its start. Where
+  /// no step is left, or a short read holds nothing more, the older lines
+  /// are not loaded.
   Future<void> _loadOlder() async {
     if (!_older || _earlier == EarlierLoad.loading) return;
-    final depth = historySteps.where((d) => d > _depth).firstOrNull;
-    if (depth == null) {
-      setState(() => _earlier = EarlierLoad.capped);
-      return;
-    }
     final version = _version;
-    final shown = _shown;
+    final shownLines = _shown.split('\n');
     setState(() => _earlier = EarlierLoad.loading);
-    try {
-      final read = await widget.readHistory(depth);
-      if (!mounted || version != _version) return;
-      final shownLines = shown.split('\n');
-      final readLines = read.split('\n');
-      final older = olderLines(shownLines, readLines);
-      final text = older == null
-          ? read
-          : [...readLines.take(older), ...shownLines].join('\n');
-      setState(() {
-        _show(
-          text,
-          depth: depth,
-          older: older != 0 && readLines.length >= depth,
-        );
-        if (_older && depth == historySteps.last) {
-          _earlier = EarlierLoad.capped;
+    for (final depth in historySteps.where((d) => d > _depth)) {
+      try {
+        final read = await widget.readHistory(depth);
+        if (!mounted || version != _version) return;
+        final readLines = read.split('\n');
+        final full = readLines.length >= depth;
+        final older = olderLines(shownLines, readLines);
+        if (older != null && (older > 0 || !full)) {
+          setState(() {
+            _show(
+              [...readLines.take(older), ...shownLines].join('\n'),
+              depth: depth,
+              older: full,
+            );
+            if (_older && depth == historySteps.last) {
+              _earlier = EarlierLoad.capped;
+            }
+          });
+          return;
         }
-      });
-    } catch (e) {
-      if (!mounted || version != _version) return;
-      debugPrint('shellherd: cannot load older lines of the pane: $e');
-      setState(() => _earlier = EarlierLoad.failed);
+        if (!full) break;
+      } catch (e) {
+        if (!mounted || version != _version) return;
+        debugPrint('shellherd: cannot load older lines of the pane: $e');
+        setState(() => _earlier = EarlierLoad.failed);
+        return;
+      }
     }
+    setState(() => _earlier = EarlierLoad.capped);
   }
 
   bool get _scrolledUp => _scroll.hasClients && _scroll.offset > 1;

@@ -9,6 +9,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shellherd/herdr/transcript/transcript_command.dart';
 import 'package:shellherd/herdr/transcript/transcript_stream.dart';
+import 'package:shellherd/ssh/ssh_exec.dart';
 
 import '../support/poll.dart';
 
@@ -348,15 +349,20 @@ void main() {
         return File('${dir.path}/$id.jsonl')..writeAsBytesSync(bytes);
       }
 
-      /// Runs the command as sshd would through [shell]; its output as bytes.
+      /// Runs the command as sshd would through [shell], with [path] first
+      /// on PATH; its output as bytes.
       Future<(List<int>, int, String)> run(
         TranscriptRange range, {
         String shell = '/bin/sh',
+        String? path,
       }) async {
         final r = await Process.run(
           shell,
           ['-c', transcriptRangeCommand(_id, range)],
-          environment: {'HOME': home.path, 'PATH': '/usr/bin:/bin'},
+          environment: {
+            'HOME': home.path,
+            'PATH': [?path, '/usr/bin:/bin'].join(':'),
+          },
           includeParentEnvironment: false,
           stdoutEncoding: null,
         );
@@ -426,6 +432,29 @@ void main() {
         final range = (inode: inode, from: 3, to: 17);
         final (out, code, _) = await run(range);
         expect(code, 0);
+        expect(transcriptRangeBody(out, range), content.sublist(3, 17));
+      });
+
+      test('reads the bytes of the file it checked, though another is '
+          'renamed over it before the read', () async {
+        final file = await transcript(content);
+        final inode = await inodeOf(file);
+        final other = File('${home.path}/other.jsonl')
+          ..writeAsStringSync('{"x":"replacement, as long as the file"}\n');
+        expect(other.lengthSync(), greaterThan(content.length));
+        // A tail that renames the other file over the transcript first.
+        final bin = await Directory('${home.path}/bin').create();
+        final tail = File('${bin.path}/tail')
+          ..writeAsStringSync(
+            '#!/bin/sh\n'
+            'mv -f -- ${shQuote(other.path)} ${shQuote(file.path)}\n'
+            'exec /usr/bin/tail "\$@"\n',
+          );
+        await Process.run('chmod', ['+x', tail.path]);
+        final range = (inode: inode, from: 3, to: 17);
+        final (out, code, _) = await run(range, path: bin.path);
+        expect(code, 0);
+        expect(await inodeOf(file), isNot(inode), reason: 'renamed over');
         expect(transcriptRangeBody(out, range), content.sublist(3, 17));
       });
 
