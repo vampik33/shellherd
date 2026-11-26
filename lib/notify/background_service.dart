@@ -25,6 +25,16 @@ const _title = 'shellherd watches agents';
 /// watching: before Android 13 any app can send the button's broadcast.
 const _stopButtonKey = 'stopButtonId';
 
+/// For logcat (tag `flutter`): how the service starts, stops and takes a
+/// press of Stop.
+void _log(String message) => debugPrint('shellherd service: $message');
+
+/// [result] of a start or stop of the service, for [_log].
+String _describe(ServiceRequestResult result) => switch (result) {
+  ServiceRequestSuccess() => 'ok',
+  ServiceRequestFailure(:final error) => 'failed: $error',
+};
+
 Future<String?> _savedStopButtonId() =>
     FlutterForegroundTask.getData<String>(key: _stopButtonKey);
 
@@ -71,7 +81,7 @@ class ServiceNotify implements NotifyControl {
     ).wait;
     final watch = hosts.any((h) => h.watched);
     if (!watch) {
-      if (running) _check(await FlutterForegroundTask.stopService());
+      if (running) _check('stop', await FlutterForegroundTask.stopService());
       return true;
     }
     var permission = await FlutterForegroundTask.checkNotificationPermission();
@@ -83,6 +93,7 @@ class ServiceNotify implements NotifyControl {
     } else {
       final stopButton = await _stopButtonId();
       _check(
+        'start',
         await FlutterForegroundTask.startService(
           serviceId: reservedNotificationId,
           serviceTypes: const [ForegroundServiceTypes.specialUse],
@@ -114,7 +125,8 @@ class ServiceNotify implements NotifyControl {
     return permission == NotificationPermission.granted;
   }
 
-  static void _check(ServiceRequestResult result) {
+  static void _check(String request, ServiceRequestResult result) {
+    _log('$request from the app: ${_describe(result)}');
     if (result case ServiceRequestFailure(:final error)) throw error;
   }
 
@@ -156,6 +168,7 @@ class _WatchTask extends TaskHandler {
 
   @override
   Future<void> onStart(DateTime timestamp, TaskStarter starter) async {
+    _log('onStart, started by ${starter.name}');
     final services = AppServices(
       dataDir: await getApplicationSupportDirectory(),
       secrets: SecureSecretStore(),
@@ -175,6 +188,7 @@ class _WatchTask extends TaskHandler {
     );
     await _reloadHosts();
     FlutterForegroundTask.sendDataToMain(_ready);
+    _log('started, watching ${hub.count} hosts');
   }
 
   Future<void> _reloadHosts() async {
@@ -186,7 +200,14 @@ class _WatchTask extends TaskHandler {
       debugPrint('shellherd watch: cannot read the hosts: $e');
     }
     // Started again by the system after the last host was turned off.
-    if (hub.count == 0) unawaited(FlutterForegroundTask.stopService());
+    if (hub.count == 0) {
+      _log('no host to watch: stopping');
+      unawaited(
+        FlutterForegroundTask.stopService().then(
+          (result) => _log('stop with no host: ${_describe(result)}'),
+        ),
+      );
+    }
   }
 
   @override
@@ -208,13 +229,22 @@ class _WatchTask extends TaskHandler {
 
   /// Only the saved Stop button id counts, see [_stopButtonKey].
   Future<void> _pressed(String id) async {
-    if (id == await _savedStopButtonId()) {
-      await FlutterForegroundTask.stopService();
+    final saved = await _savedStopButtonId();
+    // Not the ids themselves: any app could send a press with the saved one.
+    final which = saved == null
+        ? 'no saved Stop id'
+        : id == saved
+        ? 'the Stop button'
+        : 'another id';
+    _log('button pressed: $which');
+    if (id == saved) {
+      _log('Stop: ${_describe(await FlutterForegroundTask.stopService())}');
     }
   }
 
   @override
   Future<void> onDestroy(DateTime timestamp, bool isTimeout) async {
+    _log('onDestroy${isTimeout ? ', timed out' : ''}');
     _hub?.dispose();
     _hub = null;
   }
