@@ -77,9 +77,7 @@ class AppServices {
       ScaffoldMessenger.maybeOf(context)?.showSnackBar(
         SnackBar(
           content: Text(
-            value
-                ? 'Cannot save the disconnect: $e'
-                : 'Cannot save the reconnect: $e',
+            'Cannot save the ${value ? 'disconnect' : 'reconnect'}: $e',
           ),
         ),
       );

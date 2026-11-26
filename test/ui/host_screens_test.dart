@@ -1066,9 +1066,8 @@ void main() {
       await pumpApp(tester);
       await tester.tap(find.text(host.label));
       await untilFound(tester, find.byType(HerdrScreen));
-      // A directory where the file was: it can be neither read nor written.
-      await File('${dir.path}/hosts.json').delete();
-      await Directory('${dir.path}/hosts.json').create();
+      // The write of hosts.json goes through this path, which is now taken.
+      await Directory('${dir.path}/hosts.json.tmp').create();
       await tester.tap(disconnect());
       await untilGone(tester, find.byType(HerdrScreen));
       await untilFound(

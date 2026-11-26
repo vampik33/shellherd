@@ -45,6 +45,22 @@ void main() {
       expect(Directory('${dir.path}/sub').listSync(), hasLength(1));
     });
 
+    test('updateIf writes only when the change says so', () async {
+      final path = fileNamed('a.json');
+      final f = JsonFile(path);
+      expect(await f.updateIf((d) => false), isFalse);
+      expect(path.existsSync(), isFalse, reason: 'nothing written');
+      expect(await f.updateIf((d) => (d['k'] = 1) == 1), isTrue);
+      expect(await f.read(), {'k': 1});
+      final written = path.lastModifiedSync();
+      await f.updateIf((d) {
+        d['k'] = 2; // changed in memory, but not written
+        return false;
+      });
+      expect(await f.read(), {'k': 1});
+      expect(path.lastModifiedSync(), written);
+    });
+
     test('a failed update does not block the next one', () async {
       final f = JsonFile(fileNamed('a.json'));
       await expectLater(
@@ -173,6 +189,9 @@ void main() {
       expect(await store.setDisconnected('b', true), isTrue);
       expect(await store.setDisconnected('b', true), isFalse, reason: 'same');
       expect(await store.setDisconnected('gone', true), isFalse);
+      final unchanged = path.readAsStringSync();
+      expect(await store.setDisconnected('a', false), isFalse);
+      expect(path.readAsStringSync(), unchanged);
 
       final hosts = await HostStore(JsonFile(path)).list();
       expect(hosts.map((h) => h.id), ['a', 'b']);

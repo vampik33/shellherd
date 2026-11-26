@@ -32,13 +32,22 @@ class JsonFile {
   }
 
   /// Reads the object, lets [change] edit it in place, and writes it back.
-  Future<void> update(void Function(Map<String, Object?> data) change) {
+  Future<void> update(void Function(Map<String, Object?> data) change) =>
+      updateIf((data) {
+        change(data);
+        return true;
+      });
+
+  /// [update] that writes only if [change] returns true. Its result is what
+  /// [change] returned.
+  Future<bool> updateIf(bool Function(Map<String, Object?> data) change) {
     final done = _last.then((_) async {
       final data = await read();
-      change(data);
-      await _write(data);
+      final changed = change(data);
+      if (changed) await _write(data);
+      return changed;
     });
-    _last = done.catchError((_) {}); // A failed update must not block the next.
+    _last = done.catchError((_) => false); // A failed update must not block the next.
     return done;
   }
 

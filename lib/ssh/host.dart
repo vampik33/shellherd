@@ -161,21 +161,20 @@ class HostStore {
   });
 
   /// Sets [Host.disconnected] of the saved host [id] in place. True if it
-  /// changed; false if it was already so or there is no such host.
-  Future<bool> setDisconnected(String id, bool value) async {
-    var changed = false;
-    await _file.update((data) {
-      for (final h in data['hosts'] as List<Object?>? ?? const []) {
-        final host = h! as Map<String, Object?>;
-        if (host['id'] != id) continue;
-        if ((host['disconnected'] as bool? ?? false) != value) {
-          host['disconnected'] = value;
-          changed = true;
+  /// changed; false if it was already so or there is no such host, and then
+  /// the file is not written.
+  Future<bool> setDisconnected(String id, bool value) =>
+      _file.updateIf((data) {
+        final host = [
+          for (final h in data['hosts'] as List<Object?>? ?? const [])
+            h! as Map<String, Object?>,
+        ].where((h) => h['id'] == id).firstOrNull;
+        if (host == null || (host['disconnected'] as bool? ?? false) == value) {
+          return false;
         }
-      }
-    });
-    return changed;
-  }
+        host['disconnected'] = value;
+        return true;
+      });
 
   Future<void> remove(String id) => _file.update((data) {
     final hosts = data['hosts'] as List<Object?>?;
