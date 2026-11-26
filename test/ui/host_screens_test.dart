@@ -48,12 +48,22 @@ void main() {
   late AppServices services;
   late _FakeNotify notify;
 
+  /// The probe's answer by address; an address with none is offline.
+  late Map<String, Future<bool> Function()> probeAnswers;
+  late List<String> probed;
+
   setUp(() async {
     dir = await Directory.systemTemp.createTemp('shellherd-ui-');
     secrets = _ControlledSecrets();
     services = AppServices(dataDir: dir, secrets: secrets);
     notify = _FakeNotify();
     services.notify = notify;
+    probeAnswers = {};
+    probed = [];
+    services.probeHost = (address, port) {
+      probed.add('$address:$port');
+      return probeAnswers[address]?.call() ?? Future.value(false);
+    };
   });
   tearDown(() => dir.delete(recursive: true));
 
@@ -1090,6 +1100,164 @@ void main() {
       await untilGone(tester, find.byType(TerminalScreen));
       await untilGone(tester, find.byType(HerdrScreen));
       expect(hostList(), findsOneWidget);
+    });
+  });
+
+  group('status dot', () {
+    Finder dot(Host host, String status) =>
+        find.byTooltip('${host.label}: $status');
+
+    testWidgets('green for a host that answers, red for one that does not', (
+      tester,
+    ) async {
+      final up = await savedHost(id: 'up', address: 'up.example');
+      final down = await savedHost(id: 'down', address: 'down.example');
+      probeAnswers['up.example'] = () async => true;
+      await pumpApp(tester);
+      await untilFound(tester, dot(up, 'online'));
+      await untilFound(tester, dot(down, 'offline'));
+      expect(probed, unorderedEquals(['up.example:22', 'down.example:22']));
+    });
+
+    testWidgets('grey and not checked while the answer is out', (
+      tester,
+    ) async {
+      final host = await savedHost();
+      final answer = Completer<bool>();
+      probeAnswers[host.address] = () => answer.future;
+      await pumpApp(tester);
+      await untilFound(tester, dot(host, 'not checked yet'));
+      answer.complete(true);
+      await untilFound(tester, dot(host, 'online'));
+    });
+
+    testWidgets('a disconnected host is grey and not checked', (tester) async {
+      final host = await savedHost();
+      final other = await savedHost(id: 'h2', address: 'other.example');
+      await services.hosts.setDisconnected(host.id, true);
+      probeAnswers[host.address] = () async => true;
+      await pumpApp(tester);
+      await untilFound(tester, dot(other, 'offline'));
+      expect(dot(host, 'disconnected'), findsOneWidget);
+      expect(probed, ['other.example:22']);
+    });
+
+    testWidgets('Disconnect turns the dot grey, and opening the host checks '
+        'it again', (tester) async {
+      // Port 1 refuses at once: the terminal shows no link.
+      final host = await savedHost(address: '127.0.0.1', port: 1);
+      probeAnswers[host.address] = () async => true;
+      await pumpApp(tester);
+      await untilFound(tester, dot(host, 'online'));
+      await tester.tap(find.byTooltip('Terminal on ${host.label}'));
+      await untilFound(tester, find.byType(TerminalScreen));
+      await tester.tap(find.byTooltip('Disconnect'));
+      await untilFound(tester, dot(host, 'disconnected'));
+      expect((await services.hosts.get(host.id))!.disconnected, isTrue);
+
+      probed.clear();
+      probeAnswers[host.address] = () async => false;
+      await tester.tap(find.byTooltip('Terminal on ${host.label}'));
+      await untilFound(tester, find.byType(TerminalScreen));
+      await tester.pageBack();
+      await untilFound(tester, dot(host, 'offline'));
+      expect(probed, isNotEmpty);
+    });
+
+    testWidgets('a late answer of an older check is dropped', (tester) async {
+      final host = await savedHost();
+      final first = Completer<bool>();
+      final second = Completer<bool>();
+      final answers = [first, second];
+      probeAnswers[host.address] = () => answers.removeAt(0).future;
+      await pumpApp(tester);
+      await until(tester, () => probed.length == 1, 'the first check');
+      // A change of the saved hosts reads the list and checks again.
+      services.hostsChanged.value++;
+      await until(tester, () => probed.length == 2, 'the second check');
+      second.complete(false);
+      await untilFound(tester, dot(host, 'offline'));
+      first.complete(true);
+      await tester.pump();
+      await tester.pump();
+      expect(dot(host, 'offline'), findsOneWidget);
+    });
+
+    testWidgets('an edited address does not keep the old answer', (
+      tester,
+    ) async {
+      final host = await savedHost(address: 'old.example');
+      probeAnswers['old.example'] = () async => true;
+      final answer = Completer<bool>();
+      probeAnswers['new.example'] = () => answer.future;
+      await pumpApp(tester);
+      await untilFound(tester, dot(host, 'online'));
+      await openEdit(tester, host);
+      await tester.enterText(hostField('Address'), 'new.example');
+      await tapText(tester, 'Save');
+      await untilGone(tester, hostField('Address'));
+      await untilFound(tester, dot(host, 'not checked yet'));
+      answer.complete(false);
+      await untilFound(tester, dot(host, 'offline'));
+    });
+
+    testWidgets('checks again on a timer, but not under another screen or '
+        'in the background', (tester) async {
+      services.probeEvery = const Duration(milliseconds: 20);
+      final host = await savedHost(address: '127.0.0.1', port: 1);
+      await pumpApp(tester);
+      await until(tester, () => probed.length >= 3, 'checks on the timer');
+
+      await tester.tap(find.byTooltip('Terminal on ${host.label}'));
+      await untilFound(tester, find.byType(TerminalScreen));
+      var seen = probed.length;
+      // Ten ticks of the timer; the absence of a check needs a wait.
+      await tester.runAsync(
+        () => Future<void>.delayed(services.probeEvery * 10),
+      );
+      expect(probed.length, seen, reason: 'the terminal is over the list');
+      await tester.pageBack();
+      await until(tester, () => probed.length > seen, 'a check on return');
+
+      final binding = tester.binding;
+      addTearDown(
+        () => binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed),
+      );
+      for (final state in [
+        AppLifecycleState.inactive,
+        AppLifecycleState.hidden,
+        AppLifecycleState.paused,
+      ]) {
+        binding.handleAppLifecycleStateChanged(state);
+      }
+      await tester.pump();
+      seen = probed.length;
+      await tester.runAsync(
+        () => Future<void>.delayed(services.probeEvery * 10),
+      );
+      expect(probed.length, seen, reason: 'the app is in the background');
+    });
+
+    testWidgets('checks when the app comes back to the front', (tester) async {
+      services.probeEvery = const Duration(hours: 1); // no check on the timer
+      await savedHost();
+      await pumpApp(tester);
+      await until(tester, () => probed.length == 1, 'the first check');
+      final binding = tester.binding;
+      addTearDown(
+        () => binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed),
+      );
+      for (final state in [
+        AppLifecycleState.inactive,
+        AppLifecycleState.hidden,
+        AppLifecycleState.paused,
+        AppLifecycleState.hidden,
+        AppLifecycleState.inactive,
+        AppLifecycleState.resumed,
+      ]) {
+        binding.handleAppLifecycleStateChanged(state);
+      }
+      await until(tester, () => probed.length == 2, 'a check on resume');
     });
   });
 

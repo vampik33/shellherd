@@ -13,6 +13,7 @@ import 'ssh/secret_store.dart';
 import 'ssh/ssh_connector.dart';
 import 'ui/host_key_dialog.dart';
 import 'ui/host_list_screen.dart';
+import 'ui/host_status.dart';
 import 'ui/palette.dart';
 import 'ui/tailscale_check_dialog.dart';
 
@@ -31,6 +32,15 @@ class AppServices {
 
   /// main sets the one of the platform before the first screen.
   NotifyControl notify = const NoNotify();
+
+  /// Goes up after a change to the saved hosts that no screen made.
+  final hostsChanged = ValueNotifier<int>(0);
+
+  /// How the host list checks that a host is online.
+  HostProbe probeHost = sshPortOpen;
+
+  /// How often the host list checks while it is in view.
+  Duration probeEvery = const Duration(seconds: 30);
 
   /// The first-use prompt comes from the connector, not from a screen.
   final navigatorKey = GlobalKey<NavigatorState>();
@@ -69,7 +79,10 @@ class AppServices {
   /// watchers if that changed. A failure shows on the screen open then.
   Future<void> setDisconnected(String hostId, bool value) async {
     try {
-      if (await hosts.setDisconnected(hostId, value)) await syncNotify();
+      if (await hosts.setDisconnected(hostId, value)) {
+        hostsChanged.value++;
+        await syncNotify();
+      }
     } catch (e) {
       debugPrint('shellherd: cannot save the disconnect: $e');
       final context = navigatorKey.currentContext;

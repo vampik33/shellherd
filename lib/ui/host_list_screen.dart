@@ -9,6 +9,7 @@ import '../notify/notifier.dart';
 import '../ssh/host.dart';
 import '../terminal/terminal_screen.dart';
 import 'host_form_screen.dart';
+import 'host_status.dart';
 import 'palette.dart';
 
 /// The home screen: the saved PCs. A tap opens the herdr session.
@@ -25,24 +26,89 @@ class _HostListScreenState extends State<HostListScreen> {
   List<Host>? _hosts;
   Object? _error;
 
+  /// The last answer of the probe, by `address:port`.
+  final _online = <String, bool>{};
+
+  /// Counts the reads of the hosts, so an older one that ends last is
+  /// dropped.
+  int _loads = 0;
+
+  /// Counts the probe rounds, so a late answer of an old one is dropped.
+  int _round = 0;
+
+  late final Timer _ticker;
+  late final AppLifecycleListener _lifecycle;
+
   @override
   void initState() {
     super.initState();
+    _ticker = Timer.periodic(widget.services.probeEvery, (_) => _probe());
+    _lifecycle = AppLifecycleListener(onResume: _probe);
+    widget.services.hostsChanged.addListener(_reload);
     _load();
   }
 
+  @override
+  void dispose() {
+    _round++;
+    widget.services.hostsChanged.removeListener(_reload);
+    _ticker.cancel();
+    _lifecycle.dispose();
+    super.dispose();
+  }
+
+  static String _endpoint(Host host) => '${host.address}:${host.port}';
+
+  /// Checks each connected host, while the list is on screen and the app
+  /// in front.
+  void _probe() {
+    final hosts = _hosts;
+    final lifecycle = WidgetsBinding.instance.lifecycleState;
+    if (!mounted ||
+        hosts == null ||
+        !(ModalRoute.of(context)?.isCurrent ?? true) ||
+        (lifecycle != null && lifecycle != AppLifecycleState.resumed)) {
+      return;
+    }
+    final round = ++_round;
+    for (final host in hosts) {
+      if (host.disconnected) continue;
+      final endpoint = _endpoint(host);
+      unawaited(
+        widget.services.probeHost(host.address, host.port).then((online) {
+          if (mounted && round == _round) {
+            setState(() => _online[endpoint] = online);
+          }
+        }),
+      );
+    }
+  }
+
+  HostStatus _status(Host host) {
+    if (host.disconnected) return HostStatus.disconnected;
+    return switch (_online[_endpoint(host)]) {
+      true => HostStatus.online,
+      false => HostStatus.offline,
+      null => HostStatus.unknown,
+    };
+  }
+
+  void _reload() => unawaited(_load());
+
   Future<void> _load() async {
+    final load = ++_loads;
     try {
       final hosts = await widget.services.hosts.list();
-      if (mounted) {
+      if (mounted && load == _loads) {
         setState(() {
           _hosts = hosts;
           _error = null;
         });
+        _probe();
       }
     } catch (e) {
       // A damaged file is not an empty list: saving now would replace it.
-      if (mounted) setState(() => _error = e);
+      if (mounted && load == _loads) setState(() => _error = e);
     }
   }
 
@@ -55,11 +121,15 @@ class _HostListScreenState extends State<HostListScreen> {
     await _load();
   }
 
-  void _openTerminal(Host host) =>
-      Navigator.of(context).push(terminalRoute(widget.services, host));
+  Future<void> _openTerminal(Host host) async {
+    await Navigator.of(context).push(terminalRoute(widget.services, host));
+    await _load();
+  }
 
-  void _openHerdr(Host host) =>
-      Navigator.of(context).push(herdrRoute(widget.services, host));
+  Future<void> _openHerdr(Host host) async {
+    await Navigator.of(context).push(herdrRoute(widget.services, host));
+    await _load();
+  }
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -85,6 +155,7 @@ class _HostListScreenState extends State<HostListScreen> {
       children: [
         for (final host in hosts)
           ListTile(
+            leading: HostStatusDot(host.label, _status(host)),
             title: Text(host.label),
             subtitle: Text(
               '${host.user}@${host.address}'
