@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:typed_data';
 
 import 'package:dartssh2/dartssh2.dart';
 
@@ -12,15 +13,33 @@ import '../bounded_open.dart';
 /// The open and the read each throw [TimeoutException] after [timeout]; a
 /// channel that opens late is destroyed. The exit code is null when it does
 /// not come within [timeout] after the output ends.
+///
+/// With [maxBytes], the read stops there, and the exit code is null. With
+/// [allowMalformed], bad UTF-8, such as a character cut by `head -c`,
+/// becomes U+FFFD instead of a [FormatException].
 Future<(String, int?)> sshExec(
   SSHClient ssh,
   String cmd,
-  Duration timeout,
-) async {
+  Duration timeout, {
+  int? maxBytes,
+  bool allowMalformed = false,
+}) async {
   final session = await openExec(ssh, cmd, timeout);
   try {
     await session.stdin.close();
-    final out = await utf8.decoder.bind(session.stdout).join().timeout(timeout);
+    final bytes = BytesBuilder(copy: false);
+    var cut = false;
+    await () async {
+      await for (final chunk in session.stdout) {
+        bytes.add(chunk);
+        if (maxBytes != null && bytes.length >= maxBytes) {
+          cut = true;
+          break;
+        }
+      }
+    }().timeout(timeout);
+    final out = utf8.decode(bytes.takeBytes(), allowMalformed: allowMalformed);
+    if (cut) return (out, null);
     await session.done.timeout(timeout, onTimeout: () {});
     return (out, session.exitCode);
   } finally {

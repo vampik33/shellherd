@@ -12,12 +12,15 @@ import '../pane_poller.dart';
 import '../pane_stream.dart';
 import '../seen_marker.dart';
 import '../server_api.dart';
+import '../transcript/claude_sessions.dart';
+import '../transcript/slash_commands.dart';
 import '../transcript/transcript_stream.dart';
 import 'ansi_text.dart';
 import 'chat_details.dart';
 import 'chat_view.dart';
 import 'herdr_lists.dart';
 import 'link_chip.dart';
+import 'slash_menu.dart';
 
 const _paneStyle = TextStyle(fontFamily: monoFont, fontSize: 13, height: 1.3);
 
@@ -99,7 +102,11 @@ class _PaneScreenState extends State<PaneScreen> {
   late final AppLifecycleListener _lifecycle;
   late final Listenable _changes;
   late final _composer = widget.draft ?? TextEditingController();
+  final _composerFocus = FocusNode();
   var _sending = false;
+
+  /// Claude Code's slash commands on the host, for the menu.
+  final _slash = SlashCommands();
 
   /// The app is in front, and no other screen covers the pane.
   var _appShown = true;
@@ -162,6 +169,12 @@ class _PaneScreenState extends State<PaneScreen> {
       _details,
     ])..addListener(_applySource);
     widget.connection.state.addListener(_clearNoLinkFailure);
+    _changes.addListener(_wantSlashCommands);
+    _composer.addListener(_wantSlashCommands);
+    // A read that ends can be for a directory the pane has left.
+    _slash.addListener(_wantSlashCommands);
+    // A draft can start with a slash.
+    _wantSlashCommands();
     // Before the first read: with a stream, the poller does not read.
     _applySource();
     _poller.start();
@@ -211,6 +224,38 @@ class _PaneScreenState extends State<PaneScreen> {
 
   /// The Claude Code session of the pane, whose transcript the chat shows.
   String? get _claudeSession => _pane?.agentSession?.claudeSession;
+
+  /// Claude Code runs in the pane: the composer offers its slash commands.
+  bool get _claudeCode {
+    final agent = _pane?.agent;
+    return _claudeSession != null ||
+        agent == 'claude' ||
+        agent == claudeCodeApp;
+  }
+
+  /// Reads the host's slash commands while the menu shows, when they are
+  /// not current. A terminal of another machine the Herdr app connects to
+  /// (`machine/t7`) has its commands there: it gets only the built-ins.
+  void _wantSlashCommands() {
+    if (!_claudeCode || slashQuery(_composer.text) == null) return;
+    if (widget.paneId.contains('/')) return;
+    _slash.want(widget.connection.slashCommands, _pane?.cwd);
+  }
+
+  /// Puts [command] in the composer, ready for its arguments.
+  void _pickSlashCommand(SlashCommand command) =>
+      _setComposer('/${command.name} ');
+
+  /// Puts [text] in the composer with the cursor after it. Not
+  /// `_composer.text`, which drops the cursor: a field that has focus
+  /// already would type before the text.
+  void _setComposer(String text) {
+    _composer.value = TextEditingValue(
+      text: text,
+      selection: TextSelection.collapsed(offset: text.length),
+    );
+    _composerFocus.requestFocus();
+  }
 
   /// The pane has a transcript the chat can show: one of a Claude Code
   /// session that the snapshot names, whose read did not fail.
@@ -273,6 +318,11 @@ class _PaneScreenState extends State<PaneScreen> {
   @override
   void dispose() {
     _changes.removeListener(_applySource);
+    _changes.removeListener(_wantSlashCommands);
+    _composer.removeListener(_wantSlashCommands);
+    _slash.removeListener(_wantSlashCommands);
+    _slash.dispose();
+    _composerFocus.dispose();
     widget.connection.state.removeListener(_clearNoLinkFailure);
     _uncovered?.removeListener(_followShown);
     _lifecycle.dispose();
@@ -413,6 +463,7 @@ class _PaneScreenState extends State<PaneScreen> {
                 if (pane?.status == AgentStatus.blocked)
                   _Answers(onKey: _sendKey),
                 HerdrKeys(_paneKeys, onKey: _sendKey),
+                if (_claudeCode) _slashMenu(),
                 _composerRow(pane),
               ],
             ],
@@ -551,14 +602,55 @@ class _PaneScreenState extends State<PaneScreen> {
     );
   }
 
+  /// The commands that match what is typed, while it is a slash command's
+  /// name.
+  Widget _slashMenu() => ListenableBuilder(
+    listenable: Listenable.merge([_composer, _slash]),
+    builder: (context, _) {
+      final query = slashQuery(_composer.text);
+      if (query == null) return const SizedBox.shrink();
+      final commands = slashMatches(
+        query,
+        _slash.found,
+        recent: recentSlashCommands(_transcript.view.value.items ?? const []),
+      );
+      final note = _slash.loading
+          ? 'Reading the commands on the host…'
+          : _slash.failed
+          ? 'Cannot read the commands on the host.'
+          : null;
+      if (commands.isEmpty && note == null) return const SizedBox.shrink();
+      return SlashMenu(
+        commands: commands,
+        onPick: _pickSlashCommand,
+        note: note,
+      );
+    },
+  );
+
   Widget _composerRow(Pane? pane) => Padding(
     padding: const EdgeInsets.fromLTRB(6, 2, 6, 6),
     child: Row(
       crossAxisAlignment: CrossAxisAlignment.end,
       children: [
+        if (_claudeCode)
+          ListenableBuilder(
+            listenable: _composer,
+            builder: (context, _) => IconButton(
+              tooltip: 'Commands',
+              onPressed: _composer.text.isEmpty
+                  ? () => _setComposer('/')
+                  : null,
+              icon: const Text(
+                '/',
+                style: TextStyle(fontFamily: monoFont, fontSize: 20),
+              ),
+            ),
+          ),
         Expanded(
           child: TextField(
             controller: _composer,
+            focusNode: _composerFocus,
             minLines: 1,
             maxLines: 4,
             style: const TextStyle(fontFamily: monoFont, fontSize: 14),

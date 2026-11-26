@@ -9,7 +9,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shellherd/herdr/api/herdr_client.dart';
 import 'package:shellherd/herdr/herdr_connection.dart';
+import 'package:shellherd/herdr/transcript/slash_commands.dart';
 import 'package:shellherd/herdr/ui/pane_screen.dart';
+import 'package:shellherd/herdr/ui/slash_menu.dart';
 
 import '../support/fake_hc.dart';
 import '../support/fake_herdr.dart';
@@ -45,8 +47,11 @@ void main() {
     String server = 'herdr',
     FakeScreens? screens,
     bool exactFirst = false,
+    SlashCommandLookup? slashCommands,
+    String paneId = 'w1:p1',
+    TextEditingController? draft,
   }) async {
-    link = FakeLink(session ?? _session(), screens?.open);
+    link = FakeLink(session ?? _session(), screens?.open, null, slashCommands);
     herdr().paneText = '\x1b[31mred line\x1b[0m\r\nlast line';
     connection = HerdrConnection(
       () async => link.open,
@@ -57,10 +62,11 @@ void main() {
       MaterialApp(
         home: PaneScreen(
           connection: connection,
-          paneId: 'w1:p1',
+          paneId: paneId,
           onShown: onShown,
           server: server,
           exactFirst: exactFirst,
+          draft: draft,
         ),
       ),
     );
@@ -188,6 +194,179 @@ void main() {
     expect(herdr().inputs.single.$1, 'pane.send_input');
     expect(herdr().inputs.single.$2['keys'], ['enter']);
     await close(tester);
+  });
+
+  group('slash commands', () {
+    Finder menu() => find.byType(SlashMenu);
+    Finder row(String command) => find.descendant(
+      of: menu(),
+      matching: find.textContaining(command, findRichText: true),
+    );
+    final claudeIn = _session(
+      names: const {'agent': 'claude', 'cwd': '/work/api'},
+    );
+
+    testWidgets('a slash offers the host\'s commands and the built-ins; '
+        'typing narrows them; a tap fills the field', (tester) async {
+      final asked = <String?>[];
+      await open(
+        tester,
+        session: claudeIn,
+        slashCommands: (cwd) async {
+          asked.add(cwd);
+          return const [
+            SlashCommand('mine', description: 'My own', argumentHint: '[x]'),
+          ];
+        },
+      );
+      expect(menu(), findsNothing);
+      await type(tester, '/');
+      await untilFound(tester, row('/mine'));
+      expect(asked, ['/work/api']);
+      expect(row('/compact'), findsOneWidget);
+      expect(row('[x]'), findsOneWidget);
+      expect(row('My own'), findsOneWidget);
+
+      await type(tester, '/mi');
+      expect(row('/mine'), findsOneWidget);
+      expect(row('/compact'), findsNothing);
+
+      await tester.tap(row('/mine'));
+      await tester.pump();
+      expect(typed(tester), '/mine ');
+      expect(menu(), findsNothing);
+      expect(asked, hasLength(1), reason: 'still current');
+      await close(tester);
+    });
+
+    testWidgets('a name with no match shows no menu; nor does text after the '
+        'name', (tester) async {
+      await open(tester, slashCommands: (_) async => const []);
+      await type(tester, '/zzz');
+      await tester.pump();
+      expect(menu(), findsNothing);
+      await type(tester, '/compact keep it short');
+      expect(menu(), findsNothing);
+      await close(tester);
+    });
+
+    testWidgets('while the host\'s commands load, and when they cannot, the '
+        'built-ins show with a note', (tester) async {
+      final answer = Completer<List<SlashCommand>>();
+      await open(tester, slashCommands: (_) => answer.future);
+      await type(tester, '/');
+      expect(find.text('Reading the commands on the host…'), findsOneWidget);
+      expect(row('/clear'), findsOneWidget);
+      answer.completeError(StateError('exec failed'));
+      await untilFound(
+        tester,
+        find.text('Cannot read the commands on the host.'),
+      );
+      expect(row('/clear'), findsOneWidget);
+      await close(tester);
+    });
+
+    testWidgets('the slash button starts a command in an empty field', (
+      tester,
+    ) async {
+      await open(tester, slashCommands: (_) async => const []);
+      IconButton button() =>
+          tester.widget<IconButton>(find.widgetWithText(IconButton, '/'));
+      final field = tester.widget<TextField>(find.byType(TextField));
+      // With the field focused already, the cursor must still be after the
+      // slash.
+      await tester.tap(find.byType(TextField));
+      await tester.pump();
+      await tester.tap(find.byTooltip('Commands'));
+      await tester.pump();
+      expect(typed(tester), '/');
+      expect(
+        field.controller!.selection,
+        const TextSelection.collapsed(offset: 1),
+      );
+      await untilFound(tester, row('/compact'));
+      await type(tester, 'hello');
+      expect(button().onPressed, isNull);
+      await close(tester);
+    });
+
+    testWidgets('a draft that starts with a slash reads the host\'s '
+        'commands', (tester) async {
+      final draft = TextEditingController(text: '/mi');
+      addTearDown(draft.dispose);
+      await open(
+        tester,
+        draft: draft,
+        slashCommands: (_) async => const [SlashCommand('mine')],
+      );
+      await untilFound(tester, row('/mine'));
+      await close(tester);
+    });
+
+    testWidgets('a terminal of another machine gets only the built-ins', (
+      tester,
+    ) async {
+      var asked = 0;
+      await open(
+        tester,
+        session: fakeSnapshot(
+          workspaces: [fakeWorkspace('w1', 1, 'api', 'working')],
+          tabs: [fakeTab('w1', 'server', 'working')],
+          panes: [
+            fakePane('m/p1', 'w1', 'working', const {'agent': 'claude'}),
+          ],
+        ),
+        paneId: 'm/p1',
+        slashCommands: (_) async {
+          asked++;
+          return const [SlashCommand('mine')];
+        },
+      );
+      await type(tester, '/');
+      await untilFound(tester, row('/compact'));
+      expect(row('/mine'), findsNothing);
+      expect(asked, 0);
+      await close(tester);
+    });
+
+    testWidgets('on a short screen with the keyboard up, the menu leaves room '
+        'for the composer', (tester) async {
+      await open(tester, slashCommands: (_) async => const []);
+      tester.view.physicalSize = const Size(900, 420);
+      tester.view.devicePixelRatio = 1;
+      tester.view.viewInsets = const FakeViewPadding(bottom: 160);
+      addTearDown(tester.view.reset);
+      await type(tester, '/');
+      await untilFound(tester, row('/compact'));
+      expect(tester.takeException(), isNull);
+      expect(
+        tester.getSize(menu()).height,
+        lessThanOrEqualTo(260 / 3 + 2),
+        reason: 'a third of 260, and the margin',
+      );
+      expect(find.byTooltip('Send').hitTestable(), findsOneWidget);
+      await close(tester);
+    });
+
+    testWidgets('a pane without Claude Code offers no commands', (
+      tester,
+    ) async {
+      var asked = 0;
+      await open(
+        tester,
+        session: _session(status: 'idle', names: const {}),
+        slashCommands: (_) async {
+          asked++;
+          return const [];
+        },
+      );
+      expect(find.byTooltip('Commands'), findsNothing);
+      await type(tester, '/');
+      await tester.pump();
+      expect(menu(), findsNothing);
+      expect(asked, 0);
+      await close(tester);
+    });
   });
 
   testWidgets('send needs text', (tester) async {
@@ -882,6 +1061,21 @@ void main() {
         'the next turn marked',
       );
       expect(hc.count('terminal.read'), reads, reason: 'the poller rests');
+      await closeHc(tester);
+    });
+
+    testWidgets('a Claude Code agent offers the built-in commands without a '
+        'lookup', (tester) async {
+      await openHc(tester);
+      await type(tester, '/');
+      await untilFound(
+        tester,
+        find.descendant(
+          of: find.byType(SlashMenu),
+          matching: find.textContaining('/compact', findRichText: true),
+        ),
+      );
+      expect(find.text('Reading the commands on the host…'), findsNothing);
       await closeHc(tester);
     });
 

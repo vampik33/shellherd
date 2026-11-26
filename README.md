@@ -18,6 +18,9 @@ shellherd is an independent project and is not affiliated with herdr.
   prompts, replies and tool calls, read from its transcript. Other panes
   show their text. Thinking and tool calls are hidden until you show them
   with the switch in the chat's top bar; the app remembers your choice.
+- Slash commands from the chat: type `/` (or tap the `/` button) to pick
+  one of Claude Code's own commands, your commands and skills, or those of
+  your enabled plugins, read from the computer.
 - A background service that notifies you when an agent is blocked or done.
 
 ## Requirements
