@@ -33,8 +33,8 @@ class AppServices {
   /// main sets the one of the platform before the first screen.
   NotifyControl notify = const NoNotify();
 
-  /// Goes up after a change to the saved hosts that no screen made.
-  final hostsChanged = ValueNotifier<int>(0);
+  /// Tells the host list when it is in view again.
+  final routes = RouteObserver<ModalRoute<void>>();
 
   /// How the host list checks that a host is online.
   HostProbe probeHost = sshPortOpen;
@@ -79,10 +79,7 @@ class AppServices {
   /// watchers if that changed. A failure shows on the screen open then.
   Future<void> setDisconnected(String hostId, bool value) async {
     try {
-      if (await hosts.setDisconnected(hostId, value)) {
-        hostsChanged.value++;
-        await syncNotify();
-      }
+      if (await hosts.setDisconnected(hostId, value)) await syncNotify();
     } catch (e) {
       debugPrint('shellherd: cannot save the disconnect: $e');
       final context = navigatorKey.currentContext;
@@ -136,6 +133,7 @@ class ShellherdApp extends StatelessWidget {
   Widget build(BuildContext context) => MaterialApp(
     title: 'shellherd',
     navigatorKey: services.navigatorKey,
+    navigatorObservers: [services.routes],
     theme: _theme,
     home: HostListScreen(services),
   );

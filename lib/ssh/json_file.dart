@@ -17,7 +17,14 @@ class JsonFile {
 
   Future<void> _last = Future.value();
 
+  /// The object as of the last [update] started before this call: a read
+  /// waits for the updates already queued.
   Future<Map<String, Object?>> read() async {
+    await _last;
+    return _read();
+  }
+
+  Future<Map<String, Object?>> _read() async {
     if (!await file.exists()) return {};
     final Object? data;
     try {
@@ -42,7 +49,7 @@ class JsonFile {
   /// [change] returned.
   Future<bool> updateIf(bool Function(Map<String, Object?> data) change) {
     final done = _last.then((_) async {
-      final data = await read();
+      final data = await _read();
       final changed = change(data);
       if (changed) await _write(data);
       return changed;

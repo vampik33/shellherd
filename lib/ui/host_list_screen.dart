@@ -22,7 +22,7 @@ class HostListScreen extends StatefulWidget {
   State<HostListScreen> createState() => _HostListScreenState();
 }
 
-class _HostListScreenState extends State<HostListScreen> {
+class _HostListScreenState extends State<HostListScreen> with RouteAware {
   List<Host>? _hosts;
   Object? _error;
 
@@ -33,8 +33,8 @@ class _HostListScreenState extends State<HostListScreen> {
   /// dropped.
   int _loads = 0;
 
-  /// Counts the probe rounds, so a late answer of an old one is dropped.
-  int _round = 0;
+  /// The `address:port` of the checks still out: one is not started again.
+  final _checking = <String>{};
 
   late final Timer _ticker;
   late final AppLifecycleListener _lifecycle;
@@ -44,14 +44,24 @@ class _HostListScreenState extends State<HostListScreen> {
     super.initState();
     _ticker = Timer.periodic(widget.services.probeEvery, (_) => _probe());
     _lifecycle = AppLifecycleListener(onResume: _probe);
-    widget.services.hostsChanged.addListener(_reload);
     _load();
   }
 
   @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (ModalRoute.of(context) case final route?) {
+      widget.services.routes.subscribe(this, route);
+    }
+  }
+
+  /// Back in view, whoever opened the screen that was over the list.
+  @override
+  void didPopNext() => unawaited(_load());
+
+  @override
   void dispose() {
-    _round++;
-    widget.services.hostsChanged.removeListener(_reload);
+    widget.services.routes.unsubscribe(this);
     _ticker.cancel();
     _lifecycle.dispose();
     super.dispose();
@@ -70,16 +80,17 @@ class _HostListScreenState extends State<HostListScreen> {
         (lifecycle != null && lifecycle != AppLifecycleState.resumed)) {
       return;
     }
-    final round = ++_round;
     for (final host in hosts) {
-      if (host.disconnected) continue;
       final endpoint = _endpoint(host);
+      // Hosts on one server share the check.
+      if (host.disconnected || !_checking.add(endpoint)) continue;
       unawaited(
-        widget.services.probeHost(host.address, host.port).then((online) {
-          if (mounted && round == _round) {
-            setState(() => _online[endpoint] = online);
-          }
-        }),
+        widget.services
+            .probeHost(host.address, host.port)
+            .then((online) {
+              if (mounted) setState(() => _online[endpoint] = online);
+            })
+            .whenComplete(() => _checking.remove(endpoint)),
       );
     }
   }
@@ -92,8 +103,6 @@ class _HostListScreenState extends State<HostListScreen> {
       null => HostStatus.unknown,
     };
   }
-
-  void _reload() => unawaited(_load());
 
   Future<void> _load() async {
     final load = ++_loads;
@@ -112,24 +121,17 @@ class _HostListScreenState extends State<HostListScreen> {
     }
   }
 
-  Future<void> _openForm([Host? host]) async {
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => HostFormScreen(widget.services, host: host),
-      ),
-    );
-    await _load();
-  }
+  void _openForm([Host? host]) => Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => HostFormScreen(widget.services, host: host),
+    ),
+  );
 
-  Future<void> _openTerminal(Host host) async {
-    await Navigator.of(context).push(terminalRoute(widget.services, host));
-    await _load();
-  }
+  void _openTerminal(Host host) =>
+      Navigator.of(context).push(terminalRoute(widget.services, host));
 
-  Future<void> _openHerdr(Host host) async {
-    await Navigator.of(context).push(herdrRoute(widget.services, host));
-    await _load();
-  }
+  void _openHerdr(Host host) =>
+      Navigator.of(context).push(herdrRoute(widget.services, host));
 
   @override
   Widget build(BuildContext context) => Scaffold(
