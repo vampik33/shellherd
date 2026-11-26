@@ -9,6 +9,7 @@ import '../notify/notifier.dart';
 import '../ssh/host.dart';
 import '../terminal/terminal_screen.dart';
 import 'host_form_screen.dart';
+import 'host_status.dart';
 import 'palette.dart';
 
 /// The home screen: the saved PCs. A tap opens the herdr session.
@@ -21,39 +22,111 @@ class HostListScreen extends StatefulWidget {
   State<HostListScreen> createState() => _HostListScreenState();
 }
 
-class _HostListScreenState extends State<HostListScreen> {
+class _HostListScreenState extends State<HostListScreen> with RouteAware {
   List<Host>? _hosts;
   Object? _error;
+
+  /// The last answer of the probe, by `address:port`.
+  final _status = <String, HostStatus>{};
+
+  /// Counts the reads of the hosts, so an older one that ends last is
+  /// dropped.
+  int _loads = 0;
+
+  /// The `address:port` of the checks still out: one is not started again.
+  final _checking = <String>{};
+
+  late final Timer _ticker;
+  late final AppLifecycleListener _lifecycle;
 
   @override
   void initState() {
     super.initState();
+    _ticker = Timer.periodic(widget.services.probeEvery, (_) => _probe());
+    _lifecycle = AppLifecycleListener(onResume: _probe);
     _load();
   }
 
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (ModalRoute.of(context) case final route?) {
+      widget.services.routes.subscribe(this, route);
+    }
+  }
+
+  /// Back in view, whoever opened the screen that was over the list.
+  @override
+  void didPopNext() => unawaited(_load());
+
+  @override
+  void dispose() {
+    widget.services.routes.unsubscribe(this);
+    _ticker.cancel();
+    _lifecycle.dispose();
+    super.dispose();
+  }
+
+  static String _endpoint(Host host) => '${host.address}:${host.port}';
+
+  /// Checks each connected host, while the list is on screen and the app
+  /// in front.
+  void _probe() {
+    final hosts = _hosts;
+    final lifecycle = WidgetsBinding.instance.lifecycleState;
+    if (!mounted ||
+        hosts == null ||
+        !(ModalRoute.of(context)?.isCurrent ?? true) ||
+        (lifecycle != null && lifecycle != AppLifecycleState.resumed)) {
+      return;
+    }
+    for (final host in hosts) {
+      final endpoint = _endpoint(host);
+      // Hosts on one server share the check.
+      if (!host.disconnected && _checking.add(endpoint)) {
+        unawaited(_check(host, endpoint));
+      }
+    }
+  }
+
+  Future<void> _check(Host host, String endpoint) async {
+    try {
+      final online = await widget.services.probeHost(host.address, host.port);
+      final status = online ? HostStatus.online : HostStatus.offline;
+      if (mounted && _status[endpoint] != status) {
+        setState(() => _status[endpoint] = status);
+      }
+    } finally {
+      _checking.remove(endpoint);
+    }
+  }
+
+  HostStatus _statusOf(Host host) => host.disconnected
+      ? HostStatus.disconnected
+      : _status[_endpoint(host)] ?? HostStatus.unknown;
+
   Future<void> _load() async {
+    final load = ++_loads;
     try {
       final hosts = await widget.services.hosts.list();
-      if (mounted) {
+      if (mounted && load == _loads) {
         setState(() {
           _hosts = hosts;
           _error = null;
         });
+        _probe();
       }
     } catch (e) {
       // A damaged file is not an empty list: saving now would replace it.
-      if (mounted) setState(() => _error = e);
+      if (mounted && load == _loads) setState(() => _error = e);
     }
   }
 
-  Future<void> _openForm([Host? host]) async {
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => HostFormScreen(widget.services, host: host),
-      ),
-    );
-    await _load();
-  }
+  void _openForm([Host? host]) => Navigator.of(context).push(
+    MaterialPageRoute<void>(
+      builder: (_) => HostFormScreen(widget.services, host: host),
+    ),
+  );
 
   void _openTerminal(Host host) =>
       Navigator.of(context).push(terminalRoute(widget.services, host));
@@ -85,6 +158,7 @@ class _HostListScreenState extends State<HostListScreen> {
       children: [
         for (final host in hosts)
           ListTile(
+            leading: HostStatusDot(host.label, _statusOf(host)),
             title: Text(host.label),
             subtitle: Text(
               '${host.user}@${host.address}'

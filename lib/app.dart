@@ -9,6 +9,7 @@ import 'ssh/json_file.dart';
 import 'ssh/host.dart';
 import 'ssh/key_store.dart';
 import 'ssh/known_hosts.dart';
+import 'ssh/port_probe.dart';
 import 'ssh/secret_store.dart';
 import 'ssh/ssh_connector.dart';
 import 'ui/host_key_dialog.dart';
@@ -31,6 +32,15 @@ class AppServices {
 
   /// main sets the one of the platform before the first screen.
   NotifyControl notify = const NoNotify();
+
+  /// Tells the host list when it is in view again.
+  final routes = RouteObserver<ModalRoute<void>>();
+
+  /// How the host list checks that a host is online.
+  HostProbe probeHost = sshPortOpen;
+
+  /// How often the host list checks while it is in view.
+  Duration probeEvery = const Duration(seconds: 30);
 
   /// The first-use prompt comes from the connector, not from a screen.
   final navigatorKey = GlobalKey<NavigatorState>();
@@ -123,6 +133,7 @@ class ShellherdApp extends StatelessWidget {
   Widget build(BuildContext context) => MaterialApp(
     title: 'shellherd',
     navigatorKey: services.navigatorKey,
+    navigatorObservers: [services.routes],
     theme: _theme,
     home: HostListScreen(services),
   );

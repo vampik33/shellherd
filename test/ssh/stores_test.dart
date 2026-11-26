@@ -61,6 +61,17 @@ void main() {
       expect(path.lastModifiedSync(), written);
     });
 
+    test('a read waits for the updates started before it', () async {
+      final f = JsonFile(fileNamed('a.json'));
+      final writes = [
+        for (var i = 0; i < 5; i++) f.update((d) => d['k$i'] = i),
+        f.update((_) => throw StateError('boom')),
+      ];
+      // Not awaited: the read alone must see all five.
+      expect(await f.read(), {for (var i = 0; i < 5; i++) 'k$i': i});
+      await expectLater(writes.last, throwsStateError);
+    });
+
     test('a failed update does not block the next one', () async {
       final f = JsonFile(fileNamed('a.json'));
       await expectLater(
