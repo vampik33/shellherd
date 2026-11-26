@@ -6,49 +6,35 @@ sealed class ChatItem {
   const ChatItem();
 }
 
-/// What the user typed: a prompt, a slash command or a `!` command.
-class ChatPrompt extends ChatItem {
-  const ChatPrompt(this.text);
+/// An item that is only its text.
+sealed class _TextItem extends ChatItem {
+  const _TextItem(this.text);
   final String text;
 
   @override
-  bool operator ==(Object other) => other is ChatPrompt && other.text == text;
+  bool operator ==(Object other) =>
+      other.runtimeType == runtimeType && (other as _TextItem).text == text;
 
   @override
-  int get hashCode => Object.hash(ChatPrompt, text);
+  int get hashCode => Object.hash(runtimeType, text);
 
   @override
-  String toString() => 'ChatPrompt($text)';
+  String toString() => '$runtimeType($text)';
+}
+
+/// What the user typed: a prompt, a slash command or a `!` command.
+class ChatPrompt extends _TextItem {
+  const ChatPrompt(super.text);
 }
 
 /// Text of the agent, in markdown.
-class ChatReply extends ChatItem {
-  const ChatReply(this.text);
-  final String text;
-
-  @override
-  bool operator ==(Object other) => other is ChatReply && other.text == text;
-
-  @override
-  int get hashCode => Object.hash(ChatReply, text);
-
-  @override
-  String toString() => 'ChatReply($text)';
+class ChatReply extends _TextItem {
+  const ChatReply(super.text);
 }
 
 /// The agent's thinking; empty where the transcript keeps none of it.
-class ChatThinking extends ChatItem {
-  const ChatThinking(this.text);
-  final String text;
-
-  @override
-  bool operator ==(Object other) => other is ChatThinking && other.text == text;
-
-  @override
-  int get hashCode => Object.hash(ChatThinking, text);
-
-  @override
-  String toString() => 'ChatThinking($text)';
+class ChatThinking extends _TextItem {
+  const ChatThinking(super.text);
 }
 
 /// A tool the agent called, and its result once there is one.
@@ -115,16 +101,6 @@ class ToolResult {
 
 /// Something that happened in the conversation, such as an interrupt or the
 /// output of a slash command.
-class ChatNote extends ChatItem {
-  const ChatNote(this.text);
-  final String text;
-
-  @override
-  bool operator ==(Object other) => other is ChatNote && other.text == text;
-
-  @override
-  int get hashCode => Object.hash(ChatNote, text);
-
-  @override
-  String toString() => 'ChatNote($text)';
+class ChatNote extends _TextItem {
+  const ChatNote(super.text);
 }

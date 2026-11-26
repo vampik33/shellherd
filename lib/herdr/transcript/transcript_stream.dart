@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 
@@ -66,7 +67,9 @@ class ByteLines {
   ByteLines({this.maxLine = maxTranscriptLine});
 
   final int maxLine;
-  final _partial = <int>[];
+
+  /// One byte per byte; a list of ints would take eight.
+  final _partial = BytesBuilder(copy: false);
 
   /// The bytes so far of a line being dropped; null while none is.
   int? _dropped;
@@ -83,7 +86,7 @@ class ByteLines {
       _take(chunk, from, i);
       lines.add(
         _dropped == null
-            ? (bytes: List.of(_partial), size: _partial.length + 1)
+            ? (size: _partial.length + 1, bytes: _partial.takeBytes())
             : (bytes: null, size: _dropped! + 1),
       );
       _partial.clear();
@@ -102,7 +105,7 @@ class ByteLines {
       _dropped = _partial.length + to - from;
       _partial.clear();
     } else {
-      _partial.addAll(chunk.getRange(from, to));
+      if (to > from) _partial.add(chunk.sublist(from, to));
     }
   }
 }
@@ -325,11 +328,10 @@ class TranscriptStream {
       if (run == _run) _release();
     }
     if (!current()) return;
-    if (_publish != null) {
-      _publish!.cancel();
-      publish();
-    } else if (header && received < initial && view.value.items == null) {
-      // The read ended early: show what came.
+    // What came and is not shown yet; or the read ended early: what came.
+    final unshown = _publish != null;
+    _publish?.cancel();
+    if (unshown || (header && received < initial && view.value.items == null)) {
       publish();
     }
     if (!header) {

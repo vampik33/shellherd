@@ -200,12 +200,8 @@ enum AgentSessionKind {
   unknown;
 
   /// Maps a wire value; a value this build does not know maps to [unknown].
-  static AgentSessionKind fromWire(String value) {
-    for (final k in values) {
-      if (k.name == value) return k;
-    }
-    return unknown;
-  }
+  static AgentSessionKind fromWire(String value) =>
+      values.asNameMap()[value] ?? unknown;
 }
 
 class Agent {

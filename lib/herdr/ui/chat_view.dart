@@ -79,16 +79,26 @@ class _ChatViewState extends State<ChatView> {
     // starts at another record.
     final lead = working ? 1 : 0;
     final count = lead + items.length + (widget.startsCut ? 1 : 0);
-    final keys = [for (var at = 0; at < items.length; at++) _key(items, at)];
-    final atKey = {for (var at = 0; at < keys.length; at++) keys[at]: at};
+    // Built on the first lookup of a tool call's key only.
+    Map<Key, int>? toolAt;
+    final markdown = _markdownStyle(Theme.of(context));
     return ListView.builder(
       controller: _scroll,
       reverse: true,
       padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
       itemCount: count,
-      findChildIndexCallback: (key) => switch (atKey[key]) {
-        final at? => lead + items.length - 1 - at,
-        null => null,
+      findChildIndexCallback: (key) {
+        final at = switch (key) {
+          ValueKey<int>(:final value)
+              when value < items.length && items[value] is! ChatTool =>
+            value,
+          ValueKey<int>() => null,
+          _ => (toolAt ??= {
+            for (var at = 0; at < items.length; at++)
+              if (items[at] is ChatTool) _key(items, at): at,
+          })[key],
+        };
+        return at == null ? null : lead + items.length - 1 - at;
       },
       itemBuilder: (context, i) {
         if (i < lead) return const _Working();
@@ -97,8 +107,12 @@ class _ChatViewState extends State<ChatView> {
           return const _Note('Earlier messages are not shown.');
         }
         return KeyedSubtree(
-          key: keys[at],
-          child: _row(items[at], previous: at > 0 ? items[at - 1] : null),
+          key: _key(items, at),
+          child: _row(
+            items[at],
+            previous: at > 0 ? items[at - 1] : null,
+            markdown: markdown,
+          ),
         );
       },
     );
@@ -109,14 +123,18 @@ class _ChatViewState extends State<ChatView> {
     _ => ValueKey(at),
   };
 
-  Widget _row(ChatItem item, {ChatItem? previous}) {
+  Widget _row(
+    ChatItem item, {
+    ChatItem? previous,
+    required MarkdownStyleSheet markdown,
+  }) {
     // More room above a new turn than between the parts of one.
     final turnStart = item is ChatPrompt || previous is ChatPrompt;
     return Padding(
       padding: EdgeInsets.only(top: turnStart ? 14 : 4),
       child: switch (item) {
         ChatPrompt(:final text) => _Prompt(text),
-        ChatReply(:final text) => _Reply(text),
+        ChatReply(:final text) => _Reply(text, markdown),
         ChatThinking(:final text) => _Thinking(text),
         final ChatTool tool => _ToolRow(tool),
         ChatNote(:final text) => _Note(text),
@@ -156,14 +174,15 @@ class _Prompt extends StatelessWidget {
 
 /// The agent's text, in markdown, across the width.
 class _Reply extends StatelessWidget {
-  const _Reply(this.text);
+  const _Reply(this.text, this.style);
   final String text;
+  final MarkdownStyleSheet style;
 
   @override
   Widget build(BuildContext context) => MarkdownBody(
     data: text,
     selectable: true,
-    styleSheet: _markdownStyle(Theme.of(context)),
+    styleSheet: style,
     onTapLink: (_, href, _) => _openLink(href),
     // Agent text must not make the phone fetch an image from anywhere.
     imageBuilder: (uri, _, alt) => Text(

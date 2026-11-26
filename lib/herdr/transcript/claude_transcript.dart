@@ -69,51 +69,48 @@ class ClaudeTranscript {
 
   void _userText(String text) {
     if (text.trim().isEmpty) return;
-    // Claude Code's own records start with its tags; a typed prompt that
-    // only mentions one is a prompt.
-    final lead = text.trimLeft();
-    bool starts(List<String> tags) => tags.any((t) => lead.startsWith('<$t>'));
     if (text.startsWith('[Request interrupted by user')) {
       _items.add(const ChatNote('Interrupted'));
       return;
     }
-    if (!starts(const [
-      'command-name',
-      'command-message',
-      'local-command-stdout',
-      'local-command-caveat',
-      'bash-input',
-      'bash-stdout',
-      'bash-stderr',
-    ])) {
-      _items.add(ChatPrompt(text.trim()));
-      return;
-    }
-    if (_tag(text, 'command-name') case final name?) {
-      final args = _tag(text, 'command-args') ?? '';
-      _items.add(ChatPrompt('$name $args'.trim()));
-      return;
-    }
-    if (_tag(text, 'local-command-stdout') case final out?) {
-      final shown = stripAnsi(out).trim();
-      if (shown.isNotEmpty) _items.add(ChatNote(shown));
-      return;
-    }
-    if (_tag(text, 'local-command-caveat') != null) return;
-    if (_tag(text, 'bash-input') case final command?) {
-      _items.add(ChatPrompt('! $command'));
-      return;
-    }
-    final stdout = _tag(text, 'bash-stdout');
-    final stderr = _tag(text, 'bash-stderr');
-    if (stdout != null || stderr != null) {
-      final shown = stripAnsi(
-        [?stdout, ?stderr].where((s) => s.trim().isNotEmpty).join('\n'),
-      ).trim();
-      if (shown.isNotEmpty) _items.add(ChatNote(shown));
-      return;
+    // Claude Code's own records start with its tags; a typed prompt that
+    // only mentions one is a prompt.
+    switch (_leadTag.firstMatch(text.trimLeft())?[1]) {
+      case 'command-name' || 'command-message':
+        if (_tag(text, 'command-name') case final name?) {
+          final args = _tag(text, 'command-args') ?? '';
+          _items.add(ChatPrompt('$name $args'.trim()));
+          return;
+        }
+      case 'local-command-stdout':
+        if (_tag(text, 'local-command-stdout') case final out?) {
+          _note(out);
+          return;
+        }
+      case 'local-command-caveat':
+        if (_tag(text, 'local-command-caveat') != null) return;
+      case 'bash-input':
+        if (_tag(text, 'bash-input') case final command?) {
+          _items.add(ChatPrompt('! $command'));
+          return;
+        }
+      case 'bash-stdout' || 'bash-stderr':
+        final stdout = _tag(text, 'bash-stdout');
+        final stderr = _tag(text, 'bash-stderr');
+        if (stdout != null || stderr != null) {
+          _note(
+            [?stdout, ?stderr].where((s) => s.trim().isNotEmpty).join('\n'),
+          );
+          return;
+        }
     }
     _items.add(ChatPrompt(text.trim()));
+  }
+
+  /// A note of command output, unless it is empty.
+  void _note(String output) {
+    final shown = stripAnsi(output).trim();
+    if (shown.isNotEmpty) _items.add(ChatNote(shown));
   }
 
   void _toolResult(Map<String, Object?> block) {
@@ -235,6 +232,9 @@ String? _tag(String text, String tag) {
   final close = text.indexOf('</$tag>', start);
   return close < 0 ? null : text.substring(start, close);
 }
+
+/// The tag a text starts with, such as `bash-input`.
+final _leadTag = RegExp(r'^<([a-z-]+)>');
 
 final _ansi = RegExp(r'\x1b\[[0-9;:<=>?]*[ -/]*[@-~]|\x1b');
 

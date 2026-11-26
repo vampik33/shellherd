@@ -128,7 +128,7 @@ class _PaneScreenState extends State<PaneScreen> {
     );
     _transcript = TranscriptStream(
       () => widget.connection.transcripts,
-      () => _pane?.agentSession?.claudeSession,
+      () => _claudeSession,
       changes: link,
     );
     _changes = Listenable.merge([
@@ -187,11 +187,13 @@ class _PaneScreenState extends State<PaneScreen> {
 
   Pane? get _pane => widget.connection.snapshot.value?.pane(widget.paneId);
 
+  /// The Claude Code session of the pane, whose transcript the chat shows.
+  String? get _claudeSession => _pane?.agentSession?.claudeSession;
+
   /// The pane has a transcript the chat can show: one of a Claude Code
   /// session that herdr knows of, whose read did not fail.
   bool get _chatAvailable =>
-      _pane?.agentSession?.claudeSession != null &&
-      !_transcript.unavailable.value;
+      _claudeSession != null && !_transcript.unavailable.value;
 
   /// The chat shows in place of the text view while a read can run. It
   /// keeps its messages only while the link is down.
@@ -263,8 +265,7 @@ class _PaneScreenState extends State<PaneScreen> {
   /// Claude Code session. The snapshot can name the session only after the
   /// pane opened, for example from a notification.
   bool get _exact =>
-      _exactChosen ??
-      (widget.exactFirst && _pane?.agentSession?.claudeSession == null);
+      _exactChosen ?? (widget.exactFirst && _claudeSession == null);
 
   ReadSource get _readSource =>
       _exact ? ReadSource.visible : ReadSource.recentUnwrapped;
@@ -333,6 +334,12 @@ class _PaneScreenState extends State<PaneScreen> {
       final state = widget.connection.state.value;
       final view = _streaming ? _stream.view.value : _poller.view.value;
       final pane = snapshot?.pane(widget.paneId);
+      // Where the toggle goes.
+      final toggle = !_exact
+          ? ('Exact screen', Icons.fit_screen_outlined)
+          : _chatAvailable
+          ? ('Chat', Icons.chat_bubble_outline)
+          : ('Text view', Icons.notes);
       return Scaffold(
         appBar: AppBar(
           automaticallyImplyLeading: false,
@@ -344,14 +351,8 @@ class _PaneScreenState extends State<PaneScreen> {
           actions: [
             if (_exact) _feedIcon(state),
             IconButton(
-              tooltip: _exact
-                  ? (_chatAvailable ? 'Chat' : 'Text view')
-                  : 'Exact screen',
-              icon: Icon(
-                _exact
-                    ? (_chatAvailable ? Icons.chat_bubble_outline : Icons.notes)
-                    : Icons.fit_screen_outlined,
-              ),
+              tooltip: toggle.$1,
+              icon: Icon(toggle.$2),
               onPressed: _toggleExact,
             ),
             if (widget.showLink) ...linkActions(context, herdrLinkChip(state)),
@@ -424,9 +425,7 @@ class _PaneScreenState extends State<PaneScreen> {
     if (view.error case final error? when !_chatShown) {
       return StatusBanner('Cannot read this pane.', detail: '$error');
     }
-    if (!_exact &&
-        _pane?.agentSession?.claudeSession != null &&
-        _transcript.unavailable.value) {
+    if (!_exact && _claudeSession != null && _transcript.unavailable.value) {
       return StatusBanner(
         'Cannot read the conversation. This is the pane\'s text.',
         detail: _transcript.whyUnavailable,
