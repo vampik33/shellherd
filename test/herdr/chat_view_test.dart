@@ -194,6 +194,82 @@ void main() {
     expect(top('Interrupted'), lessThan(top('second prompt')));
   });
 
+  testWidgets('hiding details at the bottom of a held chat shows what came', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(360, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final tools = [
+      for (var i = 0; i < 200; i++)
+        ChatTool(id: 't$i', name: 'Read', summary: 'f$i', input: '{}'),
+    ];
+    Future<void> show(List<ChatItem> items, {bool showDetails = true}) =>
+        tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: ChatView(items: items, showDetails: showDetails),
+            ),
+          ),
+        );
+    final before = [const ChatPrompt('the prompt'), ...tools];
+    await show(before);
+    await tester.fling(find.byType(ListView), const Offset(0, 3000), 3000);
+    await tester.pumpAndSettle();
+
+    final after = [...before, const ChatReply('the reply')];
+    await show(after);
+    await tester.pumpAndSettle();
+    expect(find.textContaining('the reply', findRichText: true), findsNothing);
+
+    await show(after, showDetails: false);
+    await tester.pumpAndSettle();
+    expect(
+      find.textContaining('the reply', findRichText: true),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('hiding details further up keeps the chat still', (tester) async {
+    tester.view.physicalSize = const Size(360, 640);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    Future<void> show(List<ChatItem> items, {bool showDetails = true}) =>
+        tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: ChatView(items: items, showDetails: showDetails),
+            ),
+          ),
+        );
+    final before = [
+      for (var i = 0; i < 60; i++) ChatPrompt('message $i'),
+      for (var i = 0; i < 20; i++)
+        ChatTool(id: 't$i', name: 'Read', summary: 'f$i', input: '{}'),
+    ];
+    await show(before);
+    await tester.drag(find.byType(ListView), const Offset(0, 150));
+    await tester.pumpAndSettle();
+
+    final after = [...before, const ChatReply('the reply')];
+    await show(after);
+    await show(after, showDetails: false);
+    await tester.pumpAndSettle();
+    final scroll = tester.state<ScrollableState>(find.byType(Scrollable).first);
+    expect(scroll.position.pixels, greaterThan(1));
+    expect(
+      find.textContaining('the reply', findRichText: true, skipOffstage: false),
+      findsNothing,
+    );
+
+    await tester.drag(find.byType(ListView), const Offset(0, -3000));
+    await tester.pumpAndSettle();
+    expect(
+      find.textContaining('the reply', findRichText: true),
+      findsOneWidget,
+    );
+  });
+
   testWidgets('only hidden rows is no conversation yet', (tester) async {
     await tester.pumpWidget(
       const MaterialApp(

@@ -54,7 +54,15 @@ class _ChatViewState extends State<ChatView> {
   @override
   void didUpdateWidget(ChatView old) {
     super.didUpdateWidget(old);
-    if (!_scrolledUp) _shown = widget.items;
+    if (!_scrolledUp) {
+      _shown = widget.items;
+    } else {
+      // A shorter list can end the scroll without telling the listener:
+      // check again once it is laid out.
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _release();
+      });
+    }
   }
 
   void _release() {
