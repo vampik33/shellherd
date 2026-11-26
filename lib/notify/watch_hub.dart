@@ -8,6 +8,7 @@ import '../ssh/host.dart';
 import '../ssh/ssh_connector.dart';
 import 'agent_watcher.dart';
 import 'notifier.dart';
+import 'one_at_a_time.dart';
 
 /// One [AgentWatcher] for each saved host that is [Host.watched].
 class WatchHub {
@@ -46,7 +47,7 @@ class WatchHub {
 
   final _watchers = <String, AgentWatcher>{};
   PaneTarget? _shown;
-  var _reload = Future<void>.value();
+  final _reloads = OneAtATime();
   var _disposed = false;
 
   /// The hosts that are watched now.
@@ -57,11 +58,7 @@ class WatchHub {
   /// that stopped, for example on a server key trusted only since, tries
   /// again. Calls run one after another; a failed one does not stop the
   /// next.
-  Future<void> reload() {
-    final next = _reload.then((_) => _apply());
-    _reload = next.catchError((Object _) {});
-    return next;
-  }
+  Future<void> reload() => _reloads.run(_apply);
 
   Future<void> _apply() async {
     final hosts = [

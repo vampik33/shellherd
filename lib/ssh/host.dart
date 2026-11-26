@@ -143,13 +143,19 @@ class HostStore {
       (await list()).where((h) => h.id == id).firstOrNull;
 
   /// Adds [host], or replaces the saved host with the same id in place.
+  /// A replaced host keeps its saved [Host.disconnected]: only
+  /// [setDisconnected] changes it, so that a save from a copy read before a
+  /// Disconnect or an open does not undo it. A new host is saved as it is.
   Future<void> save(Host host) => _file.update((data) {
     final hosts = [...?(data['hosts'] as List<Object?>?)];
     final i = hosts.indexWhere((h) => (h! as Map)['id'] == host.id);
+    final json = host.toJson();
     if (i < 0) {
-      hosts.add(host.toJson());
+      hosts.add(json);
     } else {
-      hosts[i] = host.toJson();
+      final saved = hosts[i]! as Map;
+      json['disconnected'] = saved['disconnected'] as bool? ?? false;
+      hosts[i] = json;
     }
     data['hosts'] = hosts;
   });

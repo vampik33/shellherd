@@ -57,13 +57,19 @@ void main() {
   });
 
   group('HostStore', () {
-    Host host(String id, {String label = 'workbox', String? session}) => Host(
+    Host host(
+      String id, {
+      String label = 'workbox',
+      String? session,
+      bool disconnected = false,
+    }) => Host(
       id: id,
       label: label,
       address: 'workbox.lan',
       user: 'dev',
       keyId: 'k1',
       herdrSession: session,
+      disconnected: disconnected,
     );
 
     test('saves, replaces in place, keeps order, and removes', () async {
@@ -188,6 +194,53 @@ void main() {
       expect(hosts.map((h) => h.id), ['a', 'b']);
       expect(hosts.first.disconnected, isTrue);
     });
+
+    test('a save over a saved host keeps its disconnect, a new host keeps '
+        'its own', () async {
+      final path = fileNamed('hosts.json');
+      final store = HostStore(JsonFile(path));
+      await store.save(host('a'));
+      await store.setDisconnected('a', true);
+      await store.save(host('a', label: 'renamed'));
+      var saved = (await store.get('a'))!;
+      expect(saved.label, 'renamed');
+      expect(saved.disconnected, isTrue);
+
+      await store.setDisconnected('a', false);
+      await store.save(host('a', disconnected: true));
+      expect((await store.get('a'))!.disconnected, isFalse);
+
+      await store.save(host('b', disconnected: true));
+      expect((await store.get('b'))!.disconnected, isTrue);
+
+      // A host saved before Disconnect came has no flag: it is connected.
+      final json = jsonDecode(path.readAsStringSync()) as Map;
+      ((json['hosts'] as List).first as Map).remove('disconnected');
+      path.writeAsStringSync(jsonEncode(json));
+      await store.save(host('a', label: 'old', disconnected: true));
+      saved = (await store.get('a'))!;
+      expect(saved.label, 'old');
+      expect(saved.disconnected, isFalse);
+    });
+
+    for (final value in [true, false]) {
+      for (final saveFirst in [true, false]) {
+        test('a save from an old copy and a setDisconnected($value) queued '
+            'together both land, the save ${saveFirst ? 'first' : 'last'}', () async {
+          final store = HostStore(JsonFile(fileNamed('hosts.json')));
+          await store.save(host('a', disconnected: !value));
+          final save = host('a', label: 'renamed', disconnected: !value);
+          await Future.wait([
+            if (saveFirst) store.save(save),
+            store.setDisconnected('a', value),
+            if (!saveFirst) store.save(save),
+          ]);
+          final saved = (await store.list()).single;
+          expect(saved.label, 'renamed');
+          expect(saved.disconnected, value);
+        });
+      }
+    }
 
     test('any host goes through the file and back unchanged', () {
       // Seeded, so that a failure repeats.

@@ -770,6 +770,21 @@ void main() {
       expect(await services.keys.password(host.id), 'old pw');
     });
 
+    testWidgets('a host file that cannot be read keeps the old password', (
+      tester,
+    ) async {
+      final host = await savedPasswordHost();
+      await pumpApp(tester);
+      await openPasswordEdit(tester, host);
+      await tester.enterText(hostField('Password'), 'new pw');
+      final file = File('${dir.path}/hosts.json');
+      await file.writeAsString('{not json');
+      await tapText(tester, 'Save');
+      await untilFound(tester, find.textContaining('Cannot save the host'));
+      expect(await services.keys.password(host.id), 'old pw');
+      expect(await file.readAsString(), '{not json');
+    });
+
     testWidgets('a failed save of a new host leaves no password', (
       tester,
     ) async {

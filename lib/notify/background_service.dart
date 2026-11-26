@@ -10,6 +10,7 @@ import '../ssh/ids.dart';
 import '../ssh/secret_store.dart';
 import 'notifier.dart';
 import 'notify_control.dart';
+import 'one_at_a_time.dart';
 import 'watch_hub.dart';
 
 // Messages between the app and the service isolate.
@@ -56,8 +57,14 @@ class ServiceNotify implements NotifyControl {
   /// that syncs at the same time save the same id.
   final _newStopButtonId = randomId();
 
+  final _syncs = OneAtATime();
+
+  /// Calls run one after another, so that each reads the hosts and the
+  /// service state only after the earlier one started or stopped it.
   @override
-  Future<bool> sync({bool ask = false}) async {
+  Future<bool> sync({bool ask = false}) => _syncs.run(() => _sync(ask));
+
+  Future<bool> _sync(bool ask) async {
     final (hosts, running) = await (
       _hosts.list(),
       FlutterForegroundTask.isRunningService,
