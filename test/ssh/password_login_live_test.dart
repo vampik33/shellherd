@@ -119,12 +119,12 @@ Future<void> main() async {
 
     test('a round of two prompts gets no password', () async {
       await refused(await serve(PasswordMode.two));
-      expect(sshd!.answers, isEmpty);
+      expect(await sshd!.settled(), isEmpty);
     });
 
     test('no saved password: refused without asking the server', () async {
       await refused(await serve(PasswordMode.password, saved: null));
-      expect(sshd!.answers, isEmpty);
+      expect(await sshd!.settled(), isEmpty);
     });
   });
 }

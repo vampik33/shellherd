@@ -148,7 +148,7 @@ Future<void> main() async {
     test('a server without Tailscale SSH gets no password', () async {
       final error = await failure(connector(), await serve(PasswordMode.both));
       expect(error, isA<SshAuthFailed>());
-      expect(sshd!.answers, isEmpty);
+      expect(await sshd!.settled(), isEmpty);
     });
   });
 

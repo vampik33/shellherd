@@ -22,6 +22,10 @@ It prints "PORT <n>", then one line per answer it gets:
   AUTH kbdint <number of answers> ok|bad|more
   AUTH none ok
 It never prints a password or an answer.
+
+For each line <n> on stdin, it waits until every connection it took has
+ended, then prints "SYNC <n>": the answers of those connections all come
+before it on stdout.
 """
 
 import os
@@ -117,6 +121,23 @@ class Server(ServerInterface):
         return OPEN_FAILED_ADMINISTRATIVELY_PROHIBITED
 
 
+connections = []
+connections_lock = threading.Lock()
+
+
+def sync():
+    """Answers each line on stdin once the connections so far have ended."""
+    while True:
+        line = sys.stdin.readline()
+        if not line:
+            return
+        with connections_lock:
+            ongoing = list(connections)
+        for thread in ongoing:
+            thread.join()
+        log(f"SYNC {line.strip()}")
+
+
 def serve(conn, host_key):
     transport = Transport(conn)
     transport.add_server_key(host_key)
@@ -137,9 +158,13 @@ def main():
     listener.bind(("127.0.0.1", 0))
     listener.listen(8)
     log(f"PORT {listener.getsockname()[1]}")
+    threading.Thread(target=sync, daemon=True).start()
     while True:
         conn, _ = listener.accept()
-        threading.Thread(target=serve, args=(conn, host_key), daemon=True).start()
+        thread = threading.Thread(target=serve, args=(conn, host_key), daemon=True)
+        with connections_lock:
+            connections.append(thread)
+        thread.start()
 
 
 if __name__ == "__main__":
