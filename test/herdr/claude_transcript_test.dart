@@ -331,7 +331,8 @@ void main() {
   });
 
   group('ByteLines', () {
-    test('cut anywhere, even inside a character, gives the same lines', () {
+    test('cut anywhere, even inside a character, gives the same lines; '
+        'a line over the cap is dropped, its bytes counted', () {
       final text = [
         ...File('test/herdr/fixtures/claude_transcript.jsonl')
             .readAsLinesSync(),
@@ -340,30 +341,62 @@ void main() {
         'last line',
       ].join('\n');
       final bytes = utf8.encode('$text\n');
-      final expected = const LineSplitter().convert(text);
-      for (var seed = 0; seed < 500; seed++) {
-        final random = Random(seed);
-        final splitter = ByteLines();
-        final lines = <String>[];
-        var at = 0;
-        while (at < bytes.length) {
-          final end = min(bytes.length, at + 1 + random.nextInt(64));
-          for (final line in splitter.add(bytes.sublist(at, end))) {
-            lines.add(utf8.decode(line));
+      final naive = const LineSplitter().convert(text);
+      const cap = 300;
+      final kept = [
+        for (final line in naive)
+          if (utf8.encode(line).length <= cap) line,
+      ];
+      expect(kept.length, inInclusiveRange(1, naive.length - 1));
+      for (final maxLine in [maxTranscriptLine, cap]) {
+        final expected = maxLine == cap ? kept : naive;
+        for (var seed = 0; seed < 500; seed++) {
+          final random = Random(seed);
+          final splitter = ByteLines(maxLine: maxLine);
+          final lines = <String>[];
+          var counted = 0;
+          var at = 0;
+          while (at < bytes.length) {
+            final end = min(bytes.length, at + 1 + random.nextInt(64));
+            for (final line in splitter.add(bytes.sublist(at, end))) {
+              if (line.bytes case final kept?) lines.add(utf8.decode(kept));
+              counted += line.size;
+            }
+            at = end;
           }
-          at = end;
+          final reason = 'cap $maxLine, seed $seed';
+          expect(lines, expected, reason: reason);
+          expect(counted, bytes.length, reason: reason);
+          expect(splitter.pending, 0, reason: reason);
         }
-        expect(lines, expected, reason: 'seed $seed');
       }
     });
 
     test('keeps a line without its newline until it ends', () {
       final splitter = ByteLines();
-      expect(splitter.add(utf8.encode('par')), isEmpty);
-      expect(splitter.add(utf8.encode('tial\nnext')).map(utf8.decode), [
-        'partial',
-      ]);
-      expect(splitter.add(utf8.encode('\n\n')).map(utf8.decode), ['next', '']);
+      List<String> add(String text) => [
+        for (final line in splitter.add(utf8.encode(text)))
+          utf8.decode(line.bytes!),
+      ];
+      expect(add('par'), isEmpty);
+      expect(splitter.pending, 3);
+      expect(add('tial\nnext'), ['partial']);
+      expect(splitter.pending, 4);
+      expect(add('\n\n'), ['next', '']);
+      expect(splitter.pending, 0);
+    });
+
+    test('drops a line over the cap through its newline', () {
+      final splitter = ByteLines(maxLine: 4);
+      expect(splitter.add(utf8.encode('abc')), isEmpty);
+      expect(splitter.add(utf8.encode('de')), isEmpty);
+      expect(splitter.pending, 5);
+      final lines = splitter.add(utf8.encode('fg\nabcd\n'));
+      expect(
+        [for (final l in lines) (l.bytes == null, l.size)],
+        [(true, 8), (false, 5)],
+      );
+      expect(utf8.decode(lines.last.bytes!), 'abcd');
     });
   });
 

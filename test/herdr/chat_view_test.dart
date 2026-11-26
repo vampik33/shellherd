@@ -4,6 +4,7 @@ library;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:shellherd/herdr/api/herdr_client.dart';
 import 'package:shellherd/herdr/herdr_connection.dart';
 import 'package:shellherd/herdr/ui/pane_screen.dart';
 
@@ -235,9 +236,8 @@ void main() {
     await close(tester);
   });
 
-  testWidgets('a blocked agent shows the call it waits on and the answers', (
-    tester,
-  ) async {
+  testWidgets("a blocked agent shows the pane's text and the answers, not "
+      'the chat', (tester) async {
     await open(tester, session: _session(status: 'blocked'));
     await until(tester, () => transcripts.opened.isNotEmpty, 'a read');
     transcripts.last.file([
@@ -246,52 +246,37 @@ void main() {
         claudeToolUse('t1', 'Bash', {'command': 'rm -rf build'}),
       ], uuid: 'a1'),
     ]);
-    await untilFound(tester, find.text('Show screen'));
-    expect(paneText('rm -rf build'), findsWidgets);
+    await untilFound(tester, paneText('pane text line'));
     expect(find.text('needs you'), findsOneWidget);
     await tester.tap(find.text('1'));
     await until(tester, () => herdr().inputs.isNotEmpty, 'the answer');
     expect(herdr().inputs.single.$1, 'pane.send_keys');
-
-    await tester.tap(find.text('Show screen'));
-    await untilFound(tester, find.byTooltip('Chat'));
+    expect(herdr().inputs.single.$2['keys'], ['1']);
+    // The transcript was read meanwhile: the chat and its tool calls stay
+    // away.
+    expect(paneText('clean up'), findsNothing);
+    expect(find.text('Bash'), findsNothing);
     expect(find.text('Show screen'), findsNothing);
+    expect(find.byTooltip('Exact screen'), findsOneWidget);
     await close(tester);
   });
 
-  testWidgets('of several calls since the last prompt, the card names none', (
-    tester,
-  ) async {
-    await open(tester, session: _session(status: 'blocked'));
-    await until(tester, () => transcripts.opened.isNotEmpty, 'a read');
-    transcripts.last.file([
-      claudeUser('look first', uuid: 'u0'),
-      // Interrupted: no result, but before the last prompt.
-      claudeAssistant(
-        [
-          claudeToolUse('t0', 'Read', {'file_path': 'old.txt'}),
-        ],
-        id: 'm0',
-        uuid: 'a0',
-      ),
-      claudeUser('clean up', uuid: 'u1'),
-      claudeAssistant(
-        [
-          claudeToolUse('t1', 'Bash', {'command': 'rm -rf build'}),
-        ],
-        id: 'm1',
-        uuid: 'a1',
-      ),
-    ]);
-    await untilFound(tester, find.text('Show screen'));
-    expect(find.textContaining('tool calls'), findsNothing);
-    transcripts.last.text(
-      '${claudeAssistant([
-        claudeToolUse('t2', 'Read', {'file_path': 'README.md'}),
-      ], id: 'm1', uuid: 'a2')}\n',
-    );
-    await untilFound(tester, find.text('2 tool calls'));
-    expect(find.text('Show screen'), findsOneWidget);
+  testWidgets('the chat steps aside while the agent is blocked and comes '
+      'back after', (tester) async {
+    await openChat(tester);
+    expect(paneText('pane text line'), findsNothing);
+    herdr()
+      ..snapshotJson = _session(status: 'blocked')
+      ..push();
+    await untilFound(tester, paneText('pane text line'));
+    expect(find.text('needs you'), findsOneWidget);
+    expect(paneText('fix the login bug'), findsNothing);
+    herdr()
+      ..snapshotJson = _session()
+      ..push();
+    await untilFound(tester, paneText('fix the login bug'));
+    expect(paneText('pane text line'), findsNothing);
+    expect(find.text('needs you'), findsNothing);
     await close(tester);
   });
 
@@ -304,6 +289,27 @@ void main() {
     expect(paneText('fix the login bug'), findsNothing);
     await tester.tap(find.byTooltip('Chat'));
     await untilFound(tester, paneText('fix the login bug'));
+    await close(tester);
+  });
+
+  testWidgets('the exact screen the user chose stays when the snapshot '
+      'changes', (tester) async {
+    await openChat(tester);
+    await tester.tap(find.byTooltip('Exact screen'));
+    await untilFound(tester, find.byTooltip('Chat'));
+    herdr()
+      ..snapshotJson = _session(status: 'done')
+      ..push();
+    await until(
+      tester,
+      () =>
+          connection.snapshot.value?.pane('w1:p1')?.status == AgentStatus.done,
+      'the new snapshot',
+    );
+    await tester.pump();
+    expect(find.byTooltip('Chat'), findsOneWidget);
+    expect(paneText('pane text line'), findsOneWidget);
+    expect(paneText('fix the login bug'), findsNothing);
     await close(tester);
   });
 

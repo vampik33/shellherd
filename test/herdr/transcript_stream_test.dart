@@ -98,6 +98,46 @@ void main() {
     },
   );
 
+  test('a last record without its newline does not hold back the ones '
+      'before it, and shows once its newline comes', () async {
+    stream.running = true;
+    await until(
+      () => transcripts.opened.isNotEmpty,
+      'transcripts.opened.isNotEmpty',
+    );
+    final whole = '${claudeUser('one')}\n';
+    final partial = claudeUser('two');
+    transcripts.last
+      ..header(utf8.encode(whole + partial).length)
+      ..text(whole)
+      ..text(partial);
+    await until(() => items() != null, 'items() != null');
+    expect(items(), const [ChatPrompt('one')]);
+    transcripts.last.text('\n');
+    await until(() => items()?.length == 2, 'items()?.length == 2');
+    expect(items(), const [ChatPrompt('one'), ChatPrompt('two')]);
+  });
+
+  test('a line over the cap is dropped and the chat still loads', () async {
+    stream.running = true;
+    await until(
+      () => transcripts.opened.isNotEmpty,
+      'transcripts.opened.isNotEmpty',
+    );
+    final huge = '${'x' * maxTranscriptLine}x\n';
+    // Longer than the tail: the read starts cut, and the records after
+    // the dropped line show once all of its bytes came.
+    final body = 'cut"}}\n$huge${claudeUser('one')}\n';
+    transcripts.last
+      ..header(utf8.encode(body).length)
+      ..text(body);
+    await until(() => items() != null, 'items() != null');
+    expect(items(), const [ChatPrompt('one')]);
+    expect(stream.view.value.startsCut, isTrue);
+    transcripts.last.text('$huge${claudeUser('two')}\n');
+    await until(() => items()?.length == 2, 'items()?.length == 2');
+  });
+
   test('a cut start drops its first line and says so', () async {
     stream.running = true;
     await until(

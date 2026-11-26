@@ -49,24 +49,61 @@ Duration retryWait(int failures, Duration first, Duration most) {
   return wait > most ? most : wait;
 }
 
+/// The longest transcript line that is kept, in bytes, without its
+/// newline. A longer one, such as a record with a large inline image, is
+/// dropped: the phone would hold it several times over.
+const maxTranscriptLine = 8 * 1024 * 1024;
+
+/// A line that [ByteLines] split off: its bytes without the newline, null
+/// for a line that was dropped, and how many bytes it took with the
+/// newline.
+typedef ByteLine = ({List<int>? bytes, int size});
+
 /// Splits bytes into lines at each newline, keeping a line's bytes until it
-/// ends, so that a reader knows how many bytes each line took.
+/// ends, so that a reader knows how many bytes each line took. A line
+/// longer than [maxLine] is dropped through its newline.
 class ByteLines {
+  ByteLines({this.maxLine = maxTranscriptLine});
+
+  final int maxLine;
   final _partial = <int>[];
 
-  /// The lines that [chunk] completes, without their newline.
-  List<List<int>> add(List<int> chunk) {
-    final lines = <List<int>>[];
+  /// The bytes so far of a line being dropped; null while none is.
+  int? _dropped;
+
+  /// The bytes of the line that has not ended yet, kept or dropped.
+  int get pending => _dropped ?? _partial.length;
+
+  /// The lines that [chunk] completes.
+  List<ByteLine> add(List<int> chunk) {
+    final lines = <ByteLine>[];
     var from = 0;
     for (var i = 0; i < chunk.length; i++) {
       if (chunk[i] != 0x0a) continue;
-      _partial.addAll(chunk.getRange(from, i));
-      lines.add(List.of(_partial));
+      _take(chunk, from, i);
+      lines.add(
+        _dropped == null
+            ? (bytes: List.of(_partial), size: _partial.length + 1)
+            : (bytes: null, size: _dropped! + 1),
+      );
       _partial.clear();
+      _dropped = null;
       from = i + 1;
     }
-    _partial.addAll(chunk.getRange(from, chunk.length));
+    _take(chunk, from, chunk.length);
     return lines;
+  }
+
+  void _take(List<int> chunk, int from, int to) {
+    final dropped = _dropped;
+    if (dropped != null) {
+      _dropped = dropped + to - from;
+    } else if (_partial.length + to - from > maxLine) {
+      _dropped = _partial.length + to - from;
+      _partial.clear();
+    } else {
+      _partial.addAll(chunk.getRange(from, to));
+    }
   }
 }
 
@@ -254,9 +291,12 @@ class TranscriptStream {
       final splitter = ByteLines();
       await for (final chunk in channel.output) {
         if (!current()) return;
-        for (final bytes in splitter.add(chunk)) {
-          final line = utf8.decode(bytes, allowMalformed: true);
+        for (final (:bytes, size: length) in splitter.add(chunk)) {
+          final line = bytes == null
+              ? null
+              : utf8.decode(bytes, allowMalformed: true);
           if (!header) {
+            if (line == null) continue;
             final size = transcriptSize(line);
             if (size == null) continue;
             header = true;
@@ -267,10 +307,14 @@ class TranscriptStream {
             continue;
           }
           // The first line of a cut read is the end of a cut record.
-          if (received > 0 || !startsCut) transcript.add(line);
-          received += bytes.length + 1;
+          if (line != null && (received > 0 || !startsCut)) {
+            transcript.add(line);
+          }
+          received += length;
         }
-        if (header && received >= initial) {
+        // The last record of the file may not have ended yet: its bytes
+        // count, so that the records before it show.
+        if (header && received + splitter.pending >= initial) {
           _publish ??= Timer(Duration.zero, publish);
         }
       }

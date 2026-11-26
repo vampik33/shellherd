@@ -339,10 +339,10 @@ class _ToolRow extends StatelessWidget {
       body: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          ToolText(tool.input),
+          _ToolText(tool.input),
           if (result != null && result.text.isNotEmpty) ...[
             const SizedBox(height: 4),
-            ToolText(result.text, error: result.isError),
+            _ToolText(result.text, error: result.isError),
           ],
         ],
       ),
@@ -366,14 +366,11 @@ Widget _toolStateIcon(ChatTool tool) => switch (tool.result) {
 };
 
 /// The input or result of a tool, in a code block.
-class ToolText extends StatelessWidget {
-  const ToolText(this.text, {super.key, this.error = false, this.maxLines});
+class _ToolText extends StatelessWidget {
+  const _ToolText(this.text, {this.error = false});
 
   final String text;
   final bool error;
-
-  /// Cuts the text to this many lines; null for all of it.
-  final int? maxLines;
 
   @override
   Widget build(BuildContext context) => DecoratedBox(
@@ -384,17 +381,10 @@ class ToolText extends StatelessWidget {
     ),
     child: Padding(
       padding: const EdgeInsets.all(8),
-      child: maxLines == null
-          ? SelectableText(
-              text,
-              style: _monoStyle.copyWith(color: Graphite.terminalForeground),
-            )
-          : Text(
-              text,
-              maxLines: maxLines,
-              overflow: TextOverflow.ellipsis,
-              style: _monoStyle.copyWith(color: Graphite.terminalForeground),
-            ),
+      child: SelectableText(
+        text,
+        style: _monoStyle.copyWith(color: Graphite.terminalForeground),
+      ),
     ),
   );
 }

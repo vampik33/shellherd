@@ -12,7 +12,6 @@ import '../pane_poller.dart';
 import '../pane_stream.dart';
 import '../seen_marker.dart';
 import '../server_api.dart';
-import '../transcript/chat_items.dart';
 import '../transcript/transcript_stream.dart';
 import 'ansi_text.dart';
 import 'chat_view.dart';
@@ -73,8 +72,9 @@ class PaneScreen extends StatefulWidget {
   /// The server's name in messages: herdr, or the Herdr app.
   final String server;
 
-  /// Opens on the exact screen instead of the text view: where the server
-  /// streams it, that view is live.
+  /// Opens a pane without a Claude Code session on the exact screen
+  /// instead of the text view: where the server streams it, that view is
+  /// live. The pane of a session opens on its chat.
   final bool exactFirst;
 
   @override
@@ -109,7 +109,6 @@ class _PaneScreenState extends State<PaneScreen> {
     super.initState();
     PaneApi? api() => widget.connection.api;
     _poller = PanePoller(api, widget.paneId);
-    _poller.source = _readSource;
     _sender = PaneSender(api, widget.paneId, onSent: _poller.kick);
     _lifecycle = AppLifecycleListener(
       onHide: () => _setAppShown(false),
@@ -205,9 +204,10 @@ class _PaneScreenState extends State<PaneScreen> {
 
   /// The chat is on the screen: it runs and has a message, or loads. Until
   /// the first message, for example before Claude Code wrote its
-  /// transcript, the pane shows its text.
+  /// transcript, the pane shows its text; so it does while the agent is
+  /// blocked, as only the pane shows the question it asks.
   bool get _chatShown {
-    if (!_chatting) return false;
+    if (!_chatting || _pane?.status == AgentStatus.blocked) return false;
     final view = _transcript.view.value;
     final items = view.items;
     return items == null || items.isNotEmpty || view.startsCut;
@@ -218,6 +218,7 @@ class _PaneScreenState extends State<PaneScreen> {
   /// shows: only herdr has transcripts, and herdr marks nothing seen, so
   /// [SeenMarker] needs no reads then.
   void _applySource() {
+    if (_poller.source != _readSource) _poller.source = _readSource;
     final streaming = _streaming;
     _stream.running = _shown && streaming;
     _transcript.running = _shown && _chatting;
@@ -253,15 +254,23 @@ class _PaneScreenState extends State<PaneScreen> {
     super.dispose();
   }
 
-  /// The exact screen, else the text view.
-  late var _exact = widget.exactFirst;
+  /// The user's own choice of the exact screen or not; null until they
+  /// toggle.
+  bool? _exactChosen;
+
+  /// The exact screen, else the chat or the text view: the user's choice,
+  /// else the exact screen when [PaneScreen.exactFirst] and the pane has no
+  /// Claude Code session. The snapshot can name the session only after the
+  /// pane opened, for example from a notification.
+  bool get _exact =>
+      _exactChosen ??
+      (widget.exactFirst && _pane?.agentSession?.claudeSession == null);
 
   ReadSource get _readSource =>
       _exact ? ReadSource.visible : ReadSource.recentUnwrapped;
 
   void _toggleExact() => setState(() {
-    _exact = !_exact;
-    _poller.source = _readSource;
+    _exactChosen = !_exact;
     _applySource();
   });
 
@@ -355,11 +364,7 @@ class _PaneScreenState extends State<PaneScreen> {
               Expanded(child: _content(state, view)),
               if (!view.gone) ...[
                 if (pane?.status == AgentStatus.blocked)
-                  _Answers(
-                    onKey: _sendKey,
-                    pending: _chatShown ? _pendingTools() : const [],
-                    onShowScreen: _toggleExact,
-                  ),
+                  _Answers(onKey: _sendKey),
                 HerdrKeys(_paneKeys, onKey: _sendKey),
                 _composerRow(pane),
               ],
@@ -428,17 +433,6 @@ class _PaneScreenState extends State<PaneScreen> {
       );
     }
     return null;
-  }
-
-  /// The tool calls since the last prompt that have no result: a blocked
-  /// agent asks about one of them.
-  List<ChatTool> _pendingTools() {
-    final items = _transcript.view.value.items ?? const [];
-    final from = items.lastIndexWhere((item) => item is ChatPrompt) + 1;
-    return [
-      for (final item in items.skip(from))
-        if (item is ChatTool && item.result == null) item,
-    ];
   }
 
   Widget _chat(LinkState state) {
@@ -595,78 +589,14 @@ class _Header extends StatelessWidget {
   }
 }
 
-/// The quick answers. The question itself stands in the pane text; in
-/// the chat, which does not show it, [pending] says what the agent asks
-/// to do.
+/// The quick answers. The question itself stands in the pane text.
 class _Answers extends StatelessWidget {
-  const _Answers({
-    required this.onKey,
-    this.pending = const [],
-    this.onShowScreen,
-  });
+  const _Answers({required this.onKey});
 
   final void Function(String key) onKey;
 
-  /// The tool calls the agent may wait on, in the chat; empty elsewhere.
-  /// Of several, the transcript does not say which one it asks about.
-  final List<ChatTool> pending;
-
-  /// Opens the exact screen, where the whole question stands.
-  final VoidCallback? onShowScreen;
-
   @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      if (pending case [final tool]) _askCard(tool),
-      if (pending.length > 1) _askCard(null),
-      _keys(),
-    ],
-  );
-
-  /// What [tool] does, or with none, how many calls wait.
-  Widget _askCard(ChatTool? tool) => Padding(
-    padding: const EdgeInsets.fromLTRB(12, 6, 12, 0),
-    child: Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
-          children: [
-            Text(
-              tool?.name ?? '${pending.length} tool calls',
-              style: const TextStyle(
-                fontFamily: monoFont,
-                fontSize: 12,
-                fontWeight: FontWeight.w600,
-                color: Graphite.foreground,
-              ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: Text(
-                tool?.summary ??
-                    'wait; the screen shows which one it asks about',
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(
-                  fontFamily: monoFont,
-                  fontSize: 12,
-                  color: Graphite.muted,
-                ),
-              ),
-            ),
-            TextButton(
-              onPressed: onShowScreen,
-              child: const Text('Show screen'),
-            ),
-          ],
-        ),
-        if (tool != null) ToolText(tool.input, maxLines: 6),
-      ],
-    ),
-  );
-
-  Widget _keys() => Padding(
+  Widget build(BuildContext context) => Padding(
     padding: const EdgeInsets.only(left: 12, top: 4),
     child: Row(
       children: [
