@@ -42,7 +42,48 @@ void main() {
         for (var i = 0; i < 20; i++) f.update((d) => d['k$i'] = i),
       ]);
       expect((await f.read()).length, 20);
-      expect(Directory('${dir.path}/sub').listSync(), hasLength(1));
+      // The lock file stays: removing it could split the lock.
+      expect(
+        Directory(
+          '${dir.path}/sub',
+        ).listSync().map((e) => e.uri.pathSegments.last),
+        unorderedEquals(['a.json', 'a.json.lock']),
+      );
+    });
+
+    test('two processes updating one file lose no update and leave whole '
+        'JSON', () async {
+      final path = fileNamed('shared.json').path;
+      Future<ProcessResult> writer(String me) => Process.run('dart', [
+        'run',
+        'test/support/json_file_writer.dart',
+        path,
+        '150',
+        me,
+      ]);
+      final results = await Future.wait([writer('a'), writer('bbbbbbbbbb')]);
+      for (final r in results) {
+        expect(r.exitCode, 0, reason: '${r.stdout}${r.stderr}');
+      }
+      expect((await JsonFile(fileNamed('shared.json')).read())['n'], 300);
+      expect(
+        dir.listSync().where((e) => e.path.endsWith('.tmp')),
+        isEmpty,
+      );
+    }, timeout: const Timeout(Duration(minutes: 2)));
+
+    test('a write that cannot replace the file leaves no temp file', () async {
+      // A directory where the file goes: the rename fails.
+      Directory('${dir.path}/a.json/x').createSync(recursive: true);
+      final f = JsonFile(fileNamed('a.json'));
+      await expectLater(
+        f.update((d) => d['k'] = 1),
+        throwsA(isA<FileSystemException>()),
+      );
+      expect(
+        dir.listSync().where((e) => e.path.endsWith('.tmp')),
+        isEmpty,
+      );
     });
 
     test('updateIf writes only when the change says so', () async {
