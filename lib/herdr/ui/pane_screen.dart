@@ -243,8 +243,13 @@ class _PaneScreenState extends State<PaneScreen> {
   }
 
   /// Puts [command] in the composer, ready for its arguments.
-  void _pickSlashCommand(SlashCommand command) {
-    final text = '/${command.name} ';
+  void _pickSlashCommand(SlashCommand command) =>
+      _setComposer('/${command.name} ');
+
+  /// Puts [text] in the composer with the cursor after it. Not
+  /// `_composer.text`, which drops the cursor: a field that has focus
+  /// already would type before the text.
+  void _setComposer(String text) {
     _composer.value = TextEditingValue(
       text: text,
       selection: TextSelection.collapsed(offset: text.length),
@@ -634,15 +639,7 @@ class _PaneScreenState extends State<PaneScreen> {
             builder: (context, _) => IconButton(
               tooltip: 'Commands',
               onPressed: _composer.text.isEmpty
-                  ? () {
-                      // Not .text, which drops the cursor: a field
-                      // that has focus already would type before it.
-                      _composer.value = const TextEditingValue(
-                        text: '/',
-                        selection: TextSelection.collapsed(offset: 1),
-                      );
-                      _composerFocus.requestFocus();
-                    }
+                  ? () => _setComposer('/')
                   : null,
               icon: const Text(
                 '/',

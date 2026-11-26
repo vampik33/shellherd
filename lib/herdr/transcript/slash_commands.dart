@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:typed_data';
+import 'dart:isolate';
 
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/foundation.dart';
@@ -314,22 +314,15 @@ SlashCommand? _pluginCommand(_Record r, Map<String, String> plugins) {
     final rel = r.path.substring(root.length + 1);
     final skill = rel.startsWith('skills/');
     if (!skill && !rel.startsWith('commands/')) continue;
-    final command = _command(r, skill: skill);
-    if (command == null) return null;
-    final name = '$plugin:${command.name}';
-    if (!slashCommandName.hasMatch(name)) return null;
-    return SlashCommand(
-      name,
-      description: command.description,
-      argumentHint: command.argumentHint,
-    );
+    return _command(r, skill: skill, plugin: plugin);
   }
   return null;
 }
 
 /// A command from its file: a skill is named by its frontmatter or its
-/// directory, a command by its file.
-SlashCommand? _command(_Record r, {required bool skill}) {
+/// directory, a command by its file; one of a [plugin] after its name and
+/// a colon.
+SlashCommand? _command(_Record r, {required bool skill, String? plugin}) {
   final parts = r.path.split('/');
   if (parts.length < 2) return null;
   final front = parseFrontmatter(r.content);
@@ -343,9 +336,10 @@ SlashCommand? _command(_Record r, {required bool skill}) {
   }
   if (skill && front['user-invocable']?.toLowerCase() == 'false') return null;
   final named = skill ? front['name'] : null;
-  final name = named != null && slashCommandName.hasMatch(named)
+  final own = named != null && slashCommandName.hasMatch(named)
       ? named
       : fallback;
+  final name = plugin == null ? own : '$plugin:$own';
   if (!slashCommandName.hasMatch(name)) return null;
   return SlashCommand(
     name,
@@ -354,8 +348,14 @@ SlashCommand? _command(_Record r, {required bool skill}) {
   );
 }
 
+final _spaces = RegExp(r'\s+');
+final _spaceOrSlash = RegExp(r'[\s/]');
+
+/// A `key: value` line of frontmatter that is not YAML.
+final _keyLine = RegExp(r'^([A-Za-z][A-Za-z0-9_-]*):[ \t]*(.*)$');
+
 String _oneLine(String s, int max) {
-  final line = s.replaceAll(RegExp(r'\s+'), ' ').trim();
+  final line = s.replaceAll(_spaces, ' ').trim();
   return line.length <= max ? line : '${line.substring(0, max - 1)}…';
 }
 
@@ -391,10 +391,9 @@ Map<String, String> parseFrontmatter(String text) {
     };
   }
   if (yaml != null) return {};
-  final line = RegExp(r'^([A-Za-z][A-Za-z0-9_-]*):[ \t]*(.*)$');
   return {
     for (final l in const LineSplitter().convert(text))
-      if (line.firstMatch(l) case final m?)
+      if (_keyLine.firstMatch(l) case final m?)
         if (_frontmatterKeys.contains(m[1])) m[1]!: _unquote(m[2]!.trim()),
   };
 }
@@ -430,34 +429,34 @@ String _unquote(String s) {
 
 /// A [SlashCommandLookup] that runs [slashCommandsCommand] on the remote
 /// host, on its own bounded exec channel. Reads at most [maxSlashOutput]
-/// bytes; a file cut inside a character does not fail the read.
+/// bytes; a file cut inside a character does not fail the read. Parses on
+/// another isolate: a host can have thousands of command files.
 SlashCommandLookup sshSlashCommandLookup(
   SSHClient ssh, {
   Duration timeout = const Duration(seconds: 15),
 }) => (cwd) async {
-  final session = await openExec(ssh, slashCommandsCommand(cwd), timeout);
-  try {
-    await session.stdin.close();
-    final bytes = BytesBuilder(copy: false);
-    await () async {
-      await for (final chunk in session.stdout) {
-        bytes.add(chunk);
-        if (bytes.length >= maxSlashOutput) break;
-      }
-    }().timeout(timeout);
-    final out = utf8.decode(bytes.takeBytes(), allowMalformed: true);
-    return parseSlashCommands(out, cwd: usableSlashCwd(cwd));
-  } finally {
-    session.channel.destroy();
-  }
+  final (out, _) = await sshExec(
+    ssh,
+    slashCommandsCommand(cwd),
+    timeout,
+    maxBytes: maxSlashOutput,
+    allowMalformed: true,
+  );
+  return Isolate.run(_parse(out, usableSlashCwd(cwd)));
 };
+
+/// [parseSlashCommands] of [out], by a closure that holds only its input:
+/// one made in the lookup would hold the SSH client, which no isolate
+/// message can carry.
+List<SlashCommand> Function() _parse(String out, String? cwd) =>
+    () => parseSlashCommands(out, cwd: cwd);
 
 /// The query of the menu: what follows the slash of [text] while [text] is
 /// a slash and a name being typed, else null.
 String? slashQuery(String text) {
   if (!text.startsWith('/')) return null;
   final query = text.substring(1);
-  if (query.contains(RegExp(r'[\s/]'))) return null;
+  if (query.contains(_spaceOrSlash)) return null;
   return query;
 }
 
@@ -467,7 +466,7 @@ List<String> recentSlashCommands(List<ChatItem> items, {int max = 5}) {
   final recent = <String>[];
   for (final item in items.reversed) {
     if (item is! ChatPrompt || !item.text.startsWith('/')) continue;
-    final name = item.text.substring(1).split(RegExp(r'\s')).first;
+    final name = item.text.substring(1).split(_spaces).first;
     if (!slashCommandName.hasMatch(name) || recent.contains(name)) continue;
     recent.add(name);
     if (recent.length == max) break;

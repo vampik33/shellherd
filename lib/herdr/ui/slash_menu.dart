@@ -53,10 +53,11 @@ class SlashMenu extends StatelessWidget {
               ),
             ),
           Flexible(
-            child: ListView(
+            child: ListView.builder(
               shrinkWrap: true,
               padding: EdgeInsets.zero,
-              children: [for (final c in commands) _row(c)],
+              itemCount: commands.length,
+              itemBuilder: (context, i) => _row(commands[i]),
             ),
           ),
         ],
