@@ -5,6 +5,7 @@ import 'package:dartssh2/dartssh2.dart';
 import 'package:shellherd/herdr/api/herdr_client.dart';
 import 'package:shellherd/herdr/herdr_connection.dart';
 import 'package:shellherd/herdr/pane_stream.dart';
+import 'package:shellherd/herdr/transcript/slash_commands.dart';
 import 'package:shellherd/herdr/transcript/transcript_stream.dart';
 
 import 'fake_channel.dart';
@@ -198,7 +199,12 @@ class FakeHerdr {
 
 /// One open link to a [FakeHerdr].
 class FakeLink {
-  FakeLink([Map<String, Object?>? snapshot, this.screens, this.transcripts]) {
+  FakeLink([
+    Map<String, Object?>? snapshot,
+    this.screens,
+    this.transcripts,
+    this.slashCommands,
+  ]) {
     herdr.snapshotJson = snapshot;
   }
 
@@ -209,6 +215,9 @@ class FakeLink {
 
   /// The transcript reads of the link; null for a server without them.
   final TranscriptOpener? transcripts;
+
+  /// The slash command lookup of the link; null for none.
+  final SlashCommandLookup? slashCommands;
   final done = Completer<void>();
   var closed = false;
 
@@ -216,6 +225,7 @@ class FakeLink {
     herdr.client,
     screens: screens,
     transcripts: transcripts,
+    slashCommands: slashCommands,
     done: done.future,
     close: () {
       closed = true;

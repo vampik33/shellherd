@@ -15,6 +15,7 @@ import 'herdr_link.dart';
 import 'pane_stream.dart';
 import 'server_api.dart';
 import 'transcript/claude_sessions.dart';
+import 'transcript/slash_commands.dart';
 import 'transcript/transcript_command.dart';
 import 'transcript/transcript_stream.dart';
 
@@ -84,6 +85,7 @@ class OpenLink {
     required this.close,
     this.screens,
     this.transcripts,
+    this.slashCommands,
   });
 
   /// A link to herdr.
@@ -93,10 +95,12 @@ class OpenLink {
     required void Function() close,
     ScreenOpener? screens,
     TranscriptOpener? transcripts,
+    SlashCommandLookup? slashCommands,
   }) => OpenLink(
     api: HerdrPaneApi(client),
     screens: screens,
     transcripts: transcripts,
+    slashCommands: slashCommands,
     cache: (onSnapshot, {required debounce, required refreshEvery}) =>
         HerdrCache(
           client,
@@ -117,9 +121,11 @@ class OpenLink {
     required void Function() close,
     TranscriptOpener? transcripts,
     ClaudeSessionLookup? claudeSessions,
+    SlashCommandLookup? slashCommands,
   }) => OpenLink(
     api: HcPaneApi(client),
     transcripts: transcripts,
+    slashCommands: slashCommands,
     cache: (onSnapshot, {required debounce, required refreshEvery}) => HcCache(
       client,
       onSnapshot: onSnapshot,
@@ -138,6 +144,10 @@ class OpenLink {
   /// Starts reads of agent transcripts; null where the server reports
   /// none.
   final TranscriptOpener? transcripts;
+
+  /// Finds Claude Code's slash commands on the host; null where the link
+  /// cannot.
+  final SlashCommandLookup? slashCommands;
 
   final CacheFactory cache;
 
@@ -173,6 +183,7 @@ LinkOpener sshLinkOpener(
           link.client,
           screens: sshScreenOpener(ssh, link.socketPath, timeout: timeout),
           transcripts: sshTranscriptOpener(ssh, timeout: timeout),
+          slashCommands: sshSlashCommandLookup(ssh, timeout: timeout),
           done: ssh.done,
           close: ssh.close,
         );
@@ -186,6 +197,7 @@ LinkOpener sshLinkOpener(
         return OpenLink.hc(
           client,
           transcripts: sshTranscriptOpener(ssh, timeout: timeout),
+          slashCommands: sshSlashCommandLookup(ssh, timeout: timeout),
           claudeSessions: chat
               ? sshClaudeSessionLookup(ssh, timeout: timeout)
               : null,
@@ -244,6 +256,10 @@ class HerdrConnection {
   /// The transcript reads of the live link, for the open screen; null while
   /// there is none, or where the server has none.
   TranscriptOpener? get transcripts => _live?.transcripts;
+
+  /// The slash command lookup of the live link, for the open screen; null
+  /// while there is none.
+  SlashCommandLookup? get slashCommands => _live?.slashCommands;
 
   /// Identifies the current run of [_run]. An older run sees that it is
   /// over and stops without touching the state.

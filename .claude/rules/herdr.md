@@ -24,5 +24,11 @@ paths:
   (lib/herdr/transcript/claude_sessions.dart), again every 15 s for
   `/clear`. That file is internal to Claude Code; without it the pane
   shows its text.
+- The composer's slash commands come from one SSH exec
+  (`slashCommandsCommand` in lib/herdr/transcript/slash_commands.dart)
+  that prints the frontmatter of Claude Code's command and skill files and
+  the plugin and settings JSON; Dart decides which plugins count. Claude
+  Code's own commands are a fixed list there, without the ones that open
+  a picker in the terminal.
 - Don't add a "start herdr" action: a server started over SSH lacks the
   desktop environment.
