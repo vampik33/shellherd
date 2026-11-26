@@ -16,7 +16,8 @@ The full `flutter test` takes about 90 s.
 ## Layout
 
 - lib/ssh: hosts, keys, known_hosts, secret store, SshConnector (password,
-  key, Tailscale `none` auth)
+  key, Tailscale `none` auth), ssh_exec (bounded `sshExec`/`openExec`,
+  streaming `SshExecChannel`)
 - lib/herdr/api: herdr client (NDJSON, one request per connection) and hc
   client (herdr-core JSON-RPC, persistent)
 - lib/herdr: caches, links, PaneApi (server_api.dart) shared by both
