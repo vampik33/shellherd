@@ -4,6 +4,7 @@ library;
 
 import 'dart:async';
 
+import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shellherd/herdr/api/herdr_client.dart';
@@ -551,6 +552,65 @@ void main() {
     await close(tester);
   });
 
+  testWidgets('the first connect shows loading, not a lost link', (
+    tester,
+  ) async {
+    link = FakeLink(_session());
+    herdr().paneText = 'last line';
+    final gate = Completer<void>();
+    connection = HerdrConnection(
+      () async {
+        await gate.future;
+        return link.open;
+      },
+      backoff: (_) => const Duration(minutes: 1),
+      debounce: const Duration(milliseconds: 1),
+    )..connect();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: PaneScreen(connection: connection, paneId: 'w1:p1'),
+      ),
+    );
+    await untilFound(tester, chip('connecting'));
+    expect(find.text('Connecting to herdr…'), findsOneWidget);
+    expect(find.textContaining('No link'), findsNothing);
+
+    gate.complete();
+    await untilFound(tester, paneText('last line'));
+    expect(find.textContaining('No link'), findsNothing);
+    expect(find.text('Connecting to herdr…'), findsNothing);
+    await close(tester);
+  });
+
+  for (final (label, error) in <(String, Object)>[
+    ('no herdr', HerdrConnectException('ping', SSHChannelOpenError(2, 'x'))),
+    ('failed', const HerdrProtocolException('bad')),
+  ]) {
+    testWidgets('a first connect that ends $label shows no loading', (
+      tester,
+    ) async {
+      connection = HerdrConnection(
+        () async => throw error,
+        backoff: (_) => const Duration(minutes: 1),
+        debounce: const Duration(milliseconds: 1),
+      )..connect();
+      await tester.pumpWidget(
+        MaterialApp(
+          home: PaneScreen(connection: connection, paneId: 'w1:p1'),
+        ),
+      );
+      await untilFound(tester, chip(label));
+      expect(
+        find.text('No link to herdr. This text may be old.'),
+        findsOneWidget,
+      );
+      expect(find.text('Loading the pane…'), findsNothing);
+      expect(find.text('Connecting to herdr…'), findsNothing);
+      expect(find.byType(CircularProgressIndicator), findsNothing);
+      await close(tester);
+    });
+  }
+
   testWidgets('a dropped link dims the text; a tap sends nothing', (
     tester,
   ) async {
@@ -569,6 +629,64 @@ void main() {
     await tester.tap(find.text('esc'));
     await untilFound(tester, find.text('No link to herdr. Nothing was sent.'));
     expect(herdr().inputs, isEmpty);
+    await close(tester);
+  });
+
+  testWidgets('a tap during the first connect is forgotten once it is up', (
+    tester,
+  ) async {
+    link = FakeLink(_session());
+    herdr().paneText = 'last line';
+    final gate = Completer<void>();
+    connection = HerdrConnection(
+      () async {
+        await gate.future;
+        return link.open;
+      },
+      backoff: (_) => const Duration(minutes: 1),
+      debounce: const Duration(milliseconds: 1),
+    )..connect();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: PaneScreen(connection: connection, paneId: 'w1:p1'),
+      ),
+    );
+    await untilFound(tester, chip('connecting'));
+    await tester.tap(find.text('esc'));
+    await untilFound(tester, find.text('No link to herdr. Nothing was sent.'));
+
+    gate.complete();
+    await untilFound(tester, chip('live'));
+    await untilGone(tester, find.text('No link to herdr. Nothing was sent.'));
+    expect(herdr().inputs, isEmpty);
+    await close(tester);
+  });
+
+  testWidgets('a reconnect clears "nothing was sent" but no other failure', (
+    tester,
+  ) async {
+    await open(tester);
+    link.done.complete();
+    await untilFound(tester, chip('retrying'));
+    await tester.tap(find.text('esc'));
+    await untilFound(tester, find.text('No link to herdr. Nothing was sent.'));
+    link = FakeLink(_session());
+    herdr().paneText = 'last line';
+    connection.connect();
+    await untilFound(tester, chip('live'));
+    await untilGone(tester, find.text('No link to herdr. Nothing was sent.'));
+
+    herdr().errors['pane.send_keys'] = ['agent_blocked'];
+    await tester.tap(find.text('esc'));
+    const blocked =
+        'The agent is waiting for an answer. Your text was not sent.';
+    await untilFound(tester, find.text(blocked));
+    link.done.complete();
+    await untilFound(tester, chip('retrying'));
+    link = FakeLink(_session());
+    connection.connect();
+    await untilFound(tester, chip('live'));
+    expect(find.text(blocked), findsOneWidget);
     await close(tester);
   });
 
