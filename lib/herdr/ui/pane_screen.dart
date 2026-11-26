@@ -344,7 +344,11 @@ class _PaneScreenState extends State<PaneScreen> {
       );
     }
     // The first connect is no failure: the content says it is loading.
-    if (state case LinkReconnecting() || LinkNoServer() || LinkFailed()) {
+    final lost = switch (state) {
+      LinkReconnecting() || LinkNoServer() || LinkFailed() => true,
+      LinkOffline() || LinkConnecting() || LinkSyncing() || LinkLive() => false,
+    };
+    if (lost) {
       return StatusBanner('No link to ${widget.server}. This text may be old.');
     }
     if (view.error case final error?) {
