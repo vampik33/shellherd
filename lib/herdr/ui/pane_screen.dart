@@ -342,10 +342,11 @@ class _PaneScreenState extends State<PaneScreen> {
       final state = widget.connection.state.value;
       final feed = _feed;
       // The chat has no pane text: the poller rests under it, and what it
-      // read last is old.
+      // read last is old. A read still on its way when the chat came can
+      // find the pane closed: that shows, its errors do not.
       final view = switch (feed) {
         _Feed.stream => _stream.view.value,
-        _Feed.chat => const PaneView(),
+        _Feed.chat => PaneView(gone: _poller.view.value.gone),
         _Feed.reads => _poller.view.value,
       };
       final pane = snapshot?.pane(widget.paneId);

@@ -25,10 +25,12 @@ final _sessionId = RegExp(r'^[A-Za-z0-9_-]{1,128}$');
 /// and prints a header line ([transcriptHeader]), then the file from where
 /// the read starts, and each line added to it, until stdin ends.
 ///
-/// The read starts at [from] when the file has its inode, is not shorter,
-/// and grew by at most [transcriptTail] since: the reader has the lines
-/// before it. Otherwise at the last [transcriptTail] bytes and the one
-/// before them, or at the start of a smaller file.
+/// The read starts at the line of [from] when the file has its inode, is
+/// not shorter than its offset, and grew by at most [transcriptTail] past
+/// it: the reader has the lines before the offset, and checks that the
+/// file still has the line before it. Otherwise at the last
+/// [transcriptTail] bytes and the one before them, or at the start of a
+/// smaller file.
 ///
 /// Claude Code writes the file with the first message, after herdr learns
 /// of the session: until the file is there, the header says 0 and the
@@ -43,7 +45,9 @@ String transcriptCommand(String session, {TranscriptMark? from}) {
     throw ArgumentError.value(session, 'session', 'not a session id');
   }
   if (from != null &&
-      (!transcriptInode.hasMatch(from.inode) || from.offset < 0)) {
+      (!transcriptInode.hasMatch(from.inode) ||
+          from.line < 0 ||
+          from.line > from.offset)) {
     throw ArgumentError.value(from, 'from', 'not a transcript mark');
   }
   const cut = transcriptTail + 1;
@@ -66,7 +70,7 @@ String transcriptCommand(String session, {TranscriptMark? from}) {
     if (from != null) ...[
       '  if [ "\$ino" = ${from.inode} ] && [ "\$size" -ge ${from.offset} ] &&',
       '    [ \$((size - ${from.offset})) -le $transcriptTail ]; then',
-      '    start=${from.offset}',
+      '    start=${from.line}',
       '  fi',
     ],
     '  echo "$transcriptHeader\$size \$start \${ino:--}"',

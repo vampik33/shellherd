@@ -56,7 +56,7 @@ class FakeHerdr {
   final paneTexts = <String, String>{};
   var paneText = 'hello';
 
-  /// While set, `pane.read` replies wait for it.
+  /// While set, `pane.read` replies, errors too, wait for it.
   Completer<void>? holdReads;
 
   /// While set, replies to input wait for it.
@@ -95,9 +95,11 @@ class FakeHerdr {
 
     final queued = errors[method];
     if (queued != null && queued.isNotEmpty) {
+      final code = queued.removeAt(0);
+      if (method == 'pane.read') await holdReads?.future;
       c.reply({
         'id': id,
-        'error': {'code': queued.removeAt(0), 'message': 'fake'},
+        'error': {'code': code, 'message': 'fake'},
       });
       c.end();
       return;

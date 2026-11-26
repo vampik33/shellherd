@@ -194,12 +194,14 @@ Future<void> main() async {
       ])).stdout.toString().trim();
       expect(reads.last.from, (
         inode: inode,
+        line: 0,
         offset: utf8.encode(first).length,
       ));
+      // The last line read comes again, for the check.
       final size = utf8.encode(first + second).length;
       expect(
         utf8.decode(reads.last.received),
-        '$transcriptHeader$size ${utf8.encode(first).length} $inode\n$second',
+        '$transcriptHeader$size 0 $inode\n$first$second',
       );
     });
 

@@ -91,10 +91,15 @@ void main() {
           final process = await run(
             _id,
             shell: shell,
-            from: (inode: inode, offset: 8),
+            from: (inode: inode, line: 0, offset: 8),
           );
           final out = lines(process);
-          await expectLines(out, ['${transcriptHeader}16 8 $inode', '{"b":2}']);
+          // From the last line read, which the reader checks.
+          await expectLines(out, [
+            '${transcriptHeader}16 0 $inode',
+            '{"a":1}',
+            '{"b":2}',
+          ]);
           file.writeAsStringSync('{"c":3}\n', mode: FileMode.append);
           await expectLines(out, ['{"c":3}']);
           await process.stdin.close();
@@ -103,12 +108,22 @@ void main() {
       );
     }
 
+    test('a mark at the start of a file starts at its offset', () async {
+      final file = await transcript('{"a":1}\n{"b":2}\n');
+      final inode = await inodeOf(file);
+      final process = await run(_id, from: (inode: inode, line: 8, offset: 8));
+      final out = lines(process);
+      await expectLines(out, ['${transcriptHeader}16 8 $inode', '{"b":2}']);
+      await process.stdin.close();
+      await out.cancel();
+    });
+
     test('a mark past the end of the file starts over', () async {
-      final file = await transcript('{"a":1}\n');
-      final from = (inode: await inodeOf(file), offset: 9);
+      final file = await transcript('{"a":1}\n{"b":2}\n');
+      final from = (inode: await inodeOf(file), line: 8, offset: 17);
       final process = await run(_id, from: from);
       final out = lines(process);
-      await expectLines(out, [head(8), '{"a":1}']);
+      await expectLines(out, [head(16), '{"a":1}', '{"b":2}']);
       await process.stdin.close();
       await out.cancel();
     });
@@ -116,7 +131,7 @@ void main() {
     test('a mark in another file starts over', () async {
       final file = await transcript('{"a":1}\n{"b":2}\n');
       final other = '${int.parse(await inodeOf(file)) + 1}';
-      final process = await run(_id, from: (inode: other, offset: 8));
+      final process = await run(_id, from: (inode: other, line: 8, offset: 16));
       final out = lines(process);
       await expectLines(out, [head(16), '{"a":1}', '{"b":2}']);
       await process.stdin.close();
@@ -128,12 +143,16 @@ void main() {
       final file = await transcript('${'x' * (size - 1)}\n');
       final inode = await inodeOf(file);
       expect(
-        await firstLine(await run(_id, from: (inode: inode, offset: 100))),
-        '$transcriptHeader$size 100 $inode',
+        await firstLine(
+          await run(_id, from: (inode: inode, line: 60, offset: 100)),
+        ),
+        '$transcriptHeader$size 60 $inode',
         reason: 'grew by exactly the tail: goes on',
       );
       expect(
-        await firstLine(await run(_id, from: (inode: inode, offset: 50))),
+        await firstLine(
+          await run(_id, from: (inode: inode, line: 40, offset: 50)),
+        ),
         '$transcriptHeader$size 99 $inode',
         reason: 'grew by more: the tail and the byte before it',
       );
@@ -141,7 +160,7 @@ void main() {
 
     test('a mark with no file yet waits and reads it from the start', () async {
       await Directory('${home.path}/.claude/projects').create(recursive: true);
-      final process = await run(_id, from: (inode: '5', offset: 3));
+      final process = await run(_id, from: (inode: '5', line: 0, offset: 3));
       final out = lines(process);
       await expectLines(out, ['${transcriptHeader}0 0 -']);
       await transcript('{"first":1}\n');
@@ -152,12 +171,15 @@ void main() {
 
     test('refuses a mark it cannot pass safely', () {
       for (final from in [
-        (inode: '', offset: 0),
-        (inode: '1;x', offset: 0),
-        (inode: r'$HOME', offset: 0),
-        (inode: '1 2', offset: 0),
-        (inode: '1' * 21, offset: 0),
-        (inode: '1', offset: -1),
+        (inode: '', line: 0, offset: 0),
+        (inode: '1;x', line: 0, offset: 0),
+        (inode: r'$HOME', line: 0, offset: 0),
+        (inode: '1 2', line: 0, offset: 0),
+        (inode: '1' * 21, line: 0, offset: 0),
+        (inode: '1', line: 0, offset: -1),
+        (inode: '1', line: -1, offset: 0),
+        (inode: '1', line: -1, offset: 5),
+        (inode: '1', line: 6, offset: 5),
       ]) {
         expect(
           () => transcriptCommand(_id, from: from),
