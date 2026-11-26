@@ -147,8 +147,8 @@ class Pane {
   /// turns; null for herdr.
   final int? turn;
 
-  /// The session the agent reported to herdr; null when it reported none,
-  /// or for the Herdr app.
+  /// The session the agent reported to herdr; null when it reported none.
+  /// For the Herdr app, the Claude Code session that the app looked up.
   final AgentSession? agentSession;
 
   /// The best name there is for this pane.

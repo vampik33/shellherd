@@ -108,6 +108,9 @@ class _PaneScreenState extends State<PaneScreen> {
 
   late final SeenMarker _seen;
 
+  /// The chat is on the screen and current, for [_seen].
+  final _chatCurrent = ValueNotifier(false);
+
   @override
   void initState() {
     super.initState();
@@ -119,7 +122,12 @@ class _PaneScreenState extends State<PaneScreen> {
       onShow: () => _setAppShown(true),
     );
     widget.onShown?.call(true);
-    _seen = SeenMarker(widget.connection, widget.paneId, _poller);
+    _seen = SeenMarker(
+      widget.connection,
+      widget.paneId,
+      _poller,
+      current: _chatCurrent,
+    );
     final link = Listenable.merge([
       widget.connection.state,
       widget.connection.snapshot,
@@ -142,6 +150,7 @@ class _PaneScreenState extends State<PaneScreen> {
       _stream.unavailable,
       _transcript.view,
       _transcript.unavailable,
+      _transcript.live,
     ])..addListener(_applySource);
     widget.connection.state.addListener(_clearNoLinkFailure);
     // Before the first read: with a stream, the poller does not read.
@@ -195,7 +204,7 @@ class _PaneScreenState extends State<PaneScreen> {
   String? get _claudeSession => _pane?.agentSession?.claudeSession;
 
   /// The pane has a transcript the chat can show: one of a Claude Code
-  /// session that herdr knows of, whose read did not fail.
+  /// session that the snapshot names, whose read did not fail.
   bool get _chatAvailable =>
       _claudeSession != null && !_transcript.unavailable.value;
 
@@ -229,13 +238,13 @@ class _PaneScreenState extends State<PaneScreen> {
 
   /// Runs the stream, the transcript read or the poller, whichever shows
   /// the pane, and only while it is shown. The poller rests while the chat
-  /// shows: only herdr has transcripts, and herdr marks nothing seen, so
-  /// [SeenMarker] needs no reads then.
+  /// shows: a current chat is what [SeenMarker] waits for then.
   void _applySource() {
     if (_poller.source != _readSource) _poller.source = _readSource;
     final feed = _feed;
     _stream.running = _shown && feed == _Feed.stream;
     _transcript.running = _shown && _chatting;
+    _chatCurrent.value = feed == _Feed.chat && _transcript.live.value;
     final polling = _shown && feed == _Feed.reads;
     if (polling == _polling) return;
     _polling = polling;
@@ -259,6 +268,7 @@ class _PaneScreenState extends State<PaneScreen> {
     _uncovered?.removeListener(_followShown);
     _lifecycle.dispose();
     _seen.dispose();
+    _chatCurrent.dispose();
     widget.onShown?.call(false);
     _sender.cancel();
     _poller.dispose();

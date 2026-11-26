@@ -17,7 +17,7 @@ TranscriptOpener sshTranscriptOpener(
 /// Claude Code session ids are UUIDs. Only these characters reach the
 /// command: a quote or a backslash would also break the quoting for
 /// fish, which reads both inside single quotes.
-final _sessionId = RegExp(r'^[A-Za-z0-9_-]{1,128}$');
+final claudeSessionId = RegExp(r'^[A-Za-z0-9_-]{1,128}$');
 
 /// Finds the transcript of Claude Code session [session] on the remote host,
 /// `<config>/projects/<project>/<session>.jsonl` with the config directory
@@ -41,7 +41,7 @@ final _sessionId = RegExp(r'^[A-Za-z0-9_-]{1,128}$');
 /// Through `sh`, because the login shell can be fish. Throws
 /// [ArgumentError] for an id or a mark it does not take.
 String transcriptCommand(String session, {TranscriptMark? from}) {
-  if (!_sessionId.hasMatch(session)) {
+  if (!claudeSessionId.hasMatch(session)) {
     throw ArgumentError.value(session, 'session', 'not a session id');
   }
   if (from != null &&

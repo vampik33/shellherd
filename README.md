@@ -14,8 +14,9 @@ shellherd is an independent project and is not affiliated with herdr.
 - A terminal over SSH or mosh, with a bar of extra keys.
 - The agents of herdr or of the Herdr desktop app (herdr-core) and their
   panes; a herdr pane's screen updates live as it changes.
-- A Claude Code agent in herdr shows as a chat: its prompts, replies and
-  tool calls, read from its transcript. Other panes show their text.
+- A Claude Code agent in herdr or the Herdr app shows as a chat: its
+  prompts, replies and tool calls, read from its transcript. Other panes
+  show their text.
 - A background service that notifies you when an agent is blocked or done.
 
 ## Requirements
@@ -23,8 +24,9 @@ shellherd is an independent project and is not affiliated with herdr.
 - A phone with Android 7.0 or newer.
 - On each computer: an SSH server, and herdr or the Herdr desktop app.
   The live pane screen needs herdr 0.9.5 or newer; older versions fall back
-  to re-reading the pane. The chat needs herdr's Claude integration
-  (`herdr integration install claude`).
+  to re-reading the pane. In herdr the chat needs herdr's Claude
+  integration (`herdr integration install claude`); the Herdr app needs
+  nothing more.
 - Optional: `mosh-server` for mosh terminals, Tailscale for Tailscale SSH.
 
 ## Install

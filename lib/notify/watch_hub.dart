@@ -26,7 +26,7 @@ class WatchHub {
   ) => WatchHub(
     loadHosts: hosts.list,
     connect: (host) => HerdrConnection(
-      sshLinkOpener(connector, host),
+      sshLinkOpener(connector, host, chat: false),
       refreshEvery: refreshEvery,
     ),
     notifier: notifier,

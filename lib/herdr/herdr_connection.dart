@@ -14,6 +14,7 @@ import 'herdr_cache.dart';
 import 'herdr_link.dart';
 import 'pane_stream.dart';
 import 'server_api.dart';
+import 'transcript/claude_sessions.dart';
 import 'transcript/transcript_command.dart';
 import 'transcript/transcript_stream.dart';
 
@@ -108,15 +109,23 @@ class OpenLink {
   );
 
   /// A link to the Herdr app. herdr-core sends heartbeats, so its cache
-  /// needs no periodic read.
+  /// needs no periodic read. herdr-core does not know an agent's Claude
+  /// Code session: with [claudeSessions], the cache finds them.
   factory OpenLink.hc(
     HcClient client, {
     required Future<void> done,
     required void Function() close,
+    TranscriptOpener? transcripts,
+    ClaudeSessionLookup? claudeSessions,
   }) => OpenLink(
     api: HcPaneApi(client),
-    cache: (onSnapshot, {required debounce, required refreshEvery}) =>
-        HcCache(client, onSnapshot: onSnapshot, debounce: debounce),
+    transcripts: transcripts,
+    cache: (onSnapshot, {required debounce, required refreshEvery}) => HcCache(
+      client,
+      onSnapshot: onSnapshot,
+      debounce: debounce,
+      claudeSessions: claudeSessions,
+    ),
     done: done,
     close: close,
   );
@@ -141,10 +150,14 @@ class OpenLink {
 typedef LinkOpener = Future<OpenLink> Function();
 
 /// Opens a link to [host] over a new SSH connection, which it owns.
+///
+/// With [chat] false, as for a watcher that shows no pane, a link to the
+/// Herdr app does not look up Claude Code sessions.
 LinkOpener sshLinkOpener(
   SshConnector connector,
   Host host, {
   Duration timeout = const Duration(seconds: 15),
+  bool chat = true,
 }) => () async {
   final ssh = await connector.open(host);
   try {
@@ -170,7 +183,15 @@ LinkOpener sshLinkOpener(
           socketPath: host.herdrSocket,
           timeout: timeout,
         );
-        return OpenLink.hc(client, done: ssh.done, close: ssh.close);
+        return OpenLink.hc(
+          client,
+          transcripts: sshTranscriptOpener(ssh, timeout: timeout),
+          claudeSessions: chat
+              ? sshClaudeSessionLookup(ssh, timeout: timeout)
+              : null,
+          done: ssh.done,
+          close: ssh.close,
+        );
     }
   } catch (_) {
     ssh.close();

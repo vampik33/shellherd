@@ -15,6 +15,7 @@ import '../support/fake_hc.dart';
 import '../support/fake_herdr.dart';
 import '../support/fake_screens.dart';
 import '../support/fake_snapshots.dart';
+import '../support/fake_transcripts.dart';
 import '../support/live_widgets.dart';
 import '../support/poll.dart' as poll;
 
@@ -773,6 +774,8 @@ void main() {
   group('on the Herdr app', () {
     late FakeHc hc;
     late HerdrConnection hcConnection;
+    late FakeTranscripts transcripts;
+    const hcSession = '0d6c1f3e-1b2a-4c5d-8e9f-0a1b2c3d4e5f';
 
     /// [hc] with t1 done: turn 2, seen 1. With [failFirst], the first dial
     /// fails and the link comes a moment later.
@@ -781,7 +784,9 @@ void main() {
       bool failFirst = false,
       bool holdGets = false,
       bool failReads = false,
+      bool chat = false,
     }) async {
+      transcripts = FakeTranscripts();
       hc = FakeHc()
         ..holdGets = holdGets ? Completer() : null
         ..terminals = [
@@ -801,7 +806,15 @@ void main() {
       hcConnection = HerdrConnection(
         () async {
           final client = await hc.connect();
-          return OpenLink.hc(client, done: client.done, close: client.close);
+          return OpenLink.hc(
+            client,
+            done: client.done,
+            close: client.close,
+            transcripts: chat ? transcripts.open : null,
+            claudeSessions: chat
+                ? (pids) async => {for (final p in pids) p: hcSession}
+                : null,
+          );
         },
         backoff: (_) => const Duration(milliseconds: 50),
         debounce: const Duration(milliseconds: 1),
@@ -823,7 +836,8 @@ void main() {
         );
         hc.dialer.failWith = null;
       }
-      if (!failReads) await untilFound(tester, paneText('hello'));
+      // The chat can come before the first read of the pane's text.
+      if (!failReads && !chat) await untilFound(tester, paneText('hello'));
     }
 
     Future<void> settle(WidgetTester tester) async {
@@ -841,6 +855,35 @@ void main() {
       for (final (m, p) in hc.requests)
         if (m == 'terminal.label') p,
     ];
+
+    testWidgets('a Claude Code agent shows its chat; a turn it finishes '
+        'while the chat shows is marked seen', (tester) async {
+      await openHc(tester, chat: true);
+      await until(
+        tester,
+        () => transcripts.opened.isNotEmpty,
+        'a transcript read',
+      );
+      expect(transcripts.last.session, hcSession);
+      transcripts.last.file([
+        claudeUser('fix the login bug'),
+        claudeAssistant([claudeText('Fixed it.')]),
+      ]);
+      await untilFound(tester, paneText('Fixed it.'));
+      expect(paneText('hello'), findsNothing);
+      await until(tester, () => labels().isNotEmpty, 'the seen label');
+      expect(labels().last['labels'], {'herdr.seen': '2'});
+      final reads = hc.count('terminal.read');
+      hc.update('t1', turn: 3);
+      hc.note('event');
+      await until(
+        tester,
+        () => labels().any((l) => (l['labels']! as Map)['herdr.seen'] == '3'),
+        'the next turn marked',
+      );
+      expect(hc.count('terminal.read'), reads, reason: 'the poller rests');
+      await closeHc(tester);
+    });
 
     testWidgets('a done agent on the screen is marked seen once', (
       tester,

@@ -17,15 +17,17 @@ import 'server_api.dart';
 /// marks again.
 ///
 /// Each mark waits until the screen shows text that [_poller] read after
-/// the mark was due, and marks no later turn than the one seen then: text
-/// that cannot be read leaves the agent done.
+/// the mark was due, or that keeps itself current ([current], as the chat
+/// does), and marks no later turn than the one seen then: text that cannot
+/// be read leaves the agent done.
 class SeenMarker {
-  SeenMarker(this._connection, this.paneId, this._poller) {
+  SeenMarker(this._connection, this.paneId, this._poller, {this.current}) {
     // The first snapshot of a link comes before its api: follow both.
     _changes = Listenable.merge([
       _connection.state,
       _connection.snapshot,
       _poller.shownRead,
+      ?current,
     ])..addListener(_follow);
     _follow();
   }
@@ -33,6 +35,11 @@ class SeenMarker {
   final HerdrConnection _connection;
   final String paneId;
   final PanePoller _poller;
+
+  /// True while the screen shows text that follows the pane without
+  /// [_poller], such as the chat over a running transcript read: a mark
+  /// that is due needs no read then.
+  final ValueListenable<bool>? current;
   late final Listenable _changes;
 
   /// The api and turn of the mark that is due, and the reads started
@@ -83,7 +90,9 @@ class SeenMarker {
       _due = due;
       _readsBefore = _poller.readsStarted;
     }
-    if (_poller.shownRead.value <= _readsBefore) return;
+    final fresh =
+        _poller.shownRead.value > _readsBefore || (current?.value ?? false);
+    if (!fresh) return;
     unawaited(_mark(upTo: pane?.turn));
   }
 

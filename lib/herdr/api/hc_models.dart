@@ -54,6 +54,7 @@ class HcTerminal {
     this.name,
     this.status,
     this.parent,
+    this.foregroundPid,
   });
 
   factory HcTerminal.fromJson(Map<String, Object?> j) {
@@ -73,6 +74,9 @@ class HcTerminal {
       name: jsonOptional<String>(j, 'name'),
       status: status == null ? null : HcStatus.fromJson(status),
       parent: jsonOptional<String>(j, 'parent'),
+      foregroundPid: foreground == null
+          ? null
+          : jsonOptional<int>(foreground, 'pid'),
     );
   }
 
@@ -100,6 +104,10 @@ class HcTerminal {
 
   /// The terminal that started this one (`t3`).
   final String? parent;
+
+  /// The leader of the process group in front, such as the agent that the
+  /// shell started; null once the terminal has finished.
+  final int? foregroundPid;
 
   static const spaceLabel = 'herdr.space';
   static const tabLabel = 'herdr.tab';

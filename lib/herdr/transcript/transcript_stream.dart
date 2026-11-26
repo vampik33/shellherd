@@ -194,6 +194,10 @@ class TranscriptStream {
 
   final view = ValueNotifier(const TranscriptView());
 
+  /// True while a read runs and [view] shows all that the file had when it
+  /// started, and each line added since: the chat is current.
+  final live = ValueNotifier(false);
+
   /// True after a read of the current link and session failed before its
   /// header.
   final unavailable = ValueNotifier(false);
@@ -241,6 +245,7 @@ class TranscriptStream {
     _stop();
     view.dispose();
     unavailable.dispose();
+    live.dispose();
   }
 
   void _follow() {
@@ -281,6 +286,7 @@ class TranscriptStream {
     _channel?.close();
     _channel = null;
     _reading = false;
+    live.value = false;
   }
 
   void _start() {
@@ -319,6 +325,8 @@ class TranscriptStream {
         items: transcript.items,
         startsCut: startsCut,
       );
+      // After the read ended, what it brought shows, but nothing follows.
+      live.value = current() && _channel != null;
     }
 
     try {
