@@ -5,6 +5,9 @@
 @Tags(['hc', 'sshd'])
 library;
 
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shellherd/herdr/api/hc_client.dart';
@@ -13,6 +16,7 @@ import 'package:shellherd/herdr/hc_cache.dart';
 import 'package:shellherd/herdr/hc_link.dart';
 import 'package:shellherd/herdr/hc_snapshot.dart';
 import 'package:shellherd/herdr/server_api.dart';
+import 'package:shellherd/herdr/transcript/claude_sessions.dart';
 
 import '../support/hc_test_session.dart';
 import '../support/poll.dart';
@@ -93,6 +97,61 @@ Future<void> main() async {
         expect(last().agents.single.displayAgent, 'demo');
       },
     );
+
+    test('the cache finds the Claude Code session of an agent by the pid '
+        'in front of its terminal, and the next one after /clear', () async {
+      const id1 = '0d6c1f3e-1b2a-4c5d-8e9f-0a1b2c3d4e5f';
+      const id2 = '142989e8-15e1-4adb-9046-7d45cb8b3666';
+      final config = Directory.systemTemp.createTempSync('claude-config');
+      addTearDown(() => config.deleteSync(recursive: true));
+      final agent = await client.run(['sh', '-c', HcTestSession.agentScript]);
+      await client.writeLayout([agent]);
+      await HcPaneApi(client).submit(
+        agent,
+        HcTestSession.report('idle', app: claudeCodeApp),
+        toAgent: false,
+      );
+      int? pid;
+      await eventually(() async {
+        final t = await terminal(agent);
+        pid = claudePid(t);
+        return pid != null;
+      }, 'the Claude Code report');
+      // The agent's own shell, not hc's holder.
+      final cmdline = File('/proc/$pid/cmdline');
+      if (cmdline.existsSync()) {
+        expect(cmdline.readAsStringSync(), contains('stty -echo'));
+      }
+      void session(String id) => File('${config.path}/sessions/$pid.json')
+        ..createSync(recursive: true)
+        ..writeAsStringSync(jsonEncode({'pid': pid, 'sessionId': id}));
+      session(id1);
+
+      Future<Map<int, String>> lookup(List<int> pids) async {
+        final r = await Process.run(
+          'sh',
+          ['-c', claudeSessionsCommand(pids)],
+          environment: {'CLAUDE_CONFIG_DIR': config.path},
+        );
+        expect(r.exitCode, 0, reason: '${r.stderr}');
+        return parseClaudeSessions(r.stdout as String, pids);
+      }
+
+      final snapshots = <HerdrSnapshot>[];
+      final cache = HcCache(
+        client,
+        onSnapshot: snapshots.add,
+        claudeSessions: lookup,
+        sessionRefresh: const Duration(milliseconds: 100),
+      );
+      addTearDown(cache.close);
+      await cache.start();
+      String? shown() =>
+          snapshots.last.panes.single.agentSession?.claudeSession;
+      await until(() => shown() == id1, 'the session');
+      session(id2);
+      await until(() => shown() == id2, 'the session after /clear');
+    });
 
     test(
       'a finished turn nobody saw is done, until the app has seen it',

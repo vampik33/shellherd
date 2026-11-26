@@ -15,6 +15,7 @@ Map<String, Object?> hcTerminal(
   String? parent,
   String title = '',
   String cwd = '/home/u/work',
+  int pid = 1,
 }) => {
   'address': address,
   'argv': ['/bin/sh'],
@@ -31,7 +32,7 @@ Map<String, Object?> hcTerminal(
   'parent': ?parent,
   'status': ?status,
   'foreground': {
-    'pid': 1,
+    'pid': pid,
     'name': 'sh',
     'argv': ['sh'],
     'cwd': cwd,

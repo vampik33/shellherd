@@ -4,6 +4,7 @@ import 'api/hc_client.dart';
 import 'api/herdr_client.dart';
 import 'hc_snapshot.dart';
 import 'server_api.dart';
+import 'transcript/claude_sessions.dart';
 
 /// Keeps a copy of the Herdr app's session current, over one link.
 ///
@@ -14,13 +15,27 @@ import 'server_api.dart';
 ///
 /// herdr-core sends a heartbeat every 15 s. A stalled network ends no
 /// connection, so silence for [stallAfter] counts as a lost link.
+///
+/// With [claudeSessions], the panes of Claude Code agents get their
+/// sessions, which herdr-core does not know: see [ClaudeSessions]. A
+/// session found or changed later marks the copy as old.
 class HcCache extends DebouncedCache {
   HcCache(
     this._client, {
     required super.onSnapshot,
     super.debounce = const Duration(milliseconds: 150),
     this.stallAfter = defaultStallAfter,
-  });
+    ClaudeSessionLookup? claudeSessions,
+    Duration sessionRefresh = const Duration(seconds: 15),
+  }) {
+    if (claudeSessions != null) {
+      _sessions = ClaudeSessions(
+        claudeSessions,
+        onChange: markStale,
+        refreshEvery: sessionRefresh,
+      );
+    }
+  }
 
   /// Two heartbeats missed, and some slack.
   static const defaultStallAfter = Duration(seconds: 35);
@@ -31,6 +46,7 @@ class HcCache extends DebouncedCache {
 
   HcSubscription? _subscription;
   Timer? _stall;
+  ClaudeSessions? _sessions;
 
   @override
   Future<void> start() async {
@@ -76,13 +92,24 @@ class HcCache extends DebouncedCache {
     final layoutRead = _client.layout()..ignore();
     final terminals = await _client.terminals();
     final layout = await layoutRead;
-    if (!closed) onSnapshot(hcSnapshot(_client.hello, terminals, layout));
+    if (closed) return;
+    final sessions = _sessions;
+    sessions?.want({...terminals.map(claudePid).nonNulls});
+    onSnapshot(
+      hcSnapshot(
+        _client.hello,
+        terminals,
+        layout,
+        claudeSessions: sessions?.known ?? const {},
+      ),
+    );
   }
 
   @override
   Future<void> close() async {
     await super.close();
     _stall?.cancel();
+    _sessions?.close();
     await _subscription?.close();
   }
 }

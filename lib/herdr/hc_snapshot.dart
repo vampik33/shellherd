@@ -1,5 +1,6 @@
 import 'api/hc_client.dart';
 import 'api/herdr_client.dart';
+import 'transcript/claude_sessions.dart';
 
 /// The Herdr app's session as a [HerdrSnapshot], so the lists, the pane
 /// screen and the notifications serve both servers.
@@ -10,11 +11,18 @@ import 'api/herdr_client.dart';
 /// agent another agent started, stands in the tab of its labels or of its
 /// parent, after the tab's own panes; one with no such place is left out,
 /// as the app leaves it out.
+///
+/// A Claude Code agent's pane has its session from [claudeSessions], by
+/// the pid of the process in front of its terminal.
 HerdrSnapshot hcSnapshot(
   HcHello hello,
   List<HcTerminal> terminals,
-  HcLayout layout,
-) {
+  HcLayout layout, {
+  Map<int, String> claudeSessions = const {},
+}) {
+  Pane pane(HcTerminal t, String space, String tab) =>
+      _pane(t, space, tab, claudeSessions);
+
   final live = {
     for (final t in terminals)
       if (t.live) t.address: t,
@@ -53,9 +61,9 @@ HerdrSnapshot hcSnapshot(
     for (final (j, tab) in space.tabs.indexed) {
       final tabPanes = [
         for (final address in tab.terminals)
-          if (live[address] case final t?) _pane(t, space.id, tab.id),
+          if (live[address] case final t?) pane(t, space.id, tab.id),
         for (final t in extra[tab.id] ?? const <HcTerminal>[])
-          _pane(t, space.id, tab.id),
+          pane(t, space.id, tab.id),
       ];
       tabs.add(
         Tab(
@@ -104,7 +112,12 @@ HerdrSnapshot hcSnapshot(
   );
 }
 
-Pane _pane(HcTerminal t, String space, String tab) => Pane(
+Pane _pane(
+  HcTerminal t,
+  String space,
+  String tab,
+  Map<int, String> claudeSessions,
+) => Pane(
   id: t.address,
   workspaceId: space,
   tabId: tab,
@@ -115,7 +128,28 @@ Pane _pane(HcTerminal t, String space, String tab) => Pane(
   title: t.title.isEmpty ? null : t.title,
   cwd: t.cwd,
   turn: t.turn,
+  agentSession: switch (claudeSessionOf(t, claudeSessions)) {
+    final session? => AgentSession(
+      agent: 'claude',
+      kind: AgentSessionKind.id,
+      value: session,
+    ),
+    null => null,
+  },
 );
+
+/// The pid whose Claude Code session the pane of [t] shows: the process in
+/// front of a live terminal of this machine whose agent reports as Claude
+/// Code. A terminal of another machine the core connects to (`machine/t7`)
+/// has its pid there, and its transcript too.
+int? claudePid(HcTerminal t) =>
+    t.live && t.status?.app == claudeCodeApp && !t.address.contains('/')
+    ? t.foregroundPid
+    : null;
+
+/// The Claude Code session of [t] in [claudeSessions]; null without one.
+String? claudeSessionOf(HcTerminal t, Map<int, String> claudeSessions) =>
+    claudeSessions[claudePid(t)];
 
 /// The state of [t] as herdr names it.
 ///

@@ -19,5 +19,10 @@ paths:
   refresh (15 s). Claude Code
   writes the transcript with the first message, so the read waits for it;
   until then the pane shows its text.
+- herdr-core knows no session: `HcCache` looks it up by the terminal's
+  foreground pid in Claude Code's `~/.claude/sessions/<pid>.json`
+  (lib/herdr/transcript/claude_sessions.dart), again every 15 s for
+  `/clear`. That file is internal to Claude Code; without it the pane
+  shows its text.
 - Don't add a "start herdr" action: a server started over SSH lacks the
   desktop environment.

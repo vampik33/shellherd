@@ -209,4 +209,72 @@ void main() {
       expect(_of(agent('pondering')), AgentStatus.unknown);
     });
   });
+
+  group('Claude Code sessions', () {
+    const id = '0d6c1f3e-1b2a-4c5d-8e9f-0a1b2c3d4e5f';
+    final spaces = [
+      hcSpace('s1', [
+        hcTab('b1', ['t1', 't2', 't3', 't4']),
+      ]),
+    ];
+
+    test('a Claude Code pane has the session of its foreground pid', () {
+      final s = hcSnapshot(
+        _hello,
+        [
+          for (final t in [
+            hcTerminal('t1', status: _status('idle'), pid: 41),
+            // Another agent with the same pid in the map has none.
+            hcTerminal(
+              't2',
+              status: {'state': 'idle', 'app': 'codex'},
+              pid: 42,
+            ),
+            // A Claude Code pane whose pid has no session.
+            hcTerminal('t3', status: _status('working'), pid: 43),
+            // A shell.
+            hcTerminal('t4', pid: 44),
+          ])
+            HcTerminal.fromJson(t),
+        ],
+        HcLayout.fromJson({'spaces': spaces}),
+        claudeSessions: {41: id, 42: id, 44: id},
+      );
+      final sessions = {
+        for (final p in s.panes) p.id: p.agentSession?.claudeSession,
+      };
+      expect(sessions, {'t1': id, 't2': null, 't3': null, 't4': null});
+    });
+
+    test('a finished terminal has no foreground pid', () {
+      final t = HcTerminal.fromJson({
+        ...hcTerminal('t1', state: 'finished', status: _status('idle')),
+        'foreground': null,
+      });
+      expect(t.foregroundPid, isNull);
+      expect(claudePid(t), isNull);
+      expect(
+        claudePid(HcTerminal.fromJson(hcTerminal('t2', pid: 9))),
+        isNull,
+        reason: 'not an agent',
+      );
+      expect(
+        claudePid(
+          HcTerminal.fromJson(
+            hcTerminal('t3', status: _status('idle'), pid: 9),
+          ),
+        ),
+        9,
+      );
+      expect(
+        claudePid(
+          HcTerminal.fromJson(
+            hcTerminal('rohan/t3', status: _status('idle'), pid: 9),
+          ),
+        ),
+        isNull,
+        reason: 'a pid of another machine',
+      );
+    });
+  });
 }

@@ -756,4 +756,28 @@ void main() {
       expect(startedOver, greaterThan(0), reason: 'no read started over');
     });
   });
+
+  test(
+    'live while a read runs and its start shows; not once it ended',
+    () async {
+      expect(stream.live.value, isFalse);
+      stream.running = true;
+      await until(() => transcripts.opened.isNotEmpty, 'a read');
+      final body = '${claudeUser('hi')}\n';
+      transcripts.last.header(utf8.encode(body).length * 2);
+      transcripts.last.text(body);
+      await Future<void>.delayed(_settle);
+      expect(stream.live.value, isFalse, reason: 'half the start came');
+      transcripts.last.text(body);
+      await until(() => stream.live.value, 'live');
+      transcripts.last.fail(StateError('link stalled'));
+      await until(() => !stream.live.value, 'not live');
+      expect(items(), isNotEmpty);
+      await until(() => transcripts.opened.length == 2, 'the next read');
+      transcripts.last.header(0, start: 0, inode: '-');
+      await until(() => stream.live.value, 'live, waiting for the file');
+      stream.running = false;
+      expect(stream.live.value, isFalse);
+    },
+  );
 }

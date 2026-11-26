@@ -125,4 +125,73 @@ void main() {
     await Future<void>.delayed(_settle);
     expect(published, hasLength(1));
   });
+
+  group('Claude Code sessions', () {
+    const id1 = '0d6c1f3e-1b2a-4c5d-8e9f-0a1b2c3d4e5f';
+    const id2 = '142989e8-15e1-4adb-9046-7d45cb8b3666';
+    late List<List<int>> lookups;
+    late Map<int, String> files;
+
+    Future<Map<int, String>> lookup(List<int> pids) async {
+      lookups.add(pids);
+      return {for (final p in pids) p: ?files[p]};
+    }
+
+    String? sessionOf(String pane) => published.last.panes
+        .singleWhere((p) => p.id == pane)
+        .agentSession
+        ?.claudeSession;
+
+    setUp(() {
+      lookups = [];
+      files = {7: id1};
+      hc.terminals = [
+        hcTerminal(
+          't1',
+          labels: {'herdr.space': 's1', 'herdr.tab': 'b1'},
+          status: {'state': 'idle', 'app': 'claude-code'},
+          pid: 7,
+        ),
+        hcTerminal(
+          't2',
+          labels: {'herdr.space': 's1', 'herdr.tab': 'b1'},
+          pid: 8,
+        ),
+      ];
+      hc.layout = {
+        'spaces': [
+          hcSpace('s1', [
+            hcTab('b1', ['t1', 't2']),
+          ]),
+        ],
+      };
+    });
+
+    test(
+      'a found session comes in a new snapshot; /clear in a later one',
+      () async {
+        cache = HcCache(
+          client,
+          onSnapshot: published.add,
+          debounce: const Duration(milliseconds: 5),
+          claudeSessions: lookup,
+          sessionRefresh: const Duration(milliseconds: 50),
+        );
+        await cache.start();
+        await until(() => sessionOf('t1') == id1, 'the session');
+        expect(lookups.first, [7], reason: 'only the Claude Code pane');
+        expect(sessionOf('t2'), isNull);
+        files[7] = id2;
+        await until(() => sessionOf('t1') == id2, 'the new session');
+      },
+    );
+
+    test('without a lookup no pane has a session', () async {
+      await start();
+      await Future<void>.delayed(_settle);
+      final panes = published.last.panes;
+      expect(panes.map((p) => p.id), ['t1', 't2']);
+      expect(panes.map((p) => p.agentSession), everyElement(isNull));
+    });
+  });
 }
