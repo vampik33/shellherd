@@ -20,7 +20,8 @@ The full `flutter test` takes about 90 s.
 - lib/herdr/api: herdr client (NDJSON, one request per connection) and hc
   client (herdr-core JSON-RPC, persistent)
 - lib/herdr: caches, links, PaneApi (server_api.dart) shared by both
-  backends; transcript/ = Claude Code transcripts for the chat; ui/ =
+  backends; pane_stream.dart (live screen) and pane_poller.dart
+  (fallback); transcript/ = Claude Code transcripts for the chat; ui/ =
   screens
 - lib/terminal: SSH and mosh shell sessions, key bar
 - lib/notify: AgentWatcher per host, WatchHub; on Android it runs in a
