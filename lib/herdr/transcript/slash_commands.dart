@@ -121,28 +121,35 @@ String slashCommandsCommand(String? cwd) {
     '    NR > 1 && /^---[[:space:]]*\$/ { exit }',
     "    NR > 1 && NR <= 80 { print \"$_contentMark\" \$0 }'",
     '}',
-    // Of the paths on stdin, those not below a directory with a SKILL.md
-    // in any case, and not beside one: as Claude Code reads a plugin.
-    // The name is matched as is, not lowercased: in a Turkish locale
-    // awk lowers I to a dotless i.
-    'prune_skills() {',
-    "  LC_ALL=C awk 'function skill(f, p, n) { n = split(f, p, \"/\")",
-    '      return p[n] ~ /^[Ss][Kk][Ii][Ll][Ll][.][Mm][Dd]\$/ }',
-    '    { f[NR] = \$0; if (skill(\$0)) { d = \$0; sub("/[^/]*\$", "", d); k[d] = 1 } }',
-    '    END { for (i = 1; i <= NR; i++) {',
-    '      d = f[i]; sub("/[^/]*\$", "", d)',
-    '      keep = skill(f[i]) || !(d in k)',
-    '      while (keep && sub("/[^/]*\$", "", d)) if (d in k) keep = 0',
-    "      if (keep) print f[i] } }'",
+    // Prints the command files of directory $1 of a plugin, $2 levels
+    // below its commands/, as Claude Code reads them: a directory with a
+    // SKILL.md, in any case, gives only that, and nothing below it.
+    // Links are not followed, as in Claude Code, which also keeps a link
+    // to a directory above from looping. Builtins only, so no process per
+    // directory, and the paths go out as it finds them, so that the cap
+    // stops it. A variable is global in sh: e is not used after the walk
+    // below returns.
+    'walk_plugin() {',
+    '  for e in "\$1"/[Ss][Kk][Ii][Ll][Ll].[Mm][Dd]; do',
+    '    [ -f "\$e" ] && [ ! -L "\$e" ] && { printf %s "\$e"; echo; return; }',
+    '  done',
+    '  for e in "\$1"/* "\$1"/.[!.]* "\$1"/..?*; do',
+    '    if [ -L "\$e" ]; then :',
+    '    elif [ -d "\$e" ]; then',
+    '      [ "\$2" -lt 2 ] && walk_plugin "\$e" \$((\$2 + 1))',
+    '    else',
+    '      case \$e in *.md) [ -f "\$e" ] && { printf %s "\$e"; echo; } ;; esac',
+    '    fi',
+    '  done',
     '}',
     'emit_commands() {',
     '  [ -d "\$2" ] || return 0',
-    "  s=SKILL.md; [ \"\$1\" = plugin ] && s='[Ss][Kk][Ii][Ll][Ll].[Mm][Dd]'",
-    // From "$2/.", so that each path has "/./" where the name starts. In
-    // a plugin, what is below a SKILL.md goes before the cap counts; awk
-    // holds what it gets, so it gets at most 2000, and find stops there.
-    "  find -L \"\$2/.\" -maxdepth 3 -type f -name '*.md' -o -type f -name \"\$s\" 2>/dev/null |",
-    '    if [ "\$1" = plugin ]; then head -n 2000 | prune_skills; else cat; fi |',
+    // From "$2/.", so that each path has "/./" where the name starts.
+    '  if [ "\$1" = plugin ]; then',
+    '    walk_plugin "\$2/." 0',
+    '  else',
+    "    find -L \"\$2/.\" -maxdepth 3 -type f -name '*.md'",
+    '  fi 2>/dev/null |',
     '    head -n 200 | while IFS= read -r f; do emit_md "\$1" "\$f"; done',
     '}',
     'emit_skills() {',

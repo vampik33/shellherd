@@ -620,17 +620,23 @@ void main() {
         expect(commands[2].description, 'b');
       });
 
-      test("what is below a plugin's SKILL.md does not count against the "
-          'cap of what is read', () async {
+      test("what is beside and below a plugin's SKILL.md, past 2000 files, "
+          'does not count against the cap of what is read', () async {
         final c = config.path;
         final plugin = '${root.path}/plugins/tool';
         put('$plugin/commands/big/SKILL.md', '');
-        for (var i = 0; i < 250; i++) {
+        for (var i = 0; i < 1000; i++) {
+          put('$plugin/commands/big/n$i.md', '');
+        }
+        for (var i = 0; i < 1500; i++) {
           put('$plugin/commands/big/ref/r$i.md', '');
         }
+        // Hidden ones count, as with find and in Claude Code.
+        put('$plugin/commands/.hid/x.md', '');
+        put('$plugin/commands/..y.md', '');
         // Below the depth the read looks at: not a skill of the plugin.
         put('$plugin/commands/a/b/c/SKILL.md', '');
-        // Beside it, some found after it whatever order find takes.
+        // Beside it: with a read cut short, some come after it.
         final siblings = [for (var i = 10; i < 40; i++) 'go$i'];
         for (final name in siblings) {
           put('$plugin/commands/$name.md', '');
@@ -648,8 +654,46 @@ void main() {
         );
         put('$c/settings.json', '{"enabledPlugins": {"tool@m": true}}');
         expect(_names(await run(null)), [
+          'tool:..y',
+          'tool:.hid:x',
           'tool:big',
           for (final name in siblings) 'tool:$name',
+        ]);
+      });
+
+      test("a plugin's links are not followed, as in Claude Code: a link to "
+          'a directory above does not fill the cap', () async {
+        final c = config.path;
+        final plugin = '${root.path}/plugins/tool';
+        final runs = [for (var i = 100; i < 250; i++) 'run$i'];
+        for (final name in runs) {
+          put('$plugin/commands/$name.md', '');
+        }
+        // Found before the runs; it would list them again, twice.
+        Link('$plugin/commands/00-loop').createSync('.');
+        put('${root.path}/elsewhere/SKILL.md', '');
+        put('${root.path}/elsewhere/linked.md', '');
+        Link('$plugin/commands/linked.md')
+            .createSync('${root.path}/elsewhere/linked.md');
+        // A linked SKILL.md does not make a skill of its directory.
+        put('$plugin/commands/sk/x.md', '');
+        Link('$plugin/commands/sk/SKILL.md')
+            .createSync('${root.path}/elsewhere/SKILL.md');
+        put(
+          '$c/plugins/installed_plugins.json',
+          _json({
+            'version': 2,
+            'plugins': {
+              'tool@m': [
+                {'scope': 'user', 'installPath': plugin},
+              ],
+            },
+          }),
+        );
+        put('$c/settings.json', '{"enabledPlugins": {"tool@m": true}}');
+        expect(_names(await run(null)), [
+          for (final name in runs) 'tool:$name',
+          'tool:sk:x',
         ]);
       });
 
