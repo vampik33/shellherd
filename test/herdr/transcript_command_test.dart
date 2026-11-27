@@ -552,7 +552,7 @@ void main() {
   });
 }
 
-/// Whether one of the descriptors in [fds], a /proc/<pid>/fd, is [path].
+/// Whether one of the descriptors in [fds], a `/proc/<pid>/fd`, is [path].
 bool _opens(String fds, String path) {
   try {
     return Directory(fds).listSync().any((fd) {

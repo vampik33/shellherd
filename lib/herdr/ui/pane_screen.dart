@@ -555,7 +555,7 @@ class _PaneScreenState extends State<PaneScreen> {
       child: ChatView(
         items: items,
         startsCut: transcript.startsCut,
-        firstKey: transcript.firstKey,
+        keys: transcript.keys,
         earlier: transcript.earlier,
         onLoadEarlier: widget.connection.transcriptRanges == null
             ? null

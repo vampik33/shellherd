@@ -792,6 +792,15 @@ void main() {
     });
 
     String prompt(int i) => claudeUser('m$i', uuid: 'u$i');
+
+    /// The keys of the prompts of [prompt] at [at].
+    List<Object> keysOf(Iterable<int> at) => [for (final i in at) ('u$i', 0)];
+
+    /// The items shown, by their keys.
+    Map<Object, ChatItem> byKey() => {
+      for (final (i, key) in stream.view.value.keys!.indexed) key: items()![i],
+    };
+
     List<ChatItem> prompts(Iterable<int> at) => [
       for (final i in at) ChatPrompt('m$i'),
     ];
@@ -818,22 +827,22 @@ void main() {
       await readCut(lines, lineStart(lines, 1) + 3);
       expect(items(), prompts([2, 3]));
       expect(stream.view.value.startsCut, isTrue);
-      expect(stream.view.value.firstKey, 0);
+      expect(stream.view.value.keys, keysOf([2, 3]));
       await stream.loadEarlier();
       expect(ranges.asked, [
         ('s1', (inode: '1', from: 0, to: lineStart(lines, 2))),
       ]);
       expect(items(), prompts([0, 1, 2, 3]));
       expect(stream.view.value.startsCut, isFalse);
-      expect(stream.view.value.firstKey, -2);
+      expect(stream.view.value.keys, keysOf([0, 1, 2, 3]));
       expect(stream.view.value.earlier, EarlierLoad.idle);
       // Nothing is before the start.
       await stream.loadEarlier();
       expect(ranges.asked, hasLength(1));
     });
 
-    test('earlier lines that drop a later copy of a record give the items '
-        'numbers none had', () async {
+    test('earlier lines that drop a later copy of a record keep each key '
+        'on its item', () async {
       final lines = [
         prompt(0),
         prompt(1),
@@ -844,17 +853,14 @@ void main() {
         prompt(4),
       ];
       await readCut(lines, lineStart(lines, 2) + 3);
-      final was = items()!;
-      final wasFirst = stream.view.value.firstKey;
-      expect(was, prompts([1, 3, 4]));
+      final was = byKey();
+      expect(was.values, prompts([1, 3, 4]));
       await stream.loadEarlier();
       expect(items(), prompts([0, 1, 2, 3, 4]));
-      final first = stream.view.value.firstKey;
-      for (var i = 0; i < items()!.length; i++) {
-        final old = first + i - wasFirst;
-        if (old >= 0 && old < was.length) {
-          expect(items()![i], was[old], reason: 'key ${first + i}');
-        }
+      final now = byKey();
+      expect(now, hasLength(5), reason: 'no key twice');
+      for (final MapEntry(:key, :value) in was.entries) {
+        expect(now[key], value, reason: 'key $key');
       }
     });
 
@@ -876,6 +882,7 @@ void main() {
       ];
       await readCut(lines, lineStart(lines, 24) - 1);
       expect(items(), prompts([99]));
+      final lastKey = stream.view.value.keys!.single;
       var loads = 0;
       while (stream.view.value.earlier == EarlierLoad.idle) {
         await stream.loadEarlier();
@@ -899,7 +906,8 @@ void main() {
       // Whole messages, in order, and the key of the last kept.
       final shown = items()!;
       expect(shown.last, const ChatPrompt('m99'));
-      expect(stream.view.value.firstKey, -(shown.length - 1));
+      expect(stream.view.value.keys!.last, lastKey);
+      expect(byKey(), hasLength(shown.length), reason: 'no key twice');
       final first = int.parse((shown.first as ChatPrompt).text.split('x')[0]);
       expect(shown, [
         for (var i = first; i < 24; i++) ChatPrompt('$i$big'),
@@ -1022,7 +1030,7 @@ void main() {
       await load;
       expect(items(), prompts([7]));
       expect(stream.view.value.earlier, EarlierLoad.idle);
-      expect(stream.view.value.firstKey, 0);
+      expect(stream.view.value.keys, keysOf([7]));
     });
 
     test('a read that goes on keeps what loaded', () async {
@@ -1040,7 +1048,7 @@ void main() {
       await until(() => items()?.length == 4, 'the line added');
       expect(items(), prompts([0, 1, 2, 3]));
       expect(stream.view.value.startsCut, isFalse);
-      expect(stream.view.value.firstKey, -2);
+      expect(stream.view.value.keys, keysOf([0, 1, 2, 3]));
     });
 
     test('does nothing for a read from the start', () async {

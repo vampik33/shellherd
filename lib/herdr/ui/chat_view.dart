@@ -1,6 +1,3 @@
-import 'dart:math';
-
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_markdown_plus/flutter_markdown_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -23,7 +20,7 @@ class ChatView extends StatefulWidget {
     super.key,
     required this.items,
     this.startsCut = false,
-    this.firstKey = 0,
+    this.keys,
     this.earlier = EarlierLoad.idle,
     this.onLoadEarlier,
     this.status,
@@ -35,8 +32,10 @@ class ChatView extends StatefulWidget {
   /// Older messages were not read: the top says so, or loads them.
   final bool startsCut;
 
-  /// See [TranscriptView.firstKey].
-  final int firstKey;
+  /// A key for each of [items] that stays with it while earlier ones load
+  /// (see [TranscriptView.keys]). Without them, a tool call keeps the key
+  /// of its id and the others that of where they stand.
+  final List<Object>? keys;
 
   /// How loading the older messages goes.
   final EarlierLoad earlier;
@@ -60,8 +59,8 @@ class _ChatViewState extends State<ChatView> {
   final _scroll = ScrollController();
   late List<ChatItem> _shown;
 
-  /// The [ChatView.firstKey] of [_shown].
-  late int _shownFirst;
+  /// The keys of [_shown].
+  late List<Object> _shownKeys;
 
   bool get _scrolledUp => _scroll.hasClients && _scroll.offset > 1;
 
@@ -69,7 +68,7 @@ class _ChatViewState extends State<ChatView> {
   void initState() {
     super.initState();
     _shown = widget.items;
-    _shownFirst = widget.firstKey;
+    _shownKeys = _keys(widget);
     _scroll.addListener(_release);
   }
 
@@ -78,19 +77,21 @@ class _ChatViewState extends State<ChatView> {
     super.didUpdateWidget(old);
     if (!_scrolledUp) {
       _shown = widget.items;
-      _shownFirst = widget.firstKey;
-    } else {
+      _shownKeys = _keys(widget);
+    } else if (_shown.isNotEmpty) {
       // Earlier messages go above what shows: the reverse list keeps the
-      // place of what is below.
-      final front = min(_shownFirst - widget.firstKey, widget.items.length);
+      // place of what is below. One that shows already further down, as
+      // a later copy of its record, stays there until the chat is let go.
+      final keys = _keys(widget);
+      final front = keys.indexOf(_shownKeys.first);
       if (front > 0) {
-        final rest = widget.items.skip(front).take(_shown.length).toList();
-        // Earlier lines can drop a later copy of a record they hold; then
-        // what shows is the new items, under numbers none had before.
-        _shown = listEquals(rest, _shown)
-            ? [...widget.items.take(front), ..._shown]
-            : widget.items.take(front + _shown.length).toList();
-        _shownFirst = widget.firstKey;
+        final held = _shownKeys.toSet();
+        final add = [
+          for (var i = 0; i < front; i++)
+            if (!held.contains(keys[i])) i,
+        ];
+        _shown = [for (final i in add) widget.items[i], ..._shown];
+        _shownKeys = [for (final i in add) keys[i], ..._shownKeys];
       }
       // A shorter list can end the scroll without telling the listener:
       // check again once it is laid out.
@@ -104,7 +105,7 @@ class _ChatViewState extends State<ChatView> {
     if (identical(_shown, widget.items) || _scrolledUp) return;
     setState(() {
       _shown = widget.items;
-      _shownFirst = widget.firstKey;
+      _shownKeys = _keys(widget);
     });
   }
 
@@ -118,13 +119,13 @@ class _ChatViewState extends State<ChatView> {
   Widget build(BuildContext context) {
     // Without details, thinking and tool calls are left out. Where each
     // item shown stands in [_shown], for its key.
-    final places = [
-      for (var i = 0; i < _shown.length; i++)
-        if (widget.showDetails ||
-            (_shown[i] is! ChatThinking && _shown[i] is! ChatTool))
-          i,
-    ];
-    final items = [for (final i in places) _shown[i]];
+    final places = widget.showDetails
+        ? null
+        : [
+            for (var i = 0; i < _shown.length; i++)
+              if (_shown[i] is! ChatThinking && _shown[i] is! ChatTool) i,
+          ];
+    final items = places == null ? _shown : [for (final i in places) _shown[i]];
     final working = widget.status == AgentStatus.working;
     if (items.isEmpty && !widget.startsCut && !working) {
       return const Center(
@@ -132,13 +133,12 @@ class _ChatViewState extends State<ChatView> {
       );
     }
     // The list runs from the bottom: index 0 is the working line, when
-    // there is one, then the newest item. Items keep the key of their
-    // number ([ChatView.firstKey] for the first), so that a row stays open
-    // as new ones come and earlier ones load; tool calls the key of their
-    // id, so that one stays open when a new read starts at another record.
+    // there is one, then the newest item. Items keep their key
+    // ([ChatView.keys]), so that a row stays open as new ones come and
+    // earlier ones load.
     final lead = working ? 1 : 0;
     final count = lead + items.length + (widget.startsCut ? 1 : 0);
-    Key key(int at) => _key(_shown, places[at], _shownFirst);
+    Key key(int at) => ValueKey(_shownKeys[places?[at] ?? at]);
     // Built on the first lookup only.
     Map<Key, int>? keyAt;
     final markdown = _markdownStyle(Theme.of(context));
@@ -169,11 +169,12 @@ class _ChatViewState extends State<ChatView> {
     );
   }
 
-  static Key _key(List<ChatItem> items, int at, int first) =>
-      switch (items[at]) {
-        ChatTool(:final id) => ValueKey(('tool', id)),
-        _ => ValueKey(first + at),
-      };
+  static List<Object> _keys(ChatView chat) =>
+      chat.keys ??
+      [
+        for (final (at, item) in chat.items.indexed)
+          item is ChatTool ? ('tool', item.id) : at,
+      ];
 
   Widget _row(
     ChatItem item, {

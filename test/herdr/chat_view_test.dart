@@ -688,25 +688,28 @@ void main() {
         summary: 'only once',
         input: 'ls',
       );
-      final later = [for (var i = 1; i < 60; i++) ChatPrompt('msg $i.')];
-      Widget chat(List<ChatItem> items, int firstKey) => MaterialApp(
+      final later = [
+        for (var i = 1; i < 60; i++) (ChatPrompt('msg $i.'), ('u$i', 0)),
+      ];
+      Widget chat(List<(ChatItem, Object)> items) => MaterialApp(
         home: Scaffold(
           body: ChatView(
-            items: items,
-            firstKey: firstKey,
+            items: [for (final (item, _) in items) item],
+            keys: [for (final (_, key) in items) key],
             startsCut: true,
             onLoadEarlier: () {},
           ),
         ),
       );
-      await tester.pumpWidget(chat([tool, ...later], 0));
+      const call = (tool, ('tool', 't7'));
+      await tester.pumpWidget(chat([later.first, call, ...later.skip(1)]));
       await tester.drag(find.byType(ListView), const Offset(0, 5000));
       await tester.pump();
       await untilFound(tester, paneText('only once'));
-      // The earlier lines hold the record with the call: its later copy
-      // is dropped, and the items shift by one less than came in front.
+      // The earlier lines hold the record with the call: its later copy,
+      // below what shows first, is dropped.
       await tester.pumpWidget(
-        chat([const ChatPrompt('msg 0.'), tool, ...later], -2),
+        chat([(const ChatPrompt('msg 0.'), ('u0', 0)), call, ...later]),
       );
       await tester.pump();
       expect(tester.takeException(), isNull);
@@ -749,7 +752,7 @@ void main() {
       await close(tester);
     });
 
-    testWidgets('further up, items that take new numbers show under them', (
+    testWidgets('further up, earlier items show above under their own keys', (
       tester,
     ) async {
       tester.view.physicalSize = const Size(360, 640);
@@ -761,37 +764,38 @@ void main() {
         summary: 'only once',
         input: 'ls',
       );
-      final later = [for (var i = 1; i < 60; i++) ChatPrompt('msg $i.')];
-      Widget chat(List<ChatItem> items, int firstKey) => MaterialApp(
+      final later = [
+        for (var i = 1; i < 60; i++) (ChatPrompt('msg $i.'), ('u$i', 0)),
+      ];
+      Widget chat(List<(ChatItem, Object)> items) => MaterialApp(
         home: Scaffold(
           body: ChatView(
-            items: items,
-            firstKey: firstKey,
+            items: [for (final (item, _) in items) item],
+            keys: [for (final (_, key) in items) key],
             startsCut: true,
             onLoadEarlier: () {},
           ),
         ),
       );
-      await tester.pumpWidget(chat([tool, ...later], 0));
+      const call = (tool, ('tool', 't7'));
+      await tester.pumpWidget(chat([call, ...later]));
       await tester.drag(find.byType(ListView), const Offset(0, 5000));
       await tester.pump();
       await untilFound(tester, paneText('only once'));
-      // As the stream numbers them when the later copy of the call drops:
-      // below the 2 that came in front and the 60 there were.
       await tester.pumpWidget(
-        chat([const ChatPrompt('msg 0.'), tool, ...later], -62),
+        chat([(const ChatPrompt('msg 0.'), ('u0', 0)), call, ...later]),
       );
       await tester.pump();
       expect(
         find.descendant(
-          of: find.byKey(const ValueKey(-62)),
+          of: find.byKey(const ValueKey<Object>(('u0', 0))),
           matching: paneText('msg 0.'),
         ),
         findsOneWidget,
       );
       expect(
         find.descendant(
-          of: find.byKey(const ValueKey(-60)),
+          of: find.byKey(const ValueKey<Object>(('u1', 0))),
           matching: paneText('msg 1.'),
         ),
         findsOneWidget,

@@ -295,7 +295,7 @@ class TranscriptView {
   const TranscriptView({
     this.items,
     this.startsCut = false,
-    this.firstKey = 0,
+    this.keys,
     this.earlier = EarlierLoad.idle,
   });
 
@@ -306,11 +306,9 @@ class TranscriptView {
   /// shown.
   final bool startsCut;
 
-  /// A number for the first of [items], one less for each item loaded in
-  /// front of it, so that an item keeps its number while earlier ones
-  /// load. Where they drop a later copy of a record, the items take
-  /// numbers none had before.
-  final int firstKey;
+  /// A key for each of [items] that stays with it while earlier ones load
+  /// (see [ClaudeTranscript.keys]); null with [items].
+  final List<Object>? keys;
 
   /// How loading the messages before [items] goes.
   final EarlierLoad earlier;
@@ -454,17 +452,9 @@ class TranscriptStream {
         inLine: kept.inLine,
       );
       if (!current()) return;
-      final was = kept.transcript.items;
-      final before = kept.transcript.prepend(
+      kept.transcript.prepend(
         found.lines.map((l) => utf8.decode(l, allowMalformed: true)),
       );
-      final items = kept.transcript.items;
-      // The earlier lines can drop a later copy of a record they hold:
-      // then the items take numbers none of them had, so that no row
-      // takes the state of another.
-      kept.firstKey -= listEquals(items.sublist(before), was)
-          ? before
-          : before + was.length;
       kept.earlierBytes += start - found.start;
       kept.start = found.start;
       kept.inLine = found.inLine;
@@ -498,7 +488,7 @@ class TranscriptStream {
     view.value = TranscriptView(
       items: kept.transcript.items,
       startsCut: kept.cut,
-      firstKey: kept.firstKey,
+      keys: kept.transcript.keys,
       earlier:
           kept.start == null || kept.inode == null || _ranges?.call() == null
           ? EarlierLoad.none
@@ -717,9 +707,6 @@ class _Kept {
 
   /// The bytes [loadEarlier] put in front so far.
   int earlierBytes = 0;
-
-  /// See [TranscriptView.firstKey].
-  int firstKey = 0;
 
   EarlierLoad earlier = EarlierLoad.idle;
 

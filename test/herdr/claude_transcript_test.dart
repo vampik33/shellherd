@@ -404,8 +404,13 @@ void main() {
     /// A random transcript line: prompts, replies, tool calls and results
     /// whose ids repeat across the file, records seen twice, records it
     /// drops, and lines that are no record.
-    String randomLine(Random r) {
-      String? uuid() => r.nextInt(5) == 0 ? null : 'u${r.nextInt(40)}';
+    var serial = 0;
+    String randomLine(Random r, {bool unique = false}) {
+      String? uuid() => r.nextInt(5) == 0
+          ? null
+          : unique
+          ? 'v${serial++}'
+          : 'u${r.nextInt(40)}';
       String toolId() => 't${r.nextInt(12)}';
       return switch (r.nextInt(10)) {
         0 => claudeUser('prompt ${r.nextInt(100)}', uuid: uuid()),
@@ -457,12 +462,46 @@ void main() {
             lessThanOrEqualTo(before),
             reason: '$seed',
           );
+          expect(t.keys.toSet(), hasLength(t.items.length), reason: '$seed');
         }
         expect(t.items, parse(lines), reason: 'seed $seed');
         // Lines added after the earlier ones go on as one read would.
         final more = [for (var i = 0; i < 5; i++) randomLine(r)];
         more.forEach(t.add);
         expect(t.items, parse([...lines, ...more]), reason: 'seed $seed');
+      }
+    });
+
+    test('each item keeps its key as earlier lines go in front', () {
+      for (var seed = 0; seed < 300; seed++) {
+        final r = Random(seed);
+        final lines = [
+          for (var i = r.nextInt(60); i > 0; i--) randomLine(r, unique: true),
+        ];
+        final cuts = {
+          for (var i = r.nextInt(4); i > 0; i--) r.nextInt(lines.length + 1),
+        }.toList()..sort();
+        final bounds = [0, ...cuts, lines.length];
+        final t = ClaudeTranscript();
+        Map<Object, ChatItem> byKey() => {
+          for (final (i, key) in t.keys.indexed) key: t.items[i],
+        };
+        lines.skip(bounds[bounds.length - 2]).forEach(t.add);
+        for (var i = bounds.length - 2; i > 0; i--) {
+          final was = byKey();
+          t.prepend(lines.sublist(bounds[i - 1], bounds[i]));
+          final now = byKey();
+          expect(now, hasLength(t.items.length), reason: 'seed $seed');
+          for (final MapEntry(:key, value: item) in was.entries) {
+            final kept = now[key];
+            // A call can get its result from a line that came in front.
+            expect(
+              kept is ChatTool && item is ChatTool ? kept.id : kept,
+              item is ChatTool ? item.id : item,
+              reason: 'seed $seed, key $key',
+            );
+          }
+        }
       }
     });
 
