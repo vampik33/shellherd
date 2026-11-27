@@ -194,6 +194,25 @@ void main() {
       expect(_names(parseSlashCommands(out)), ['ok']);
     });
 
+    test('a command is named from the "/./" that starts its path under '
+        'commands/', () {
+      final out = [
+        _rec('user-command', '/c/commands/./sub/deep.md'),
+        // A "/./" in the config directory comes before the one that counts.
+        _rec('user-command', '/h/./c/commands/./top.md'),
+        _rec('project-command', '/p/.claude/commands/./a/b/c.md'),
+        _rec('user-command', '/c/commands/./sub/notes.txt'),
+        // Claude Code names one at the top by the directory.
+        _rec('user-command', '/c/commands/./SKILL.md'),
+      ].join('\n');
+      expect(_names(parseSlashCommands(out)), [
+        'commands',
+        'sub:deep',
+        'top',
+        'a:b:c',
+      ]);
+    });
+
     test('a long or multi-line description becomes one short line', () {
       final long = 'word ' * 100;
       final out = _rec(
@@ -236,6 +255,23 @@ void main() {
       test('commands and skills under an install path, named after the '
           'plugin; other files and old versions are not', () {
         expect(names([bothOn]), ['a:go', 'a:s']);
+      });
+
+      test('a SKILL.md at the top of its commands/ is all that counts there '
+          'and below; another plugin goes on', () {
+        final out = [
+          bothOn,
+          installed,
+          _rec('plugin', '/i/a/commands/./SKILL.md'),
+          _rec('plugin', '/i/a/commands/./go.md'),
+          _rec('plugin', '/i/a/commands/./sub/deep.md'),
+          _rec('plugin', '/i/a/commands/./sub/SKILL.md'),
+          _rec('plugin', '/i/b/commands/./sub/deep.md'),
+        ].join('\n');
+        expect(_names(parseSlashCommands(out, cwd: '/work/p')), [
+          'a:commands',
+          'b:sub:deep',
+        ]);
       });
 
       test('a plugin no settings file enables does not count', () {
@@ -499,26 +535,89 @@ void main() {
         expect(_names(commands), [
           'skill',
           'here',
-          'deep',
           'mine',
           'nofront',
+          'sub:deep',
           'proj',
           'tool:go',
           'tool:learn',
         ]);
         expect(
-          commands[3],
+          commands[2],
           const SlashCommand('mine', description: 'Mine', argumentHint: '[x]'),
         );
         // Without a cwd, nothing of the project.
         expect(_names(await run(null)), [
           'skill',
-          'deep',
           'mine',
           'nofront',
+          'sub:deep',
           'tool:go',
           'tool:learn',
         ]);
+      });
+
+      test('a command in a subdirectory is named by its path, as Claude '
+          'Code does', () async {
+        final c = config.path;
+        put('$c/commands/a/test.md', '---\ndescription: a\n---\n');
+        put('$c/commands/b/test.md', '---\ndescription: b\n---\n');
+        put('$c/commands/a/b/c.md', '');
+        // Deeper than the read looks.
+        put('$c/commands/a/b/c/d.md', '');
+        // A name Claude Code does not take.
+        put('$c/commands/with space/x.md', '');
+        // A directory with a SKILL.md gives only that, named by the
+        // directory.
+        put('$c/commands/ops/deploy/SKILL.md', '---\ndescription: d\n---\n');
+        put('$c/commands/ops/deploy/notes.md', '');
+        // Only a plugin's SKILL.md counts in any case.
+        put('$c/commands/loud/SKILL.MD', '');
+        // Below a SKILL.md, the user's commands go on.
+        put('$c/commands/kit/SKILL.md', '');
+        put('$c/commands/kit/more/x.md', '');
+        // Hidden, a skill or not.
+        put('$c/commands/hid/SKILL.md', '---\nuser-invocable: false\n---\n');
+        put('$c/commands/quiet.md', '---\nuser-invocable: False\n---\n');
+        final plugin = '${root.path}/plugins/tool';
+        put('$plugin/commands/db/migrate.md', '');
+        put('$plugin/commands/up/Skill.md', '');
+        put('$plugin/commands/up/notes.md', '');
+        // Below a plugin's SKILL.md, nothing more counts.
+        put('$plugin/commands/up/deeper/no.md', '');
+        put('$plugin/commands/big/SKILL.MD', '');
+        put('$plugin/commands/big/notes.md', '');
+        put(
+          '$c/plugins/installed_plugins.json',
+          _json({
+            'version': 2,
+            'plugins': {
+              'tool@m': [
+                {'scope': 'user', 'installPath': plugin},
+              ],
+            },
+          }),
+        );
+        put('$c/settings.json', '{"enabledPlugins": {"tool@m": true}}');
+        final project = '${home.path}/work';
+        put('$project/.claude/commands/front/component.md', '');
+
+        final commands = await run(project);
+        expect(_names(commands), [
+          'a:b:c',
+          'a:test',
+          'b:test',
+          'kit',
+          'kit:more:x',
+          'ops:deploy',
+          'front:component',
+          'tool:big',
+          'tool:db:migrate',
+          'tool:up',
+        ]);
+        expect(commands[5].description, 'd');
+        expect(commands[1].description, 'a');
+        expect(commands[2].description, 'b');
       });
 
       test('an empty config directory has no commands', () async {

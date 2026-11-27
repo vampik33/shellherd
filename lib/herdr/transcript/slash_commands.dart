@@ -123,7 +123,10 @@ String slashCommandsCommand(String? cwd) {
     '}',
     'emit_commands() {',
     '  [ -d "\$2" ] || return 0',
-    "  find -L \"\$2\" -maxdepth 3 -type f -name '*.md' 2>/dev/null |",
+    // A plugin's SKILL.md counts in any case, as in Claude Code.
+    "  s=SKILL.md; [ \"\$1\" = plugin ] && s='[Ss][Kk][Ii][Ll][Ll].[Mm][Dd]'",
+    // From "$2/.", so that each path has "/./" where the name starts.
+    "  find -L \"\$2/.\" -maxdepth 3 -type f -name '*.md' -o -type f -name \"\$s\" 2>/dev/null |",
     '    head -n 200 | while IFS= read -r f; do emit_md "\$1" "\$f"; done',
     '}',
     'emit_skills() {',
@@ -260,9 +263,18 @@ List<SlashCommand> parseSlashCommands(String output, {String? cwd}) {
     ])
       kind: <SlashCommand>[],
   };
+  // As in Claude Code, a directory with a SKILL.md gives only that.
+  final skillDirs = {
+    for (final r in records)
+      if (_isSkillFile(r.path)) _dirname(r.path),
+  };
   for (final r in records) {
     final group = groups[r.kind];
     if (group == null) continue;
+    if (!_isSkillFile(r.path) && skillDirs.contains(_dirname(r.path))) {
+      continue;
+    }
+    if (r.kind == 'plugin' && _belowSkillDir(r.path, skillDirs)) continue;
     final command = r.kind == 'plugin'
         ? _pluginCommand(r, plugins)
         : _command(r, skill: r.kind.endsWith('-skill'));
@@ -275,6 +287,31 @@ List<SlashCommand> parseSlashCommands(String output, {String? cwd}) {
       for (final c in _byName(group))
         if (seen.add(c.name)) c,
   ];
+}
+
+/// A SKILL.md, in any case, as Claude Code finds one.
+bool _isSkillFile(String path) =>
+    path.substring(path.lastIndexOf('/') + 1).toLowerCase() == 'skill.md';
+
+/// [path], a plugin's command, lies below a directory of [skillDirs]
+/// under its `commands/`: Claude Code looks no further down a plugin's
+/// commands there, from `commands/` itself on.
+bool _belowSkillDir(String path, Set<String> skillDirs) {
+  final root = path.lastIndexOf('/./');
+  if (root < 0) return false;
+  for (
+    var dir = _dirname(_dirname(path));
+    dir.length >= root + 2;
+    dir = _dirname(dir)
+  ) {
+    if (skillDirs.contains(dir)) return true;
+  }
+  return false;
+}
+
+String _dirname(String path) {
+  final at = path.lastIndexOf('/');
+  return at < 0 ? '' : path.substring(0, at);
 }
 
 /// [commands] by name, the first of each name only.
@@ -321,8 +358,9 @@ SlashCommand? _pluginCommand(_Record r, Map<String, String> plugins) {
 }
 
 /// A command from its file: a skill is named by its frontmatter or its
-/// directory, a command by its file; one of a [plugin] after its name and
-/// a colon.
+/// directory, a command by its path under `commands/`, with a colon for
+/// each slash (`sub/deep.md` is `sub:deep`, `ops/deploy/SKILL.md` is
+/// `ops:deploy`); one of a [plugin] after its name and a colon.
 SlashCommand? _command(_Record r, {required bool skill, String? plugin}) {
   final parts = r.path.split('/');
   if (parts.length < 2) return null;
@@ -332,10 +370,24 @@ SlashCommand? _command(_Record r, {required bool skill, String? plugin}) {
     if (parts.last != 'SKILL.md') return null;
     fallback = parts[parts.length - 2];
   } else {
-    if (!parts.last.endsWith('.md')) return null;
-    fallback = parts.last.substring(0, parts.last.length - 3);
+    // [slashCommandsCommand] marks where the path under `commands/`
+    // starts with "/./".
+    final at = r.path.lastIndexOf('/./');
+    final rel = (at < 0 ? parts.last : r.path.substring(at + 3)).split('/');
+    if (_isSkillFile(rel.last)) {
+      // Named by its directory, as Claude Code does; one at the top by
+      // the directory `commands`.
+      fallback = rel.length == 1
+          ? 'commands'
+          : rel.sublist(0, rel.length - 1).join(':');
+    } else {
+      if (!rel.last.endsWith('.md')) return null;
+      final path = rel.join(':');
+      fallback = path.substring(0, path.length - 3);
+    }
   }
-  if (skill && front['user-invocable']?.toLowerCase() == 'false') return null;
+  // Claude Code hides any command that says so, not only skills.
+  if (front['user-invocable']?.toLowerCase() == 'false') return null;
   final named = skill ? front['name'] : null;
   final own = named != null && slashCommandName.hasMatch(named)
       ? named
