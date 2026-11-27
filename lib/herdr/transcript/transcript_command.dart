@@ -120,11 +120,18 @@ List<String> _findTranscript(String session) => [
 ];
 
 /// Lines of `sh` that set `size` and `ino` for the file open on [fd]:
-/// the one read, whatever the path names by then.
+/// the one read, whatever the path names by then. Both come from its
+/// metadata: on macOS, a read through `/dev/fd` moves the offset of [fd].
 List<String> _sizeAndInode(int fd) => [
-  'size=\$((\$(wc -c < /dev/fd/$fd)))',
+  'size=\$((\$(${_sizeOf('/dev/fd/$fd')})))',
   'ino=\$(${_inodeOf('/dev/fd/$fd')})',
 ];
+
+/// `sh` that prints the size of the file at [path], following links, in
+/// bytes whatever block size GNU ls is told to use.
+String _sizeOf(String path) =>
+    'unset LS_BLOCK_SIZE BLOCK_SIZE; '
+    'ls -lnL -- $path | { read -r _ _ _ _ s _; echo "\$s"; }';
 
 /// `sh` that prints the inode of the file at [path], following links.
 String _inodeOf(String path) =>

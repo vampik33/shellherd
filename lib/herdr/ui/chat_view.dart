@@ -84,17 +84,19 @@ class _ChatViewState extends State<ChatView> {
       _shown = widget.items;
       _shownKeys = _keys(widget);
     } else {
-      // Earlier messages go above what shows: the reverse list keeps the
-      // place of what is below. One that shows already further down, as
-      // a later copy of its record, stays there until the chat is let go.
+      // Earlier messages, the new items before the last that shows, go
+      // above what shows: the reverse list keeps the place of what is
+      // below. One that shows already further down, as a later copy of its
+      // record, stays there until the chat is let go, as do new ones after
+      // the last that shows.
       final keys = _keys(widget);
-      final front = keys.indexOf(_shownKeys.first);
-      if (front > 0) {
-        final held = _shownKeys.toSet();
-        final add = [
-          for (var i = 0; i < front; i++)
-            if (!held.contains(keys[i])) i,
-        ];
+      final held = _shownKeys.toSet();
+      final last = keys.lastIndexWhere(held.contains);
+      final add = [
+        for (var i = 0; i < last; i++)
+          if (!held.contains(keys[i])) i,
+      ];
+      if (add.isNotEmpty) {
         _shown = [for (final i in add) widget.items[i], ..._shown];
         _shownKeys = [for (final i in add) keys[i], ..._shownKeys];
       }

@@ -155,18 +155,31 @@ Future<void> main() async {
     await Future<void>.delayed(const Duration(milliseconds: 50));
   });
 
-  /// Drags the list of the open pane by [dy] until [found] shows: down,
-  /// which shows what is above, by default.
+  /// Scrolls the list of the open pane by [dy] until [found] shows: up,
+  /// toward what is above, by default.
   Future<void> scrollUpUntil(
     WidgetTester tester,
     Finder found, {
     double dy = 500,
   }) async {
-    for (var i = 0; i < 300 && found.evaluate().isEmpty; i++) {
-      await tester.drag(find.byType(ListView).first, Offset(0, dy));
+    // Jumps by [dy]: a drag flings on in real time between the checks,
+    // and can carry [found] past the screen unseen.
+    final list = find.descendant(
+      of: find.byType(ListView).first,
+      matching: find.byType(Scrollable),
+    );
+    // A load reads over SSH: the time it may take bounds the scroll.
+    final clock = Stopwatch()..start();
+    while (found.evaluate().isEmpty && clock.elapsed.inSeconds < 30) {
+      final at = tester.state<ScrollableState>(list.first).position;
+      at.jumpTo((at.pixels + dy).clamp(at.minScrollExtent, at.maxScrollExtent));
       await tester.pump();
     }
     if (found.evaluate().isNotEmpty) return;
+    final top = tester
+        .widgetList<Text>(find.byType(Text))
+        .map((t) => t.data ?? '')
+        .where((t) => t.contains('lines') || t.contains('messages'));
     final shown = tester
         .widgetList<RichText>(find.byType(RichText))
         .map((t) => t.text.toPlainText())
@@ -175,7 +188,8 @@ Future<void> main() async {
     fail(
       'no ${found.describeMatch(Plurality.one)}; lists: '
       '${find.byType(ListView).evaluate().length}; shows: '
-      '${shown.take(8).join(' | ')} … ${shown.reversed.take(8).join(' | ')}',
+      '${shown.take(8).join(' | ')} … ${shown.reversed.take(8).join(' | ')}; '
+      'top: ${top.join(' | ')}; after ${clock.elapsed}',
     );
   }
 

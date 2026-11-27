@@ -319,16 +319,16 @@ void main() {
       final inode = await inodeOf(file);
       final other = File('${home.path}/other.jsonl')
         ..writeAsStringSync('{"replacement, longer":1}\n');
-      // A wc that renames the other file over the transcript first.
+      // An ls that renames the other file over the transcript first.
       final bin = await Directory('${home.path}/bin').create();
-      final wc = File('${bin.path}/wc')
+      final ls = File('${bin.path}/ls')
         ..writeAsStringSync(
           '#!/bin/sh\n'
           '[ -e ${shQuote(other.path)} ] && '
           'mv -f -- ${shQuote(other.path)} ${shQuote(file.path)}\n'
-          'exec /usr/bin/wc "\$@"\n',
+          'exec /usr/bin/ls "\$@"\n',
         );
-      await Process.run('chmod', ['+x', wc.path]);
+      await Process.run('chmod', ['+x', ls.path]);
       final process = await run(
         _id,
         env: {'PATH': '${bin.path}:/usr/bin:/bin'},
@@ -336,6 +336,21 @@ void main() {
       final out = lines(process);
       await expectLines(out, ['${transcriptHeader}8 0 $inode', '{"a":1}']);
       expect(await inodeOf(file), isNot(inode), reason: 'renamed over');
+      await process.stdin.close();
+      await out.cancel();
+    });
+
+    test('reads from the start where a read through /dev/fd moves the '
+        'offset of the file it opened, as on macOS', () async {
+      final file = await transcript('{"a":1}\n{"b":2}\n');
+      final process = await run(
+        _id,
+        env: {'PATH': '${(await _offsetMovingWc(home)).path}:/usr/bin:/bin'},
+      );
+      final out = lines(process);
+      await expectLines(out, [head(16), '{"a":1}', '{"b":2}']);
+      file.writeAsStringSync('{"c":3}\n', mode: FileMode.append);
+      await expectLines(out, ['{"c":3}']);
       await process.stdin.close();
       await out.cancel();
     });
@@ -532,6 +547,22 @@ void main() {
         expect(transcriptRangeBody(out, range), content.sublist(3, 17));
       });
 
+      test('reads the bytes of the range where a read through /dev/fd moves '
+          'the offset of the file it opened, as on macOS', () async {
+        final inode = await inodeOf(await transcript(content));
+        final bin = await _offsetMovingWc(home);
+        for (final (from, to) in [(0, content.length), (3, 17)]) {
+          final range = (inode: inode, from: from, to: to);
+          final (out, code, _) = await run(range, path: bin.path);
+          expect(code, 0);
+          expect(
+            transcriptRangeBody(out, range),
+            content.sublist(from, to),
+            reason: '$from-$to',
+          );
+        }
+      });
+
       test('without a transcript it exits 65, without projects 66', () async {
         final range = (inode: '1', from: 0, to: 4);
         var (_, code, err) = await run(range);
@@ -632,4 +663,18 @@ Future<List<int>> _tailsOf(String path) async {
     }
   }
   return found;
+}
+
+/// A bin directory in [home] with a wc that first reads its descriptors 3
+/// and 4 to the end, as opening `/dev/fd` on macOS shares their offset.
+Future<Directory> _offsetMovingWc(Directory home) async {
+  final bin = await Directory('${home.path}/bin').create();
+  final wc = File('${bin.path}/wc')
+    ..writeAsStringSync(
+      '#!/bin/sh\n'
+      'cat <&4 >/dev/null 2>&1; cat <&3 >/dev/null 2>&1\n'
+      'exec /usr/bin/wc "\$@"\n',
+    );
+  await Process.run('chmod', ['+x', wc.path]);
+  return bin;
 }

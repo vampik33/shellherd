@@ -579,7 +579,11 @@ class _PaneScreenState extends State<PaneScreen> {
       opacity: state is LinkLive && !view.gone ? 1 : 0.5,
       child: _exact
           ? _ExactScreen(text)
-          : _ReflowedText(text, readHistory: _readHistory),
+          : _ReflowedText(
+              text,
+              readHistory: _readHistory,
+              screenRows: _paneSize()?.rows ?? 0,
+            ),
     );
   }
 
@@ -797,12 +801,20 @@ class _Answers extends StatelessWidget {
 /// above, the steps of [historySteps] at a time, deeper in one load where
 /// a step finds none.
 class _ReflowedText extends StatefulWidget {
-  const _ReflowedText(this.text, {required this.readHistory});
+  const _ReflowedText(
+    this.text, {
+    required this.readHistory,
+    this.screenRows = 0,
+  });
 
   final String text;
 
   /// Reads the pane's text with up to the given number of lines.
   final Future<String> Function(int lines) readHistory;
+
+  /// The rows of the pane's screen: herdr counts the blank lines at its
+  /// end in a read, but leaves them out of the text.
+  final int screenRows;
 
   @override
   State<_ReflowedText> createState() => _ReflowedTextState();
@@ -824,11 +836,11 @@ class _ReflowedTextState extends State<_ReflowedText> {
   var _version = 0;
 
   /// Shows [text], read with up to [depth] lines; [older] when it may
-  /// not hold the oldest. A text with fewer lines than it asked for holds
-  /// them all.
+  /// not hold the oldest. A text with fewer lines than it asked for, by
+  /// more than [_ReflowedText.screenRows], holds them all.
   void _show(String text, {int depth = PanePoller.historyLines, bool? older}) {
     _depth = depth;
-    _older = older ?? '\n'.allMatches(text).length + 1 >= depth;
+    _older = older ?? _full('\n'.allMatches(text).length + 1, depth);
     _shownAs(text, parseAnsi(text));
     while (_lines.isNotEmpty && _lines.last.children!.isEmpty) {
       _lines.removeLast();
@@ -859,7 +871,7 @@ class _ReflowedTextState extends State<_ReflowedText> {
         final read = await widget.readHistory(depth);
         if (!mounted || version != _version) return;
         final readLines = read.split('\n');
-        final full = readLines.length >= depth;
+        final full = _full(readLines.length, depth);
         final older = olderLines(shownLines, readLines);
         if (older != null && (older > 0 || !full)) {
           setState(() {
@@ -891,6 +903,9 @@ class _ReflowedTextState extends State<_ReflowedText> {
     }
     setState(() => _earlier = EarlierLoad.capped);
   }
+
+  /// A read of [lines] lines for [asked] may not hold the oldest.
+  bool _full(int lines, int asked) => lines + widget.screenRows >= asked;
 
   bool get _scrolledUp => _scroll.hasClients && _scroll.offset > 1;
 

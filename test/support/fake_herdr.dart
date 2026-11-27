@@ -60,7 +60,8 @@ class FakeHerdr {
 
   /// When set, what a `pane.read` of a source other than `visible`
   /// answers in place of [paneText]: the last `lines` of these, at most
-  /// [maxReadLines] of them.
+  /// [maxReadLines] of them, without the blank lines at their end, as
+  /// herdr leaves them out.
   List<String>? paneLines;
   int? maxReadLines;
 
@@ -137,7 +138,11 @@ class FakeHerdr {
         if (lines != null && source != 'visible') {
           var n = params['lines'] as int? ?? lines.length;
           if (maxReadLines case final most? when most < n) n = most;
-          text = lines.sublist(lines.length - min(n, lines.length)).join('\n');
+          final read = lines.sublist(lines.length - min(n, lines.length));
+          while (read.isNotEmpty && read.last.trim().isEmpty) {
+            read.removeLast();
+          }
+          text = read.join('\n');
         }
         await holdReads?.future;
         if (readError?.call(params) case final code?) {
