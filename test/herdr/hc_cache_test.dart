@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:shellherd/herdr/api/hc_client.dart';
 import 'package:shellherd/herdr/api/herdr_client.dart';
 import 'package:shellherd/herdr/hc_cache.dart';
+import 'package:shellherd/herdr/transcript/claude_sessions.dart';
 
 import '../support/fake_hc.dart';
 import '../support/poll.dart';
@@ -185,6 +186,37 @@ void main() {
         await until(() => sessionOf('t1') == id2, 'the new session');
       },
     );
+
+    test('a Claude Code pane without a usable pid does not stop the lookup '
+        'of the others', () async {
+      hc.terminals = [
+        ...hc.terminals,
+        for (final (address, pid) in [('t3', 0), ('t4', -1)])
+          hcTerminal(
+            address,
+            labels: {'herdr.space': 's1', 'herdr.tab': 'b1'},
+            status: {'state': 'idle', 'app': 'claude-code'},
+            pid: pid,
+          ),
+      ];
+      cache = HcCache(
+        client,
+        onSnapshot: published.add,
+        debounce: const Duration(milliseconds: 5),
+        // As the SSH lookup does: its command refuses a pid that is not
+        // one.
+        claudeSessions: (pids) async {
+          claudeSessionsCommand(pids);
+          return lookup(pids);
+        },
+        sessionRefresh: const Duration(milliseconds: 50),
+      );
+      await cache.start();
+      await until(() => sessionOf('t1') == id1, 'the session');
+      expect(lookups.first, [7]);
+      expect(sessionOf('t3'), isNull);
+      expect(sessionOf('t4'), isNull);
+    });
 
     test('without a lookup no pane has a session', () async {
       await start();

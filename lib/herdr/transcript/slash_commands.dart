@@ -121,9 +121,38 @@ String slashCommandsCommand(String? cwd) {
     '    NR > 1 && /^---[[:space:]]*\$/ { exit }',
     "    NR > 1 && NR <= 80 { print \"$_contentMark\" \$0 }'",
     '}',
+    // Prints the command files of directory $1 of a plugin, $2 levels
+    // below its commands/, as Claude Code reads them: a directory with a
+    // SKILL.md, in any case, gives only that, and nothing below it.
+    // Links are not followed, as in Claude Code, which also keeps a link
+    // to a directory above from looping. Builtins only, so no process per
+    // directory, and the paths go out as it finds them, so that the cap
+    // stops it; it stops itself once c, the paths it printed, is 200, as
+    // the cap, so that it reads no more directories then. A variable is
+    // global in sh: e is not used after the walk below returns.
+    'put_path() { printf %s "\$1"; echo; c=\$((c + 1)); }',
+    'walk_plugin() {',
+    '  for e in "\$1"/[Ss][Kk][Ii][Ll][Ll].[Mm][Dd]; do',
+    '    [ -f "\$e" ] && [ ! -L "\$e" ] && { put_path "\$e"; return; }',
+    '  done',
+    '  for e in "\$1"/* "\$1"/.[!.]* "\$1"/..?*; do',
+    '    [ "\$c" -lt 200 ] || return',
+    '    if [ -L "\$e" ]; then :',
+    '    elif [ -d "\$e" ]; then',
+    '      [ "\$2" -lt 2 ] && walk_plugin "\$e" \$((\$2 + 1))',
+    '    else',
+    '      case \$e in *.md) [ -f "\$e" ] && put_path "\$e" ;; esac',
+    '    fi',
+    '  done',
+    '}',
     'emit_commands() {',
     '  [ -d "\$2" ] || return 0',
-    "  find -L \"\$2\" -maxdepth 3 -type f -name '*.md' 2>/dev/null |",
+    // From "$2/.", so that each path has "/./" where the name starts.
+    '  if [ "\$1" = plugin ]; then',
+    '    c=0; walk_plugin "\$2/." 0',
+    '  else',
+    "    find -L \"\$2/.\" -maxdepth 3 -type f -name '*.md'",
+    '  fi 2>/dev/null |',
     '    head -n 200 | while IFS= read -r f; do emit_md "\$1" "\$f"; done',
     '}',
     'emit_skills() {',
@@ -260,9 +289,18 @@ List<SlashCommand> parseSlashCommands(String output, {String? cwd}) {
     ])
       kind: <SlashCommand>[],
   };
+  // As in Claude Code, a directory with a SKILL.md gives only that.
+  final skillDirs = {
+    for (final r in records)
+      if (_isSkillFile(r.path)) _dirname(r.path),
+  };
   for (final r in records) {
     final group = groups[r.kind];
     if (group == null) continue;
+    if (!_isSkillFile(r.path) && skillDirs.contains(_dirname(r.path))) {
+      continue;
+    }
+    if (r.kind == 'plugin' && _belowSkillDir(r.path, skillDirs)) continue;
     final command = r.kind == 'plugin'
         ? _pluginCommand(r, plugins)
         : _command(r, skill: r.kind.endsWith('-skill'));
@@ -275,6 +313,31 @@ List<SlashCommand> parseSlashCommands(String output, {String? cwd}) {
       for (final c in _byName(group))
         if (seen.add(c.name)) c,
   ];
+}
+
+/// A SKILL.md, in any case, as Claude Code finds one.
+bool _isSkillFile(String path) =>
+    path.substring(path.lastIndexOf('/') + 1).toLowerCase() == 'skill.md';
+
+/// [path], a plugin's command, lies below a directory of [skillDirs]
+/// under its `commands/`: Claude Code looks no further down a plugin's
+/// commands there, from `commands/` itself on.
+bool _belowSkillDir(String path, Set<String> skillDirs) {
+  final root = path.lastIndexOf('/./');
+  if (root < 0) return false;
+  for (
+    var dir = _dirname(_dirname(path));
+    dir.length >= root + 2;
+    dir = _dirname(dir)
+  ) {
+    if (skillDirs.contains(dir)) return true;
+  }
+  return false;
+}
+
+String _dirname(String path) {
+  final at = path.lastIndexOf('/');
+  return at < 0 ? '' : path.substring(0, at);
 }
 
 /// [commands] by name, the first of each name only.
@@ -321,8 +384,9 @@ SlashCommand? _pluginCommand(_Record r, Map<String, String> plugins) {
 }
 
 /// A command from its file: a skill is named by its frontmatter or its
-/// directory, a command by its file; one of a [plugin] after its name and
-/// a colon.
+/// directory, a command by its path under `commands/`, with a colon for
+/// each slash (`sub/deep.md` is `sub:deep`, `ops/deploy/SKILL.md` is
+/// `ops:deploy`); one of a [plugin] after its name and a colon.
 SlashCommand? _command(_Record r, {required bool skill, String? plugin}) {
   final parts = r.path.split('/');
   if (parts.length < 2) return null;
@@ -332,10 +396,24 @@ SlashCommand? _command(_Record r, {required bool skill, String? plugin}) {
     if (parts.last != 'SKILL.md') return null;
     fallback = parts[parts.length - 2];
   } else {
-    if (!parts.last.endsWith('.md')) return null;
-    fallback = parts.last.substring(0, parts.last.length - 3);
+    // [slashCommandsCommand] marks where the path under `commands/`
+    // starts with "/./".
+    final at = r.path.lastIndexOf('/./');
+    final rel = (at < 0 ? parts.last : r.path.substring(at + 3)).split('/');
+    if (_isSkillFile(rel.last)) {
+      // Named by its directory, as Claude Code does; one at the top by
+      // the directory `commands`.
+      fallback = rel.length == 1
+          ? 'commands'
+          : rel.sublist(0, rel.length - 1).join(':');
+    } else {
+      if (!rel.last.endsWith('.md')) return null;
+      final path = rel.join(':');
+      fallback = path.substring(0, path.length - 3);
+    }
   }
-  if (skill && front['user-invocable']?.toLowerCase() == 'false') return null;
+  // Claude Code hides any command that says so, not only skills.
+  if (front['user-invocable']?.toLowerCase() == 'false') return null;
   final named = skill ? front['name'] : null;
   final own = named != null && slashCommandName.hasMatch(named)
       ? named
