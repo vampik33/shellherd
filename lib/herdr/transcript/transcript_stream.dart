@@ -252,7 +252,7 @@ Future<EarlierLines> readEarlier(
   if (start <= 0) throw ArgumentError.value(start, 'start', 'nothing before');
   var size = chunk;
   var readFrom = start;
-  List<int> bytes = Uint8List(0);
+  var bytes = const <int>[];
   while (true) {
     final from = max(0, start - size);
     // One byte before, to know whether a line starts at [from].
@@ -261,9 +261,11 @@ Future<EarlierLines> readEarlier(
     if (more.length != readFrom - before) {
       throw StateError('read ${more.length} bytes of ${readFrom - before}');
     }
-    bytes = Uint8List(more.length + bytes.length)
-      ..setAll(0, more)
-      ..setAll(more.length, bytes);
+    bytes =
+        (BytesBuilder(copy: false)
+              ..add(more)
+              ..add(bytes))
+            .takeBytes();
     readFrom = before;
     final found = earlierLines(
       bytes,

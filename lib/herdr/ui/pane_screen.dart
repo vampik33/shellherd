@@ -839,16 +839,26 @@ class _ReflowedTextState extends State<_ReflowedText> {
   /// not hold the oldest. A text with fewer lines than it asked for, by
   /// more than [_ReflowedText.screenRows], holds them all.
   void _show(String text, {int depth = PanePoller.historyLines, bool? older}) {
-    _depth = depth;
-    _older = older ?? _full('\n'.allMatches(text).length + 1, depth);
-    _shownAs(text, parseAnsi(text));
+    _shownAs(
+      text,
+      parseAnsi(text),
+      depth: depth,
+      older: older ?? _full('\n'.allMatches(text).length + 1, depth),
+    );
     while (_lines.isNotEmpty && _lines.last.children!.isEmpty) {
       _lines.removeLast();
     }
   }
 
   /// Shows [text], whose lines are [lines].
-  void _shownAs(String text, List<TextSpan> lines) {
+  void _shownAs(
+    String text,
+    List<TextSpan> lines, {
+    required int depth,
+    required bool older,
+  }) {
+    _depth = depth;
+    _older = older;
     _shown = text;
     _lines = lines;
     _earlier = EarlierLoad.idle;
@@ -877,16 +887,19 @@ class _ReflowedTextState extends State<_ReflowedText> {
           setState(() {
             final above = readLines.take(older).join('\n');
             if (older == 0) {
-              _shownAs(_shown, _lines);
+              _shownAs(_shown, _lines, depth: depth, older: full);
             } else if (ansiCarries(above)) {
               // A colour the older lines leave on runs on into what shows.
-              _show('$above\n$_shown');
+              _show('$above\n$_shown', depth: depth, older: full);
             } else {
               // Only the older lines are new.
-              _shownAs('$above\n$_shown', [...parseAnsi(above), ..._lines]);
+              _shownAs(
+                '$above\n$_shown',
+                [...parseAnsi(above), ..._lines],
+                depth: depth,
+                older: full,
+              );
             }
-            _depth = depth;
-            _older = full;
             if (_older && depth == historySteps.last) {
               _earlier = EarlierLoad.capped;
             }

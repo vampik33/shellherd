@@ -77,10 +77,7 @@ class _ChatViewState extends State<ChatView> {
   @override
   void didUpdateWidget(ChatView old) {
     super.didUpdateWidget(old);
-    if (!_scrolledUp) {
-      _shown = widget.items;
-      _shownKeys = _keys(widget);
-    } else if (_shown.isEmpty) {
+    if (!_scrolledUp || _shown.isEmpty) {
       _shown = widget.items;
       _shownKeys = _keys(widget);
     } else {
@@ -197,7 +194,7 @@ class _ChatViewState extends State<ChatView> {
         ChatReply(:final text) => _Reply(text, markdown),
         ChatThinking(:final text) => _Thinking(text),
         final ChatTool tool => _ToolRow(tool),
-        ChatNote(:final text) => _Note(text),
+        ChatNote(:final text) => DimNote(text),
       },
     );
   }
@@ -464,24 +461,6 @@ class _ToolText extends StatelessWidget {
         text,
         style: _monoStyle.copyWith(color: Graphite.terminalForeground),
       ),
-    ),
-  );
-}
-
-/// Something that happened, in small faint text in the middle.
-class _Note extends StatelessWidget {
-  const _Note(this.text);
-  final String text;
-
-  @override
-  Widget build(BuildContext context) => Padding(
-    padding: const EdgeInsets.symmetric(vertical: 4),
-    child: Text(
-      text,
-      textAlign: TextAlign.center,
-      maxLines: 12,
-      overflow: TextOverflow.ellipsis,
-      style: const TextStyle(fontSize: 12, color: Graphite.dim),
     ),
   );
 }

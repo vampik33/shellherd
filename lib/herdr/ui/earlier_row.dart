@@ -25,23 +25,24 @@ class EarlierRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final load = onLoad;
-    if (load == null) return _Note('$what are not shown.');
+    if (load == null) return DimNote('$what are not shown.');
+    final lower = what.toLowerCase();
     switch (state) {
       case EarlierLoad.idle:
         // Not during the build: the load changes what the list shows.
         WidgetsBinding.instance.addPostFrameCallback((_) => load());
-        return _Loading(what.toLowerCase());
+        return _Loading(lower);
       case EarlierLoad.loading:
-        return _Loading(what.toLowerCase());
+        return _Loading(lower);
       case EarlierLoad.failed:
         return InkWell(
           onTap: load,
-          child: _Note('Cannot load ${what.toLowerCase()}. Tap to try again.'),
+          child: DimNote('Cannot load $lower. Tap to try again.'),
         );
       case EarlierLoad.capped:
-        return _Note('$what are not loaded.');
+        return DimNote('$what are not loaded.');
       case EarlierLoad.none:
-        return _Note('$what are not shown.');
+        return DimNote('$what are not shown.');
     }
   }
 }
@@ -71,9 +72,10 @@ class _Loading extends StatelessWidget {
   );
 }
 
-/// One line that says why nothing loads.
-class _Note extends StatelessWidget {
-  const _Note(this.text);
+/// Small faint text in the middle of a list, such as something that
+/// happened in a chat or why nothing loads.
+class DimNote extends StatelessWidget {
+  const DimNote(this.text, {super.key});
   final String text;
 
   @override
@@ -82,6 +84,8 @@ class _Note extends StatelessWidget {
     child: Text(
       text,
       textAlign: TextAlign.center,
+      maxLines: 12,
+      overflow: TextOverflow.ellipsis,
       style: const TextStyle(fontSize: 12, color: Graphite.dim),
     ),
   );

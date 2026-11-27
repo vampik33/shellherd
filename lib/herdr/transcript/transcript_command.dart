@@ -79,10 +79,8 @@ String transcriptCommand(String session, {TranscriptMark? from}) {
       '{ while [ -z "\$f" ]; do sleep 1; find_f; open_f; done; '
       'tail -c +\$((start + 1)) -f /dev/fd/4 & t=\$!; '
       'trap \'kill \$t 2>/dev/null; exit 143\' TERM; '
-      'o=\$(${_inodeOf('/dev/fd/4')}); '
       'while kill -0 \$t 2>/dev/null; do sleep 2; '
-      '[ "\$(${_inodeOf('"\$f"')})" = "\$o" ] || '
-      '{ kill \$t; exit 0; }; done; }',
+      '[ "\$f" -ef /dev/fd/4 ] || { kill \$t; exit 0; }; done; }',
     ),
   ].join('\n');
   return 'sh -c ${shQuote(inner)}';
