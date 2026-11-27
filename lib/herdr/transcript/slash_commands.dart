@@ -127,18 +127,21 @@ String slashCommandsCommand(String? cwd) {
     // Links are not followed, as in Claude Code, which also keeps a link
     // to a directory above from looping. Builtins only, so no process per
     // directory, and the paths go out as it finds them, so that the cap
-    // stops it. A variable is global in sh: e is not used after the walk
-    // below returns.
+    // stops it; it stops itself once c, the paths it printed, is 200, as
+    // the cap, so that it reads no more directories then. A variable is
+    // global in sh: e is not used after the walk below returns.
+    'put_path() { printf %s "\$1"; echo; c=\$((c + 1)); }',
     'walk_plugin() {',
     '  for e in "\$1"/[Ss][Kk][Ii][Ll][Ll].[Mm][Dd]; do',
-    '    [ -f "\$e" ] && [ ! -L "\$e" ] && { printf %s "\$e"; echo; return; }',
+    '    [ -f "\$e" ] && [ ! -L "\$e" ] && { put_path "\$e"; return; }',
     '  done',
     '  for e in "\$1"/* "\$1"/.[!.]* "\$1"/..?*; do',
+    '    [ "\$c" -lt 200 ] || return',
     '    if [ -L "\$e" ]; then :',
     '    elif [ -d "\$e" ]; then',
     '      [ "\$2" -lt 2 ] && walk_plugin "\$e" \$((\$2 + 1))',
     '    else',
-    '      case \$e in *.md) [ -f "\$e" ] && { printf %s "\$e"; echo; } ;; esac',
+    '      case \$e in *.md) [ -f "\$e" ] && put_path "\$e" ;; esac',
     '    fi',
     '  done',
     '}',
@@ -146,7 +149,7 @@ String slashCommandsCommand(String? cwd) {
     '  [ -d "\$2" ] || return 0',
     // From "$2/.", so that each path has "/./" where the name starts.
     '  if [ "\$1" = plugin ]; then',
-    '    walk_plugin "\$2/." 0',
+    '    c=0; walk_plugin "\$2/." 0',
     '  else',
     "    find -L \"\$2/.\" -maxdepth 3 -type f -name '*.md'",
     '  fi 2>/dev/null |',

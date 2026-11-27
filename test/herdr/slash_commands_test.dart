@@ -697,6 +697,56 @@ void main() {
         ]);
       });
 
+      test("a plugin's walk reads no more directories once it found 200 "
+          'commands', () async {
+        final c = config.path;
+        final plugin = '${root.path}/plugins/tool';
+        final names = [for (var i = 100; i < 300; i++) 'a$i'];
+        for (final name in names) {
+          put('$plugin/commands/$name.md', '');
+        }
+        // After them, and no command in it.
+        final subtree = '$plugin/commands/zz';
+        for (var i = 0; i < 40; i++) {
+          for (var j = 0; j < 10; j++) {
+            Directory('$subtree/d$i/e$j').createSync(recursive: true);
+          }
+        }
+        put('$subtree/d0/notes.txt', '');
+        put(
+          '$c/plugins/installed_plugins.json',
+          _json({
+            'version': 2,
+            'plugins': {
+              'tool@m': [
+                {'scope': 'user', 'installPath': plugin},
+              ],
+            },
+          }),
+        );
+        put('$c/settings.json', '{"enabledPlugins": {"tool@m": true}}');
+        // A directory read gets a new access time, unless the file system
+        // keeps none: then this cannot tell.
+        final watched = [subtree, '$subtree/d0', '$subtree/d39/e9'];
+        final control = '${root.path}/control';
+        Directory(control).createSync();
+        DateTime accessed(String path) => FileStat.statSync(path).accessed;
+        for (final path in [...watched, control]) {
+          final r = Process.runSync('touch', ['-a', '-d', '2000-01-01', path]);
+          expect(r.exitCode, 0, reason: '${r.stderr}');
+        }
+        Directory(control).listSync();
+        if (accessed(control).year == 2000) {
+          markTestSkipped('the file system keeps no access times');
+          return;
+        }
+
+        expect(_names(await run(null)), [for (final n in names) 'tool:$n']);
+        for (final path in watched) {
+          expect(accessed(path).year, 2000, reason: '$path was read');
+        }
+      });
+
       test('an empty config directory has no commands', () async {
         expect(await run('/'), isEmpty);
         expect(await run('${root.path}/missing'), isEmpty);
