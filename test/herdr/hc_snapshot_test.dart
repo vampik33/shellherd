@@ -275,6 +275,17 @@ void main() {
         isNull,
         reason: 'a pid of another machine',
       );
+      for (final pid in [0, -1]) {
+        expect(
+          claudePid(
+            HcTerminal.fromJson(
+              hcTerminal('t3', status: _status('idle'), pid: pid),
+            ),
+          ),
+          isNull,
+          reason: 'not a process id: $pid',
+        );
+      }
     });
   });
 }

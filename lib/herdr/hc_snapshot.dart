@@ -141,11 +141,17 @@ Pane _pane(
 /// The pid whose Claude Code session the pane of [t] shows: the process in
 /// front of a live terminal of this machine whose agent reports as Claude
 /// Code. A terminal of another machine the core connects to (`machine/t7`)
-/// has its pid there, and its transcript too.
-int? claudePid(HcTerminal t) =>
-    t.live && t.status?.app == claudeCodeApp && !t.address.contains('/')
-    ? t.foregroundPid
-    : null;
+/// has its pid there, and its transcript too. A pid that is not a process
+/// id has none: one such pid must not stop the lookup of the others.
+int? claudePid(HcTerminal t) => switch (t.foregroundPid) {
+  final pid?
+      when pid > 0 &&
+          t.live &&
+          t.status?.app == claudeCodeApp &&
+          !t.address.contains('/') =>
+    pid,
+  _ => null,
+};
 
 /// The Claude Code session of [t] in [claudeSessions]; null without one.
 String? claudeSessionOf(HcTerminal t, Map<int, String> claudeSessions) =>
