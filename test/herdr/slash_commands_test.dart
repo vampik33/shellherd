@@ -620,6 +620,39 @@ void main() {
         expect(commands[2].description, 'b');
       });
 
+      test("what is below a plugin's SKILL.md does not count against the "
+          'cap of what is read', () async {
+        final c = config.path;
+        final plugin = '${root.path}/plugins/tool';
+        put('$plugin/commands/big/SKILL.md', '');
+        for (var i = 0; i < 250; i++) {
+          put('$plugin/commands/big/ref/r$i.md', '');
+        }
+        // Below the depth the read looks at: not a skill of the plugin.
+        put('$plugin/commands/a/b/c/SKILL.md', '');
+        // Beside it, some found after it whatever order find takes.
+        final siblings = [for (var i = 10; i < 40; i++) 'go$i'];
+        for (final name in siblings) {
+          put('$plugin/commands/$name.md', '');
+        }
+        put(
+          '$c/plugins/installed_plugins.json',
+          _json({
+            'version': 2,
+            'plugins': {
+              'tool@m': [
+                {'scope': 'user', 'installPath': plugin},
+              ],
+            },
+          }),
+        );
+        put('$c/settings.json', '{"enabledPlugins": {"tool@m": true}}');
+        expect(_names(await run(null)), [
+          'tool:big',
+          for (final name in siblings) 'tool:$name',
+        ]);
+      });
+
       test('an empty config directory has no commands', () async {
         expect(await run('/'), isEmpty);
         expect(await run('${root.path}/missing'), isEmpty);

@@ -121,12 +121,28 @@ String slashCommandsCommand(String? cwd) {
     '    NR > 1 && /^---[[:space:]]*\$/ { exit }',
     "    NR > 1 && NR <= 80 { print \"$_contentMark\" \$0 }'",
     '}',
+    // Of the paths on stdin, those not below a directory with a SKILL.md
+    // in any case, and not beside one: as Claude Code reads a plugin.
+    // The name is matched as is, not lowercased: in a Turkish locale
+    // awk lowers I to a dotless i.
+    'prune_skills() {',
+    "  LC_ALL=C awk 'function skill(f, p, n) { n = split(f, p, \"/\")",
+    '      return p[n] ~ /^[Ss][Kk][Ii][Ll][Ll][.][Mm][Dd]\$/ }',
+    '    { f[NR] = \$0; if (skill(\$0)) { d = \$0; sub("/[^/]*\$", "", d); k[d] = 1 } }',
+    '    END { for (i = 1; i <= NR; i++) {',
+    '      d = f[i]; sub("/[^/]*\$", "", d)',
+    '      keep = skill(f[i]) || !(d in k)',
+    '      while (keep && sub("/[^/]*\$", "", d)) if (d in k) keep = 0',
+    "      if (keep) print f[i] } }'",
+    '}',
     'emit_commands() {',
     '  [ -d "\$2" ] || return 0',
-    // A plugin's SKILL.md counts in any case, as in Claude Code.
     "  s=SKILL.md; [ \"\$1\" = plugin ] && s='[Ss][Kk][Ii][Ll][Ll].[Mm][Dd]'",
-    // From "$2/.", so that each path has "/./" where the name starts.
+    // From "$2/.", so that each path has "/./" where the name starts. In
+    // a plugin, what is below a SKILL.md goes before the cap counts; awk
+    // holds what it gets, so it gets at most 2000, and find stops there.
     "  find -L \"\$2/.\" -maxdepth 3 -type f -name '*.md' -o -type f -name \"\$s\" 2>/dev/null |",
+    '    if [ "\$1" = plugin ]; then head -n 2000 | prune_skills; else cat; fi |',
     '    head -n 200 | while IFS= read -r f; do emit_md "\$1" "\$f"; done',
     '}',
     'emit_skills() {',
