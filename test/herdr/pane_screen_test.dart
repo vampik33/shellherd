@@ -1019,6 +1019,34 @@ void main() {
       await close(tester);
     });
 
+    testWidgets('older lines leave the colours of what shows as they were', (
+      tester,
+    ) async {
+      await openLong(tester);
+      // A colour that an older line sets and never resets.
+      herdr().paneLines = [
+        for (var i = 0; i < 3000; i++)
+          i == 2500 ? '\x1b[31mrow $i\r' : 'row $i\r',
+      ];
+      Color? colourOf(String text) => tester
+          .widgetList<Text>(find.byType(Text))
+          .map((t) => t.textSpan)
+          .whereType<TextSpan>()
+          .firstWhere((s) => s.toPlainText().contains(text))
+          .children!
+          .whereType<TextSpan>()
+          .first
+          .style
+          ?.color;
+      await scrollUpTo(tester, paneText('row 2650'));
+      final before = colourOf('row 2650');
+      await scrollUpTo(tester, paneText('row 2500'));
+      expect(colourOf('row 2500'), isNot(before), reason: 'red');
+      await scrollTo(tester, paneText('row 2650'), step: -300);
+      expect(colourOf('row 2650'), before);
+      await close(tester);
+    });
+
     testWidgets('a short text loads nothing more', (tester) async {
       await openLong(tester, lines: 40);
       await scrollUpTo(tester, paneText('row 0'));

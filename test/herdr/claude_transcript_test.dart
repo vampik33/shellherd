@@ -535,10 +535,14 @@ void main() {
 
     test('without kept records, nothing goes in front', () {
       final t = ClaudeTranscript()..add(claudeUser('hi', uuid: 'u1'));
-      t.keepRecords = false;
+      t.dropRecords();
       t.add(claudeUser('more', uuid: 'u2'));
       expect(() => t.prepend([claudeUser('early')]), throwsStateError);
       expect(t.items, [const ChatPrompt('hi'), const ChatPrompt('more')]);
+      final none = ClaudeTranscript(keepRecords: false)
+        ..add(claudeUser('hi', uuid: 'u1'));
+      expect(() => none.prepend([claudeUser('early')]), throwsStateError);
+      expect(none.items, [const ChatPrompt('hi')]);
     });
 
     test('lines that are no record change nothing', () {

@@ -18,18 +18,17 @@ import 'chat_items.dart';
 /// lines go in front: a tool call's id, or the record's uuid (a number for
 /// a record without one) and where the item stands in it.
 class ClaudeTranscript {
-  /// What each line read said, oldest first, while [keepRecords].
-  final _records = <_Record>[];
+  /// Keeps what each line read says for [prepend] with [keepRecords],
+  /// until [dropRecords].
+  ClaudeTranscript({bool keepRecords = true})
+    : _records = keepRecords ? [] : null;
 
-  /// Whether it keeps what each line said, for [prepend]. Turning it off
-  /// drops what it kept.
-  bool get keepRecords => _keepRecords;
-  set keepRecords(bool value) {
-    _keepRecords = value;
-    if (!value) _records.clear();
-  }
+  /// What each line read said, oldest first; null once nothing goes in
+  /// front.
+  List<_Record>? _records;
 
-  var _keepRecords = true;
+  /// Drops what it kept for [prepend]: nothing more goes in front.
+  void dropRecords() => _records = null;
 
   final _items = <ChatItem>[];
   final _keys = <Object>[];
@@ -55,16 +54,17 @@ class ClaudeTranscript {
     final parsed = _parse(line);
     if (parsed == null) return;
     final record = (uuid: parsed.uuid, number: _next++, events: parsed.events);
-    if (_keepRecords) _records.add(record);
+    _records?.add(record);
     _apply(record);
   }
 
   /// Reads [lines], the lines of the file just before those read so far,
   /// oldest first. The items are then the same as if [lines] had been read
   /// first. Returns how many items come before those of the lines read
-  /// before. Needs [keepRecords]; throws [StateError] without.
+  /// before. Throws [StateError] without the records kept.
   int prepend(Iterable<String> lines) {
-    if (!_keepRecords) throw StateError('no records kept to prepend to');
+    final records = _records;
+    if (records == null) throw StateError('no records kept to prepend to');
     final parsed = [for (final line in lines) ?_parse(line)];
     if (parsed.isEmpty) return 0;
     _first -= parsed.length;
@@ -72,7 +72,7 @@ class ClaudeTranscript {
       for (final (i, p) in parsed.indexed)
         (uuid: p.uuid, number: _first + i, events: p.events),
     ];
-    _records.insertAll(0, earlier);
+    records.insertAll(0, earlier);
     _items.clear();
     _keys.clear();
     _toolAt.clear();
@@ -81,7 +81,7 @@ class ClaudeTranscript {
       _apply(record);
     }
     final before = _items.length;
-    for (final record in _records.skip(earlier.length)) {
+    for (final record in records.skip(earlier.length)) {
       _apply(record);
     }
     return before;

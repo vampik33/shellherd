@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../ssh/ssh_exec.dart';
 import '../api/herdr_client.dart';
+import '../earlier_load.dart';
 import 'chat_items.dart';
 import 'claude_transcript.dart';
 
@@ -251,7 +252,7 @@ Future<EarlierLines> readEarlier(
   if (start <= 0) throw ArgumentError.value(start, 'start', 'nothing before');
   var size = chunk;
   var readFrom = start;
-  var bytes = const <int>[];
+  List<int> bytes = Uint8List(0);
   while (true) {
     final from = max(0, start - size);
     // One byte before, to know whether a line starts at [from].
@@ -260,7 +261,9 @@ Future<EarlierLines> readEarlier(
     if (more.length != readFrom - before) {
       throw StateError('read ${more.length} bytes of ${readFrom - before}');
     }
-    bytes = [...more, ...bytes];
+    bytes = Uint8List(more.length + bytes.length)
+      ..setAll(0, more)
+      ..setAll(more.length, bytes);
     readFrom = before;
     final found = earlierLines(
       bytes,
@@ -271,23 +274,6 @@ Future<EarlierLines> readEarlier(
     if (found != null) return found;
     size = min(size * 2, maxLine + 1);
   }
-}
-
-/// How far loading the earlier part of a transcript got.
-enum EarlierLoad {
-  /// Nothing loads: more can be asked for.
-  idle,
-  loading,
-
-  /// The last load failed: the user can try again.
-  failed,
-
-  /// [maxEarlierBytes] are loaded: no more is.
-  capped,
-
-  /// Nothing can load them now, for example before the read found where
-  /// its first line starts.
-  none,
 }
 
 /// What the app knows of a transcript.
@@ -477,7 +463,7 @@ class TranscriptStream {
     }
     if (!kept.cut || kept.earlier == EarlierLoad.capped) {
       // Nothing more goes in front.
-      kept.transcript.keepRecords = false;
+      kept.transcript.dropRecords();
     }
     _show(kept);
   }
@@ -548,7 +534,7 @@ class TranscriptStream {
     bool current() => run == _run && !_closed;
     var kept = _kept;
     final from = kept?.mark;
-    var transcript = ClaudeTranscript();
+    late ClaudeTranscript transcript;
     var header = false;
     // The first line of a read that starts past the start of the file and
     // not where the last one stopped is the end of a cut record.
@@ -611,11 +597,11 @@ class TranscriptStream {
               // The command starts a cut one byte early, so that the
               // first line, dropped, ends where a whole record starts.
               dropFirst = start > 0;
+              // Only a cut read can get earlier lines in front.
+              transcript = ClaudeTranscript(keepRecords: dropFirst);
               kept = _kept = _Kept(transcript, cut: dropFirst, inode: inode);
               // A cut read holds from the end of its first line.
               if (!dropFirst) kept.start = start;
-              // Only a cut read can get earlier lines in front.
-              transcript.keepRecords = dropFirst;
               if (!dropFirst && inode != null) {
                 kept.mark = (inode: inode, line: start, offset: start);
               }

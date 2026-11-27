@@ -15,6 +15,7 @@ import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shellherd/herdr/api/herdr_client.dart';
+import 'package:shellherd/herdr/earlier_load.dart';
 import 'package:shellherd/herdr/herdr_cache.dart';
 import 'package:shellherd/herdr/herdr_connection.dart';
 import 'package:shellherd/herdr/herdr_link.dart';

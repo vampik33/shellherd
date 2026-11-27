@@ -7,6 +7,7 @@ import '../../terminal/key_bar.dart';
 import '../../ui/link_status.dart';
 import '../../ui/palette.dart';
 import '../api/herdr_client.dart';
+import '../earlier_load.dart';
 import '../herdr_connection.dart';
 import '../pane_history.dart';
 import '../pane_poller.dart';
@@ -19,6 +20,7 @@ import '../transcript/transcript_stream.dart';
 import 'ansi_text.dart';
 import 'chat_details.dart';
 import 'chat_view.dart';
+import 'earlier_row.dart';
 import 'herdr_lists.dart';
 import 'link_chip.dart';
 import 'slash_menu.dart';
@@ -825,15 +827,20 @@ class _ReflowedTextState extends State<_ReflowedText> {
   /// not hold the oldest. A text with fewer lines than it asked for holds
   /// them all.
   void _show(String text, {int depth = PanePoller.historyLines, bool? older}) {
-    _shown = text;
     _depth = depth;
     _older = older ?? '\n'.allMatches(text).length + 1 >= depth;
-    _earlier = EarlierLoad.idle;
-    _version++;
-    _lines = parseAnsi(text);
+    _shownAs(text, parseAnsi(text));
     while (_lines.isNotEmpty && _lines.last.children!.isEmpty) {
       _lines.removeLast();
     }
+  }
+
+  /// Shows [text], whose lines are [lines].
+  void _shownAs(String text, List<TextSpan> lines) {
+    _shown = text;
+    _lines = lines;
+    _earlier = EarlierLoad.idle;
+    _version++;
   }
 
   /// Reads the next step of [historySteps] and puts the lines older than
@@ -856,11 +863,13 @@ class _ReflowedTextState extends State<_ReflowedText> {
         final older = olderLines(shownLines, readLines);
         if (older != null && (older > 0 || !full)) {
           setState(() {
-            _show(
-              [...readLines.take(older), ...shownLines].join('\n'),
-              depth: depth,
-              older: full,
-            );
+            // Only the older lines are new: what shows keeps its colours.
+            final above = readLines.take(older).join('\n');
+            older == 0
+                ? _shownAs(_shown, _lines)
+                : _shownAs('$above\n$_shown', [...parseAnsi(above), ..._lines]);
+            _depth = depth;
+            _older = full;
             if (_older && depth == historySteps.last) {
               _earlier = EarlierLoad.capped;
             }
@@ -914,7 +923,7 @@ class _ReflowedTextState extends State<_ReflowedText> {
         ? EarlierRow(
             _earlier,
             () => unawaited(_loadOlder()),
-            what: 'older lines',
+            what: 'Older lines',
           )
         : Text.rich(_lines[_lines.length - 1 - i], style: _paneStyle),
   );

@@ -8,6 +8,7 @@ import 'package:yaml/yaml.dart';
 
 import '../../ssh/ssh_exec.dart';
 import 'chat_items.dart';
+import 'transcript_command.dart';
 
 /// A slash command that Claude Code takes, for the composer's menu.
 @immutable
@@ -105,7 +106,7 @@ final slashCommandName = RegExp(r'^[A-Za-z0-9_][A-Za-z0-9_.:-]{0,99}$');
 /// because the login shell can be fish.
 String slashCommandsCommand(String? cwd) {
   final inner = [
-    'd="\${CLAUDE_CONFIG_DIR:-\$HOME/.claude}"',
+    'd="$claudeConfigDir"',
     'cwd=\$1',
     'emit_file() {',
     '  [ -f "\$2" ] && [ -r "\$2" ] || return 0',

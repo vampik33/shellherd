@@ -93,7 +93,7 @@ const _openTranscript = [
 /// Lines of `sh` that set `d` to Claude Code's projects directory, or
 /// exit 66 without one.
 const _projects = [
-  'd="\${CLAUDE_CONFIG_DIR:-\$HOME/.claude}/projects"',
+  'd="$claudeConfigDir/projects"',
   '[ -d "\$d" ] || { echo "no Claude Code transcripts in \$d" >&2; exit 66; }',
 ];
 
@@ -114,10 +114,17 @@ List<String> _findTranscript(String session) => [
 ];
 
 /// Lines of `sh` that set `size` and `ino` for the file `f`.
-const _sizeAndInode = [
+final _sizeAndInode = [
   'size=\$((\$(wc -c < "\$f")))',
-  'ino=\$(ls -i -- "\$f" | { read -r i _; echo "\$i"; })',
+  'ino=\$(${_inodeOf('f')})',
 ];
+
+/// `sh` that prints the inode of the file in variable [name].
+String _inodeOf(String name) =>
+    'ls -i -- "\$$name" | { read -r i _; echo "\$i"; }';
+
+/// Claude Code's config directory, in `sh`.
+const claudeConfigDir = r'${CLAUDE_CONFIG_DIR:-$HOME/.claude}';
 
 /// A [TranscriptRangeReader] that runs [transcriptRangeCommand] on the
 /// remote host. A range can take a while over a slow link: the read may
@@ -170,7 +177,7 @@ String transcriptRangeCommand(String session, TranscriptRange range) {
     'f=',
     'for g in "\$d"/*/$session.jsonl; do',
     '  [ -r "\$g" ] || continue',
-    '  i=\$(ls -i -- "\$g" | { read -r i _; echo "\$i"; })',
+    '  i=\$(${_inodeOf('g')})',
     '  [ "\$i" = ${range.inode} ] && { f=\$g; break; }',
     'done',
     '[ -n "\$f" ] || { echo "no transcript of session $session with inode ${range.inode}" >&2; exit 65; }',

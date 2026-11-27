@@ -9,6 +9,7 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shellherd/herdr/api/herdr_client.dart';
+import 'package:shellherd/herdr/earlier_load.dart';
 import 'package:shellherd/herdr/transcript/chat_items.dart';
 import 'package:shellherd/herdr/transcript/claude_transcript.dart';
 import 'package:shellherd/herdr/transcript/transcript_stream.dart';
