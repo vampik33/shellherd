@@ -80,7 +80,10 @@ class _ChatViewState extends State<ChatView> {
     if (!_scrolledUp) {
       _shown = widget.items;
       _shownKeys = _keys(widget);
-    } else if (_shown.isNotEmpty) {
+    } else if (_shown.isEmpty) {
+      _shown = widget.items;
+      _shownKeys = _keys(widget);
+    } else {
       // Earlier messages go above what shows: the reverse list keeps the
       // place of what is below. One that shows already further down, as
       // a later copy of its record, stays there until the chat is let go.

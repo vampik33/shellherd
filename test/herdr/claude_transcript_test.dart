@@ -505,6 +505,13 @@ void main() {
       }
     });
 
+    test('items of records without a uuid have keys of their transcript', () {
+      final a = ClaudeTranscript()..add(claudeUser('one'));
+      final b = ClaudeTranscript()..add(claudeUser('one'));
+      expect(a.items, b.items);
+      expect(a.keys.single, isNot(b.keys.single));
+    });
+
     test('a result whose call comes in front gets its call', () {
       final t = ClaudeTranscript()
         ..add(claudeUser([claudeToolResult('t1', 'done')], uuid: 'u2'));

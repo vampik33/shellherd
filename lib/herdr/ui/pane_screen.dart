@@ -863,11 +863,16 @@ class _ReflowedTextState extends State<_ReflowedText> {
         final older = olderLines(shownLines, readLines);
         if (older != null && (older > 0 || !full)) {
           setState(() {
-            // Only the older lines are new: what shows keeps its colours.
             final above = readLines.take(older).join('\n');
-            older == 0
-                ? _shownAs(_shown, _lines)
-                : _shownAs('$above\n$_shown', [...parseAnsi(above), ..._lines]);
+            if (older == 0) {
+              _shownAs(_shown, _lines);
+            } else if (ansiCarries(above)) {
+              // A colour the older lines leave on runs on into what shows.
+              _show('$above\n$_shown');
+            } else {
+              // Only the older lines are new.
+              _shownAs('$above\n$_shown', [...parseAnsi(above), ..._lines]);
+            }
             _depth = depth;
             _older = full;
             if (_older && depth == historySteps.last) {

@@ -40,9 +40,10 @@ final claudeSessionId = RegExp(r'^[A-Za-z0-9_-]{1,128}$');
 /// projects directory, Claude Code keeps its transcripts elsewhere: it
 /// exits 66 then.
 ///
-/// The file is opened once, before its inode is printed, and the read
-/// follows what was opened, not the path: a file renamed over it later
-/// does not join the read.
+/// The file is opened once, and the header and the read are of what was
+/// opened, not of the path: a file renamed over it does not join the
+/// read. The read ends, within 2 s, once the path names another file or
+/// none: the next read starts over.
 ///
 /// Through `sh`, because the login shell can be fish. Throws
 /// [ArgumentError] for an id or a mark it does not take.
@@ -62,7 +63,7 @@ String transcriptCommand(String session, {TranscriptMark? from}) {
     ..._openTranscript,
     'start=0',
     'if [ -n "\$f" ]; then',
-    for (final line in _sizeAndInode) '  $line',
+    for (final line in _sizeAndInode(4)) '  $line',
     '  if [ "\$size" -gt $cut ]; then start=\$((size - $cut)); fi',
     if (from != null) ...[
       '  if [ "\$ino" = ${from.inode} ] && [ "\$size" -ge ${from.offset} ] &&',
@@ -76,7 +77,12 @@ String transcriptCommand(String session, {TranscriptMark? from}) {
     'fi',
     ...untilStdinEnds(
       '{ while [ -z "\$f" ]; do sleep 1; find_f; open_f; done; '
-      'exec tail -c +\$((start + 1)) -f /dev/fd/4; }',
+      'tail -c +\$((start + 1)) -f /dev/fd/4 & t=\$!; '
+      'trap \'kill \$t 2>/dev/null; exit 143\' TERM; '
+      'o=\$(${_inodeOf('/dev/fd/4')}); '
+      'while kill -0 \$t 2>/dev/null; do sleep 2; '
+      '[ "\$(${_inodeOf('"\$f"')})" = "\$o" ] || '
+      '{ kill \$t; exit 0; }; done; }',
     ),
   ].join('\n');
   return 'sh -c ${shQuote(inner)}';
@@ -113,15 +119,16 @@ List<String> _findTranscript(String session) => [
   'find_f',
 ];
 
-/// Lines of `sh` that set `size` and `ino` for the file `f`.
-final _sizeAndInode = [
-  'size=\$((\$(wc -c < "\$f")))',
-  'ino=\$(${_inodeOf('f')})',
+/// Lines of `sh` that set `size` and `ino` for the file open on [fd]:
+/// the one read, whatever the path names by then.
+List<String> _sizeAndInode(int fd) => [
+  'size=\$((\$(wc -c < /dev/fd/$fd)))',
+  'ino=\$(${_inodeOf('/dev/fd/$fd')})',
 ];
 
-/// `sh` that prints the inode of the file in variable [name].
-String _inodeOf(String name) =>
-    'ls -i -- "\$$name" | { read -r i _; echo "\$i"; }';
+/// `sh` that prints the inode of the file at [path], following links.
+String _inodeOf(String path) =>
+    'ls -iL -- $path 2>/dev/null | { read -r i _; echo "\$i"; }';
 
 /// Claude Code's config directory, in `sh`.
 const claudeConfigDir = r'${CLAUDE_CONFIG_DIR:-$HOME/.claude}';
@@ -177,7 +184,7 @@ String transcriptRangeCommand(String session, TranscriptRange range) {
     'f=',
     'for g in "\$d"/*/$session.jsonl; do',
     '  [ -r "\$g" ] || continue',
-    '  i=\$(${_inodeOf('g')})',
+    '  i=\$(${_inodeOf('"\$g"')})',
     '  [ "\$i" = ${range.inode} ] && { f=\$g; break; }',
     'done',
     '[ -n "\$f" ] || { echo "no transcript of session $session with inode ${range.inode}" >&2; exit 65; }',
@@ -185,7 +192,7 @@ String transcriptRangeCommand(String session, TranscriptRange range) {
     // whatever is renamed over the path then. `command` keeps a failed
     // open from ending sh before the exit.
     'command exec 3< "\$f" || exit 65',
-    ..._sizeAndInode,
+    ..._sizeAndInode(3),
     'echo "$transcriptHeader\$size ${range.from} \${ino:--}"',
     '[ "\$ino" = ${range.inode} ] && [ "\$size" -ge ${range.to} ] || exit 0',
     'tail -c +${range.from + 1} <&3 | head -c ${range.to - range.from}',

@@ -5,13 +5,15 @@ import 'package:flutter_test/flutter_test.dart';
 /// LiveTestWidgetsFlutterBinding: real sockets and files never finish on
 /// the fake clock of testWidgets.
 ///
-/// Pumps until [done], and fails with what the screen shows.
+/// Pumps until [done], for up to about [within], and fails with what the
+/// screen shows.
 Future<void> until(
   WidgetTester tester,
   bool Function() done,
-  String what,
-) async {
-  for (var i = 0; i < 500; i++) {
+  String what, {
+  Duration within = const Duration(seconds: 10),
+}) async {
+  for (var i = 0; i < within.inMilliseconds ~/ 20; i++) {
     if (done()) return;
     await Future<void>.delayed(const Duration(milliseconds: 20));
     await tester.pump();
@@ -24,12 +26,20 @@ Future<void> until(
 
 /// Pumps until [finder] finds a widget on a route that finished opening: a
 /// tap during the slide-in lands beside the moving widget.
-Future<void> untilFound(WidgetTester tester, Finder finder) =>
-    until(tester, () {
-      final found = finder.evaluate();
-      if (found.isEmpty) return false;
-      return ModalRoute.of(found.first)?.animation?.isCompleted ?? true;
-    }, finder.toString(describeSelf: true));
+Future<void> untilFound(
+  WidgetTester tester,
+  Finder finder, {
+  Duration within = const Duration(seconds: 10),
+}) => until(
+  tester,
+  () {
+    final found = finder.evaluate();
+    if (found.isEmpty) return false;
+    return ModalRoute.of(found.first)?.animation?.isCompleted ?? true;
+  },
+  finder.toString(describeSelf: true),
+  within: within,
+);
 
 /// Pumps until [finder] finds nothing, also on a route that slides out.
 Future<void> untilGone(WidgetTester tester, Finder finder) => until(

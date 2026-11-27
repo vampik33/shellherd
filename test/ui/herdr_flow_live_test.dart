@@ -164,7 +164,6 @@ Future<void> main() async {
   }) async {
     for (var i = 0; i < 300 && found.evaluate().isEmpty; i++) {
       await tester.drag(find.byType(ListView).first, Offset(0, dy));
-      await Future<void>.delayed(const Duration(milliseconds: 30));
       await tester.pump();
     }
     if (found.evaluate().isNotEmpty) return;
@@ -269,11 +268,11 @@ Future<void> main() async {
     });
     // herdr sends no event for it: the next snapshot refresh, within
     // 15 s, brings it.
-    for (var i = 0; i < 400 && message('msg 39').evaluate().isEmpty; i++) {
-      await Future<void>.delayed(const Duration(milliseconds: 100));
-      await tester.pump();
-    }
-    await untilFound(tester, message('msg 39'));
+    await untilFound(
+      tester,
+      message('msg 39'),
+      within: const Duration(seconds: 40),
+    );
     expect(message('msg 0'), findsNothing);
 
     await scrollUpUntil(tester, message('msg 0'));

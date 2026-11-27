@@ -313,6 +313,47 @@ void main() {
       await process.exitCode.timeout(const Duration(seconds: 5));
     });
 
+    test('its header is of the file it opened, though another is renamed '
+        'over it first', () async {
+      final file = await transcript('{"a":1}\n');
+      final inode = await inodeOf(file);
+      final other = File('${home.path}/other.jsonl')
+        ..writeAsStringSync('{"replacement, longer":1}\n');
+      // A wc that renames the other file over the transcript first.
+      final bin = await Directory('${home.path}/bin').create();
+      final wc = File('${bin.path}/wc')
+        ..writeAsStringSync(
+          '#!/bin/sh\n'
+          '[ -e ${shQuote(other.path)} ] && '
+          'mv -f -- ${shQuote(other.path)} ${shQuote(file.path)}\n'
+          'exec /usr/bin/wc "\$@"\n',
+        );
+      await Process.run('chmod', ['+x', wc.path]);
+      final process = await run(
+        _id,
+        env: {'PATH': '${bin.path}:/usr/bin:/bin'},
+      );
+      final out = lines(process);
+      await expectLines(out, ['${transcriptHeader}8 0 $inode', '{"a":1}']);
+      expect(await inodeOf(file), isNot(inode), reason: 'renamed over');
+      await process.stdin.close();
+      await out.cancel();
+    });
+
+    test('ends once another file is renamed over the one it reads', () async {
+      final file = await transcript('{"a":1}\n');
+      final other = File('${home.path}/other.jsonl')
+        ..writeAsStringSync('{"replacement":1}\n');
+      final process = await run(_id);
+      final out = lines(process);
+      await expectLines(out, [head(8), '{"a":1}']);
+      other.renameSync(file.path);
+      // Stdin stays open: the read ends of itself.
+      expect(await process.exitCode.timeout(const Duration(seconds: 8)), 0);
+      expect(await out.moveNext(), isFalse);
+      expect(await _tailsOf(file.path), isEmpty);
+    });
+
     test(
       'a session whose transcript is not written yet waits for it',
       () async {

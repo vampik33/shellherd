@@ -34,9 +34,12 @@ class ClaudeTranscript {
   final _keys = <Object>[];
 
   /// The numbers of the records without a uuid: the next one added, and
-  /// the first one in front.
+  /// the first one in front. With [_id], their keys are unlike those of
+  /// another transcript.
   var _next = 0;
   var _first = 0;
+  final _id = _transcripts++;
+  static var _transcripts = 0;
 
   /// Where each tool call stands in [_items], by its id.
   final _toolAt = <String, int>{};
@@ -124,7 +127,7 @@ class ClaudeTranscript {
       switch (event) {
         case _Item(:final item):
           _items.add(item);
-          _keys.add(uuid != null ? (uuid, at) : (record.number, at));
+          _keys.add(uuid != null ? (uuid, at) : (_id, record.number, at));
         case _Tool(:final tool):
           if (_toolAt.containsKey(tool.id)) continue;
           _toolAt[tool.id] = _items.length;

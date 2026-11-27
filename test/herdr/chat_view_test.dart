@@ -802,6 +802,35 @@ void main() {
       );
     });
 
+    testWidgets('further up with nothing shown yet, items that come show', (
+      tester,
+    ) async {
+      Widget chat(List<ChatItem> items) => MaterialApp(
+        home: Scaffold(
+          body: Align(
+            alignment: Alignment.topCenter,
+            child: SizedBox(
+              height: 30,
+              child: ChatView(
+                items: items,
+                startsCut: true,
+                status: AgentStatus.working,
+                onLoadEarlier: () {},
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpWidget(chat(const []));
+      final scroll = tester.state<ScrollableState>(find.byType(Scrollable));
+      scroll.position.jumpTo(scroll.position.maxScrollExtent);
+      await tester.pump();
+      expect(scroll.position.pixels, greaterThan(1), reason: 'scrolled up');
+      await tester.pumpWidget(chat(const [ChatPrompt('first')]));
+      await tester.pump();
+      expect(paneText('first'), findsOneWidget);
+    });
+
     testWidgets('while nothing can load them, it says they are not shown', (
       tester,
     ) async {
