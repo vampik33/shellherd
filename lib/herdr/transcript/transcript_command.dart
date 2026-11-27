@@ -40,6 +40,10 @@ final claudeSessionId = RegExp(r'^[A-Za-z0-9_-]{1,128}$');
 /// projects directory, Claude Code keeps its transcripts elsewhere: it
 /// exits 66 then.
 ///
+/// The file is opened once, before its inode is printed, and the read
+/// follows what was opened, not the path: a file renamed over it later
+/// does not join the read.
+///
 /// Through `sh`, because the login shell can be fish. Throws
 /// [ArgumentError] for an id or a mark it does not take.
 String transcriptCommand(String session, {TranscriptMark? from}) {
@@ -55,6 +59,7 @@ String transcriptCommand(String session, {TranscriptMark? from}) {
   const cut = transcriptTail + 1;
   final inner = [
     ..._findTranscript(session),
+    ..._openTranscript,
     'start=0',
     'if [ -n "\$f" ]; then',
     for (final line in _sizeAndInode) '  $line',
@@ -70,12 +75,20 @@ String transcriptCommand(String session, {TranscriptMark? from}) {
     '  echo "${transcriptHeader}0 0 -"',
     'fi',
     ...untilStdinEnds(
-      '{ while [ -z "\$f" ]; do sleep 1; find_f; done; '
-      'exec tail -c +\$((start + 1)) -F -- "\$f"; }',
+      '{ while [ -z "\$f" ]; do sleep 1; find_f; open_f; done; '
+      'exec tail -c +\$((start + 1)) -f /dev/fd/4; }',
     ),
   ].join('\n');
   return 'sh -c ${shQuote(inner)}';
 }
+
+/// Lines of `sh` that define `open_f`, which opens `f` on fd 4 (fd 3 is
+/// for [untilStdinEnds]) or empties it where it cannot, and run it.
+/// `command` keeps a failed open from ending `sh`.
+const _openTranscript = [
+  'open_f() { [ -z "\$f" ] || command exec 4< "\$f" || f=; }',
+  'open_f',
+];
 
 /// Lines of `sh` that set `d` to Claude Code's projects directory, or
 /// exit 66 without one.

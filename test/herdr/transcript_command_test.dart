@@ -280,6 +280,39 @@ void main() {
       await out.cancel();
     });
 
+    test('follows the file it opened, though another is renamed over it '
+        'before tail starts', () async {
+      final file = await transcript('{"a":1}\n');
+      final inode = await inodeOf(file);
+      final other = File('${home.path}/other.jsonl')
+        ..writeAsStringSync('{"replacement":1}\n');
+      // A tail that renames the other file over the transcript first.
+      final bin = await Directory('${home.path}/bin').create();
+      final tail = File('${bin.path}/tail')
+        ..writeAsStringSync(
+          '#!/bin/sh\n'
+          'mv -f -- ${shQuote(other.path)} ${shQuote(file.path)}\n'
+          'exec /usr/bin/tail "\$@"\n',
+        );
+      await Process.run('chmod', ['+x', tail.path]);
+      final process = await run(
+        _id,
+        env: {'PATH': '${bin.path}:/usr/bin:/bin'},
+      );
+      final out = lines(process);
+      await expectLines(out, ['${transcriptHeader}8 0 $inode', '{"a":1}']);
+      await eventually(
+        () async => await inodeOf(file) != inode,
+        'renamed over',
+        within: const Duration(seconds: 5),
+      );
+      // What the replacement gets does not come either.
+      file.writeAsStringSync('{"later":1}\n', mode: FileMode.append);
+      await process.stdin.close();
+      expect(await out.moveNext(), isFalse);
+      await process.exitCode.timeout(const Duration(seconds: 5));
+    });
+
     test(
       'a session whose transcript is not written yet waits for it',
       () async {
@@ -519,6 +552,21 @@ void main() {
   });
 }
 
+/// Whether one of the descriptors in [fds], a /proc/<pid>/fd, is [path].
+bool _opens(String fds, String path) {
+  try {
+    return Directory(fds).listSync().any((fd) {
+      try {
+        return Link(fd.path).targetSync() == path;
+      } on FileSystemException {
+        return false;
+      }
+    });
+  } on FileSystemException {
+    return false;
+  }
+}
+
 /// The inode of [file], as the command prints it.
 Future<String> inodeOf(File file) async => (await Process.run('stat', [
   '-c',
@@ -526,7 +574,7 @@ Future<String> inodeOf(File file) async => (await Process.run('stat', [
   file.path,
 ])).stdout.toString().trim();
 
-/// The pids of tail processes that follow [path].
+/// The pids of tail processes that follow [path], by name or open.
 Future<List<int>> _tailsOf(String path) async {
   final found = <int>[];
   for (final dir in Directory('/proc').listSync().whereType<Directory>()) {
@@ -536,7 +584,8 @@ Future<List<int>> _tailsOf(String path) async {
     if (pid == null) continue;
     try {
       final args = File('${dir.path}/cmdline').readAsStringSync().split('\x00');
-      if (args.first.endsWith('tail') && args.contains(path)) found.add(pid);
+      if (!args.first.endsWith('tail')) continue;
+      if (args.contains(path) || _opens('${dir.path}/fd', path)) found.add(pid);
     } on FileSystemException {
       // Gone, or not ours to read.
     }
