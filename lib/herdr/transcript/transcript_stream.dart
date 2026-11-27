@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 
 import '../../ssh/ssh_exec.dart';
 import '../api/herdr_client.dart';
+import '../earlier_load.dart';
 import 'chat_items.dart';
 import 'claude_transcript.dart';
 
@@ -260,7 +261,11 @@ Future<EarlierLines> readEarlier(
     if (more.length != readFrom - before) {
       throw StateError('read ${more.length} bytes of ${readFrom - before}');
     }
-    bytes = [...more, ...bytes];
+    bytes =
+        (BytesBuilder(copy: false)
+              ..add(more)
+              ..add(bytes))
+            .takeBytes();
     readFrom = before;
     final found = earlierLines(
       bytes,
@@ -273,29 +278,12 @@ Future<EarlierLines> readEarlier(
   }
 }
 
-/// How far loading the earlier part of a transcript got.
-enum EarlierLoad {
-  /// Nothing loads: more can be asked for.
-  idle,
-  loading,
-
-  /// The last load failed: the user can try again.
-  failed,
-
-  /// [maxEarlierBytes] are loaded: no more is.
-  capped,
-
-  /// Nothing can load them now, for example before the read found where
-  /// its first line starts.
-  none,
-}
-
 /// What the app knows of a transcript.
 class TranscriptView {
   const TranscriptView({
     this.items,
     this.startsCut = false,
-    this.firstKey = 0,
+    this.keys,
     this.earlier = EarlierLoad.idle,
   });
 
@@ -306,11 +294,9 @@ class TranscriptView {
   /// shown.
   final bool startsCut;
 
-  /// A number for the first of [items], one less for each item loaded in
-  /// front of it, so that an item keeps its number while earlier ones
-  /// load. Where they drop a later copy of a record, the items take
-  /// numbers none had before.
-  final int firstKey;
+  /// A key for each of [items] that stays with it while earlier ones load
+  /// (see [ClaudeTranscript.keys]); null with [items].
+  final List<Object>? keys;
 
   /// How loading the messages before [items] goes.
   final EarlierLoad earlier;
@@ -454,17 +440,9 @@ class TranscriptStream {
         inLine: kept.inLine,
       );
       if (!current()) return;
-      final was = kept.transcript.items;
-      final before = kept.transcript.prepend(
+      kept.transcript.prepend(
         found.lines.map((l) => utf8.decode(l, allowMalformed: true)),
       );
-      final items = kept.transcript.items;
-      // The earlier lines can drop a later copy of a record they hold:
-      // then the items take numbers none of them had, so that no row
-      // takes the state of another.
-      kept.firstKey -= listEquals(items.sublist(before), was)
-          ? before
-          : before + was.length;
       kept.earlierBytes += start - found.start;
       kept.start = found.start;
       kept.inLine = found.inLine;
@@ -487,7 +465,7 @@ class TranscriptStream {
     }
     if (!kept.cut || kept.earlier == EarlierLoad.capped) {
       // Nothing more goes in front.
-      kept.transcript.keepRecords = false;
+      kept.transcript.dropRecords();
     }
     _show(kept);
   }
@@ -498,7 +476,7 @@ class TranscriptStream {
     view.value = TranscriptView(
       items: kept.transcript.items,
       startsCut: kept.cut,
-      firstKey: kept.firstKey,
+      keys: kept.transcript.keys,
       earlier:
           kept.start == null || kept.inode == null || _ranges?.call() == null
           ? EarlierLoad.none
@@ -558,7 +536,7 @@ class TranscriptStream {
     bool current() => run == _run && !_closed;
     var kept = _kept;
     final from = kept?.mark;
-    var transcript = ClaudeTranscript();
+    late ClaudeTranscript transcript;
     var header = false;
     // The first line of a read that starts past the start of the file and
     // not where the last one stopped is the end of a cut record.
@@ -621,11 +599,11 @@ class TranscriptStream {
               // The command starts a cut one byte early, so that the
               // first line, dropped, ends where a whole record starts.
               dropFirst = start > 0;
+              // Only a cut read can get earlier lines in front.
+              transcript = ClaudeTranscript(keepRecords: dropFirst);
               kept = _kept = _Kept(transcript, cut: dropFirst, inode: inode);
               // A cut read holds from the end of its first line.
               if (!dropFirst) kept.start = start;
-              // Only a cut read can get earlier lines in front.
-              transcript.keepRecords = dropFirst;
               if (!dropFirst && inode != null) {
                 kept.mark = (inode: inode, line: start, offset: start);
               }
@@ -717,9 +695,6 @@ class _Kept {
 
   /// The bytes [loadEarlier] put in front so far.
   int earlierBytes = 0;
-
-  /// See [TranscriptView.firstKey].
-  int firstKey = 0;
 
   EarlierLoad earlier = EarlierLoad.idle;
 

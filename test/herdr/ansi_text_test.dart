@@ -88,4 +88,21 @@ void main() {
       );
     });
   });
+
+  test('ansiCarries tells whether a colour or style is left on', () {
+    for (final (text, carries) in [
+      ('', false),
+      ('plain\ntext', false),
+      ('\x1b[31mred', true),
+      ('\x1b[31mred\x1b[0m', false),
+      ('\x1b[31mred\x1b[39m', false),
+      ('\x1b[1mbold\x1b[22m', false),
+      ('\x1b[38;5;9mcolour\nnext line', true),
+      ('\x1b[7minverse', true),
+      ('\x1b[44mback\x1b[49m and \x1b[4munder', true),
+      ('\x1b[2Jcleared', false),
+    ]) {
+      expect(ansiCarries(text), carries, reason: text);
+    }
+  });
 }

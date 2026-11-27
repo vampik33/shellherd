@@ -1019,6 +1019,66 @@ void main() {
       await close(tester);
     });
 
+    for (final (closed, what) in [
+      (false, 'a colour that older lines leave on runs on into what shows'),
+      (true, 'older lines that end their colour leave what shows as it was'),
+    ]) {
+      testWidgets(what, (tester) async {
+        await openLong(tester);
+        herdr().paneLines = [
+          for (var i = 0; i < 3000; i++)
+            i == 2500
+                ? '\x1b[31mrow $i${closed ? '\x1b[0m' : ''}\r'
+                : 'row $i\r',
+        ];
+        Color? colourOf(String text) => tester
+            .widgetList<Text>(find.byType(Text))
+            .map((t) => t.textSpan)
+            .whereType<TextSpan>()
+            .firstWhere((s) => s.toPlainText().contains(text))
+            .children!
+            .whereType<TextSpan>()
+            .first
+            .style
+            ?.color;
+        await scrollUpTo(tester, paneText('row 2650'));
+        final before = colourOf('row 2650');
+        await scrollUpTo(tester, paneText('row 2500'));
+        final red = colourOf('row 2500');
+        expect(red, isNot(before));
+        await scrollTo(tester, paneText('row 2650'), step: -300);
+        expect(colourOf('row 2650'), closed ? before : red);
+        await close(tester);
+      });
+    }
+
+    testWidgets('blank lines that herdr leaves out at the end do not end the '
+        'loads', (tester) async {
+      tester.view.physicalSize = const Size(360, 640);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await open(
+        tester,
+        session: fakeSnapshot(
+          workspaces: [fakeWorkspace('w1', 1, 'api', 'idle')],
+          tabs: [fakeTab('w1', 'server', 'idle')],
+          panes: [fakePane('w1:p1', 'w1', 'idle', const {})],
+          layouts: [
+            fakeLayout('w1:t1', {'w1:p1': (80, 40)}),
+          ],
+        ),
+      );
+      // The cursor sits below the output: the 400-line read has 394.
+      herdr().paneLines = [
+        for (var i = 0; i < 3000; i++) 'row $i\r',
+        for (var i = 0; i < 6; i++) '',
+      ];
+      await untilFound(tester, paneText('row 2999'));
+      await scrollUpTo(tester, paneText('row 2500'));
+      expect(depths(), [2000]);
+      await close(tester);
+    });
+
     testWidgets('a short text loads nothing more', (tester) async {
       await openLong(tester, lines: 40);
       await scrollUpTo(tester, paneText('row 0'));

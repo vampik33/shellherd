@@ -35,6 +35,16 @@ List<TextSpan> parseAnsi(String text) {
   return lines;
 }
 
+/// Whether [text] leaves a colour or style in force at its end: text
+/// after it would take it.
+bool ansiCarries(String text) {
+  final sgr = _Sgr();
+  for (final m in _escape.allMatches(text)) {
+    if (m[2] == 'm') sgr.apply(m[1]!);
+  }
+  return !sgr.plain;
+}
+
 /// The colours and styles in force at one point of the text.
 class _Sgr {
   Color? _fg;
@@ -48,6 +58,17 @@ class _Sgr {
   TextStyle? _style;
 
   TextStyle get style => _style ??= _build();
+
+  /// No colour or style is in force.
+  bool get plain =>
+      _fg == null &&
+      _bg == null &&
+      !_bold &&
+      !_dim &&
+      !_italic &&
+      !_underline &&
+      !_strike &&
+      !_inverse;
 
   TextStyle _build() {
     final fg = _inverse ? (_bg ?? _t.background) : (_fg ?? _t.foreground);

@@ -7,9 +7,9 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shellherd/herdr/api/herdr_client.dart';
+import 'package:shellherd/herdr/earlier_load.dart';
 import 'package:shellherd/herdr/herdr_connection.dart';
 import 'package:shellherd/herdr/transcript/chat_items.dart';
-import 'package:shellherd/herdr/transcript/transcript_stream.dart';
 import 'package:shellherd/herdr/ui/chat_details.dart';
 import 'package:shellherd/herdr/ui/chat_view.dart';
 import 'package:shellherd/herdr/ui/pane_screen.dart';
@@ -688,25 +688,28 @@ void main() {
         summary: 'only once',
         input: 'ls',
       );
-      final later = [for (var i = 1; i < 60; i++) ChatPrompt('msg $i.')];
-      Widget chat(List<ChatItem> items, int firstKey) => MaterialApp(
+      final later = [
+        for (var i = 1; i < 60; i++) (ChatPrompt('msg $i.'), ('u$i', 0)),
+      ];
+      Widget chat(List<(ChatItem, Object)> items) => MaterialApp(
         home: Scaffold(
           body: ChatView(
-            items: items,
-            firstKey: firstKey,
+            items: [for (final (item, _) in items) item],
+            keys: [for (final (_, key) in items) key],
             startsCut: true,
             onLoadEarlier: () {},
           ),
         ),
       );
-      await tester.pumpWidget(chat([tool, ...later], 0));
+      const call = (tool, ('tool', 't7'));
+      await tester.pumpWidget(chat([later.first, call, ...later.skip(1)]));
       await tester.drag(find.byType(ListView), const Offset(0, 5000));
       await tester.pump();
       await untilFound(tester, paneText('only once'));
-      // The earlier lines hold the record with the call: its later copy
-      // is dropped, and the items shift by one less than came in front.
+      // The earlier lines hold the record with the call: its later copy,
+      // below what shows first, is dropped.
       await tester.pumpWidget(
-        chat([const ChatPrompt('msg 0.'), tool, ...later], -2),
+        chat([(const ChatPrompt('msg 0.'), ('u0', 0)), call, ...later]),
       );
       await tester.pump();
       expect(tester.takeException(), isNull);
@@ -749,7 +752,7 @@ void main() {
       await close(tester);
     });
 
-    testWidgets('further up, items that take new numbers show under them', (
+    testWidgets('further up, earlier items show above under their own keys', (
       tester,
     ) async {
       tester.view.physicalSize = const Size(360, 640);
@@ -761,41 +764,204 @@ void main() {
         summary: 'only once',
         input: 'ls',
       );
-      final later = [for (var i = 1; i < 60; i++) ChatPrompt('msg $i.')];
-      Widget chat(List<ChatItem> items, int firstKey) => MaterialApp(
+      final later = [
+        for (var i = 1; i < 60; i++) (ChatPrompt('msg $i.'), ('u$i', 0)),
+      ];
+      Widget chat(List<(ChatItem, Object)> items) => MaterialApp(
         home: Scaffold(
           body: ChatView(
-            items: items,
-            firstKey: firstKey,
+            items: [for (final (item, _) in items) item],
+            keys: [for (final (_, key) in items) key],
             startsCut: true,
             onLoadEarlier: () {},
           ),
         ),
       );
-      await tester.pumpWidget(chat([tool, ...later], 0));
+      const call = (tool, ('tool', 't7'));
+      await tester.pumpWidget(chat([call, ...later]));
       await tester.drag(find.byType(ListView), const Offset(0, 5000));
       await tester.pump();
       await untilFound(tester, paneText('only once'));
-      // As the stream numbers them when the later copy of the call drops:
-      // below the 2 that came in front and the 60 there were.
       await tester.pumpWidget(
-        chat([const ChatPrompt('msg 0.'), tool, ...later], -62),
+        chat([(const ChatPrompt('msg 0.'), ('u0', 0)), call, ...later]),
       );
       await tester.pump();
       expect(
         find.descendant(
-          of: find.byKey(const ValueKey(-62)),
+          of: find.byKey(const ValueKey<Object>(('u0', 0))),
           matching: paneText('msg 0.'),
         ),
         findsOneWidget,
       );
       expect(
         find.descendant(
-          of: find.byKey(const ValueKey(-60)),
+          of: find.byKey(const ValueKey<Object>(('u1', 0))),
           matching: paneText('msg 1.'),
         ),
         findsOneWidget,
       );
+    });
+
+    testWidgets('further up, items that load behind an earlier copy of the '
+        'first shown show above', (tester) async {
+      tester.view.physicalSize = const Size(360, 640);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final later = [
+        for (var i = 1; i < 60; i++) (ChatPrompt('msg $i.'), ('u$i', 0)),
+      ];
+      Widget chat(List<(ChatItem, Object)> items) => MaterialApp(
+        home: Scaffold(
+          body: ChatView(
+            items: [for (final (item, _) in items) item],
+            keys: [for (final (_, key) in items) key],
+            startsCut: true,
+            onLoadEarlier: () {},
+          ),
+        ),
+      );
+      await tester.pumpWidget(chat(later));
+      await tester.drag(find.byType(ListView), const Offset(0, 5000));
+      await tester.pump();
+      await untilFound(tester, paneText('msg 1.'));
+      // The earlier copy of record u1 comes first, the items loaded after it.
+      await tester.pumpWidget(
+        chat([
+          later.first,
+          (const ChatPrompt('msg b.'), ('ub', 0)),
+          (const ChatPrompt('msg c.'), ('uc', 0)),
+          ...later.skip(1),
+        ]),
+      );
+      await tester.pump();
+      await tester.drag(find.byType(ListView), const Offset(0, 5000));
+      await tester.pump();
+      final scroll = tester.state<ScrollableState>(
+        find.byType(Scrollable).first,
+      );
+      expect(scroll.position.pixels, greaterThan(1), reason: 'scrolled up');
+      expect(paneText('msg b.'), findsOneWidget);
+      expect(paneText('msg c.'), findsOneWidget);
+      expect(paneText('msg 1.'), findsOneWidget);
+    });
+
+    testWidgets('further up, an item that loads between shown ones shows '
+        'above', (tester) async {
+      tester.view.physicalSize = const Size(360, 640);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final later = [
+        for (var i = 1; i < 60; i++) (ChatPrompt('msg $i.'), ('u$i', 0)),
+      ];
+      Widget chat(List<(ChatItem, Object)> items) => MaterialApp(
+        home: Scaffold(
+          body: ChatView(
+            items: [for (final (item, _) in items) item],
+            keys: [for (final (_, key) in items) key],
+            startsCut: true,
+            onLoadEarlier: () {},
+          ),
+        ),
+      );
+      await tester.pumpWidget(chat(later));
+      await tester.drag(find.byType(ListView), const Offset(0, 5000));
+      await tester.pump();
+      await untilFound(tester, paneText('msg 1.'));
+      await tester.pumpWidget(
+        chat([
+          (const ChatPrompt('msg p.'), ('up', 0)),
+          later.first,
+          (const ChatPrompt('msg b.'), ('ub', 0)),
+          ...later.skip(1),
+        ]),
+      );
+      await tester.pump();
+      await tester.drag(find.byType(ListView), const Offset(0, 5000));
+      await tester.pump();
+      final scroll = tester.state<ScrollableState>(
+        find.byType(Scrollable).first,
+      );
+      expect(scroll.position.pixels, greaterThan(1), reason: 'scrolled up');
+      expect(paneText('msg p.'), findsOneWidget);
+      expect(paneText('msg b.'), findsOneWidget);
+      expect(paneText('msg 1.'), findsOneWidget);
+      expect(paneText('msg 2.'), findsOneWidget);
+    });
+
+    testWidgets('further up, a new message at the bottom waits until the chat '
+        'is let go', (tester) async {
+      tester.view.physicalSize = const Size(360, 640);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final later = [
+        for (var i = 1; i < 60; i++) (ChatPrompt('msg $i.'), ('u$i', 0)),
+      ];
+      Widget chat(List<(ChatItem, Object)> items) => MaterialApp(
+        home: Scaffold(
+          body: ChatView(
+            items: [for (final (item, _) in items) item],
+            keys: [for (final (_, key) in items) key],
+            startsCut: true,
+            onLoadEarlier: () {},
+          ),
+        ),
+      );
+      // Also the rows just below the screen are built.
+      Finder built(String part) =>
+          find.textContaining(part, findRichText: true, skipOffstage: false);
+      await tester.pumpWidget(chat(later));
+      final scroll = tester.state<ScrollableState>(
+        find.byType(Scrollable).first,
+      );
+      scroll.position.jumpTo(100);
+      await tester.pump();
+      expect(built('msg 59.'), findsOneWidget);
+      await tester.pumpWidget(
+        chat([
+          (const ChatPrompt('msg 0.'), ('u0', 0)),
+          ...later,
+          (const ChatPrompt('msg 60.'), ('u60', 0)),
+        ]),
+      );
+      await tester.pump();
+      expect(built('msg 60.'), findsNothing);
+      await tester.drag(find.byType(ListView), const Offset(0, 5000));
+      await tester.pump();
+      expect(paneText('msg 0.'), findsOneWidget);
+      expect(paneText('msg 60.'), findsNothing);
+
+      scroll.position.jumpTo(0);
+      await tester.pump();
+      expect(paneText('msg 60.'), findsOneWidget);
+    });
+
+    testWidgets('further up with nothing shown yet, items that come show', (
+      tester,
+    ) async {
+      Widget chat(List<ChatItem> items) => MaterialApp(
+        home: Scaffold(
+          body: Align(
+            alignment: Alignment.topCenter,
+            child: SizedBox(
+              height: 30,
+              child: ChatView(
+                items: items,
+                startsCut: true,
+                status: AgentStatus.working,
+                onLoadEarlier: () {},
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpWidget(chat(const []));
+      final scroll = tester.state<ScrollableState>(find.byType(Scrollable));
+      scroll.position.jumpTo(scroll.position.maxScrollExtent);
+      await tester.pump();
+      expect(scroll.position.pixels, greaterThan(1), reason: 'scrolled up');
+      await tester.pumpWidget(chat(const [ChatPrompt('first')]));
+      await tester.pump();
+      expect(paneText('first'), findsOneWidget);
     });
 
     testWidgets('while nothing can load them, it says they are not shown', (

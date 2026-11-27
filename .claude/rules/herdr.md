@@ -13,7 +13,8 @@ paths:
   view and the fallback poll `pane.read`. At the top of the text view,
   older lines come from deeper reads (`historySteps` in
   lib/herdr/pane_history.dart); herdr 0.9.5's `pane.read` gives at most
-  1000 lines, whatever `lines` asks.
+  1000 lines, whatever `lines` asks, and counts the blank lines at the
+  end of the screen in `lines` but leaves them out of the text.
 - The chat reads Claude Code's transcript over an SSH exec
   (`transcriptCommand` in lib/herdr/transcript/transcript_command.dart).
   herdr keeps only the session id its Claude hook reports, not the path;

@@ -404,20 +404,39 @@ void main() {
     /// A random transcript line: prompts, replies, tool calls and results
     /// whose ids repeat across the file, records seen twice, records it
     /// drops, and lines that are no record.
-    String randomLine(Random r) {
-      String? uuid() => r.nextInt(5) == 0 ? null : 'u${r.nextInt(40)}';
+    var serial = 0;
+    final calls = <String>[];
+
+    /// With [unique], each record has its own uuid; with [fresh] also each
+    /// call its own id, and a result is of a call made before.
+    String randomLine(Random r, {bool unique = false, bool fresh = false}) {
+      unique |= fresh;
+      String? uuid() => r.nextInt(5) == 0
+          ? null
+          : unique
+          ? 'v${serial++}'
+          : 'u${r.nextInt(40)}';
       String toolId() => 't${r.nextInt(12)}';
+      String callId() {
+        if (!fresh) return toolId();
+        final id = 'c${serial++}';
+        calls.add(id);
+        return id;
+      }
+
+      String resultId() =>
+          fresh && calls.isNotEmpty ? calls[r.nextInt(calls.length)] : toolId();
       return switch (r.nextInt(10)) {
         0 => claudeUser('prompt ${r.nextInt(100)}', uuid: uuid()),
         1 => claudeAssistant([
           claudeText('reply ${r.nextInt(100)}'),
         ], uuid: uuid()),
         2 || 3 => claudeAssistant([
-          claudeToolUse(toolId(), 'Bash', {'command': 'c${r.nextInt(9)}'}),
+          claudeToolUse(callId(), 'Bash', {'command': 'c${r.nextInt(9)}'}),
         ], uuid: uuid()),
         4 || 5 => claudeUser([
           claudeToolResult(
-            toolId(),
+            resultId(),
             'out ${r.nextInt(100)}',
             isError: r.nextBool(),
           ),
@@ -430,16 +449,21 @@ void main() {
         7 => claudeUser('side', uuid: uuid(), extra: {'isSidechain': true}),
         8 => claudeAssistant([
           {'type': 'thinking', 'thinking': 'hm ${r.nextInt(9)}'},
-          claudeToolUse(toolId(), 'Read', {'file_path': '/f'}),
+          claudeToolUse(callId(), 'Read', {'file_path': '/f'}),
         ], uuid: uuid()),
         _ => r.nextBool() ? '' : 'not json {',
       };
     }
 
     test('earlier lines put in front give what one read of all gives', () {
-      for (var seed = 0; seed < 500; seed++) {
+      for (var seed = 0; seed < 1000; seed++) {
         final r = Random(seed);
-        final lines = [for (var i = r.nextInt(60); i > 0; i--) randomLine(r)];
+        // Half of them share no record and no call across their pieces.
+        final fresh = seed.isOdd;
+        calls.clear();
+        final lines = [
+          for (var i = r.nextInt(60); i > 0; i--) randomLine(r, fresh: fresh),
+        ];
         // Read from a random line, then the lines before it in random
         // pieces, the nearest first, as the stream loads them.
         final cuts = {
@@ -457,6 +481,7 @@ void main() {
             lessThanOrEqualTo(before),
             reason: '$seed',
           );
+          expect(t.keys.toSet(), hasLength(t.items.length), reason: '$seed');
         }
         expect(t.items, parse(lines), reason: 'seed $seed');
         // Lines added after the earlier ones go on as one read would.
@@ -464,6 +489,46 @@ void main() {
         more.forEach(t.add);
         expect(t.items, parse([...lines, ...more]), reason: 'seed $seed');
       }
+    });
+
+    test('each item keeps its key as earlier lines go in front', () {
+      for (var seed = 0; seed < 300; seed++) {
+        final r = Random(seed);
+        final lines = [
+          for (var i = r.nextInt(60); i > 0; i--) randomLine(r, unique: true),
+        ];
+        final cuts = {
+          for (var i = r.nextInt(4); i > 0; i--) r.nextInt(lines.length + 1),
+        }.toList()..sort();
+        final bounds = [0, ...cuts, lines.length];
+        final t = ClaudeTranscript();
+        Map<Object, ChatItem> byKey() => {
+          for (final (i, key) in t.keys.indexed) key: t.items[i],
+        };
+        lines.skip(bounds[bounds.length - 2]).forEach(t.add);
+        for (var i = bounds.length - 2; i > 0; i--) {
+          final was = byKey();
+          t.prepend(lines.sublist(bounds[i - 1], bounds[i]));
+          final now = byKey();
+          expect(now, hasLength(t.items.length), reason: 'seed $seed');
+          for (final MapEntry(:key, value: item) in was.entries) {
+            final kept = now[key];
+            // A call can get its result from a line that came in front.
+            expect(
+              kept is ChatTool && item is ChatTool ? kept.id : kept,
+              item is ChatTool ? item.id : item,
+              reason: 'seed $seed, key $key',
+            );
+          }
+        }
+      }
+    });
+
+    test('items of records without a uuid have keys of their transcript', () {
+      final a = ClaudeTranscript()..add(claudeUser('one'));
+      final b = ClaudeTranscript()..add(claudeUser('one'));
+      expect(a.items, b.items);
+      expect(a.keys.single, isNot(b.keys.single));
     });
 
     test('a result whose call comes in front gets its call', () {
@@ -496,10 +561,14 @@ void main() {
 
     test('without kept records, nothing goes in front', () {
       final t = ClaudeTranscript()..add(claudeUser('hi', uuid: 'u1'));
-      t.keepRecords = false;
+      t.dropRecords();
       t.add(claudeUser('more', uuid: 'u2'));
       expect(() => t.prepend([claudeUser('early')]), throwsStateError);
       expect(t.items, [const ChatPrompt('hi'), const ChatPrompt('more')]);
+      final none = ClaudeTranscript(keepRecords: false)
+        ..add(claudeUser('hi', uuid: 'u1'));
+      expect(() => none.prepend([claudeUser('early')]), throwsStateError);
+      expect(none.items, [const ChatPrompt('hi')]);
     });
 
     test('lines that are no record change nothing', () {

@@ -14,63 +14,129 @@ import 'chat_items.dart';
 /// the model (`isMeta`) are dropped.
 ///
 /// It keeps what each record says, so that [prepend] can put earlier lines
-/// in front.
+/// in front. Each item has a key ([keys]) that stays with it as earlier
+/// lines go in front: a tool call's id, or the record's uuid (a number for
+/// a record without one) and where the item stands in it.
 class ClaudeTranscript {
-  /// What each line read said, oldest first, while [keepRecords].
-  final _records = <_Record>[];
+  /// Keeps what each line read says for [prepend] with [keepRecords],
+  /// until [dropRecords].
+  ClaudeTranscript({bool keepRecords = true})
+    : _records = keepRecords ? [] : null,
+      _id = _transcripts++;
 
-  /// Whether it keeps what each line said, for [prepend]. Turning it off
-  /// drops what it kept.
-  bool get keepRecords => _keepRecords;
-  set keepRecords(bool value) {
-    _keepRecords = value;
-    if (!value) _records.clear();
-  }
+  /// The items of lines in front of those of [_id], on their own.
+  ClaudeTranscript._front(this._id) : _records = null;
 
-  var _keepRecords = true;
+  /// What each line read said, oldest first; null once nothing goes in
+  /// front.
+  List<_Record>? _records;
+
+  /// Drops what it kept for [prepend]: nothing more goes in front.
+  void dropRecords() => _records = null;
 
   final _items = <ChatItem>[];
+  final _keys = <Object>[];
+
+  /// The numbers of the records without a uuid: the next one added, and
+  /// the first one in front. With [_id], their keys are unlike those of
+  /// another transcript.
+  var _next = 0;
+  var _first = 0;
+  final int _id;
+  static var _transcripts = 0;
 
   /// Where each tool call stands in [_items], by its id.
   final _toolAt = <String, int>{};
   final _seen = <String>{};
 
+  /// The last result of each call not read, by its id: a call that comes
+  /// in front gets it.
+  final _waiting = <String, ToolResult>{};
+
   /// The items so far, oldest first.
   List<ChatItem> get items => List.unmodifiable(_items);
+
+  /// A key for each of [items], none twice.
+  List<Object> get keys => List.unmodifiable(_keys);
 
   /// Reads one line. A line that is no record, such as a cut-off one, is
   /// dropped.
   void add(String line) {
-    final record = _parse(line);
-    if (record == null) return;
-    if (_keepRecords) _records.add(record);
+    final parsed = _parse(line);
+    if (parsed == null) return;
+    final record = (uuid: parsed.uuid, number: _next++, events: parsed.events);
+    _records?.add(record);
     _apply(record);
   }
 
   /// Reads [lines], the lines of the file just before those read so far,
   /// oldest first. The items are then the same as if [lines] had been read
   /// first. Returns how many items come before those of the lines read
-  /// before. Needs [keepRecords]; throws [StateError] without.
+  /// before. Throws [StateError] without the records kept.
+  ///
+  /// Lines that share no record and no tool call with those read go in
+  /// front as they are; others read all the records again.
   int prepend(Iterable<String> lines) {
-    if (!_keepRecords) throw StateError('no records kept to prepend to');
-    final earlier = [for (final line in lines) ?_parse(line)];
-    if (earlier.isEmpty) return 0;
-    _records.insertAll(0, earlier);
+    final records = _records;
+    if (records == null) throw StateError('no records kept to prepend to');
+    final parsed = [for (final line in lines) ?_parse(line)];
+    if (parsed.isEmpty) return 0;
+    _first -= parsed.length;
+    final earlier = [
+      for (final (i, p) in parsed.indexed)
+        (uuid: p.uuid, number: _first + i, events: p.events),
+    ];
+    records.insertAll(0, earlier);
+    final front = ClaudeTranscript._front(_id);
+    earlier.forEach(front._apply);
+    if (front._seen.any(_seen.contains) ||
+        front._toolAt.keys.any(_toolAt.containsKey)) {
+      return _replay(records, earlier.length);
+    }
+    for (final MapEntry(key: id, value: result) in [..._waiting.entries]) {
+      final at = front._toolAt[id];
+      if (at == null) continue;
+      front._items[at] = (front._items[at] as ChatTool).withResult(result);
+      _waiting.remove(id);
+    }
+    final before = front._items.length;
+    _items.insertAll(0, front._items);
+    _keys.insertAll(0, front._keys);
+    final later = {
+      for (final MapEntry(:key, :value) in _toolAt.entries) key: value + before,
+    };
+    _toolAt
+      ..clear()
+      ..addAll(front._toolAt)
+      ..addAll(later);
+    _seen.addAll(front._seen);
+    // A result read later is the last of its call.
+    for (final MapEntry(:key, :value) in front._waiting.entries) {
+      _waiting.putIfAbsent(key, () => value);
+    }
+    return before;
+  }
+
+  /// Reads all of [records] again, of which the first [front] are new;
+  /// returns how many items those give.
+  int _replay(List<_Record> records, int front) {
     _items.clear();
+    _keys.clear();
     _toolAt.clear();
     _seen.clear();
-    for (final record in earlier) {
+    _waiting.clear();
+    for (final record in records.take(front)) {
       _apply(record);
     }
     final before = _items.length;
-    for (final record in _records.skip(earlier.length)) {
+    for (final record in records.skip(front)) {
       _apply(record);
     }
     return before;
   }
 
   /// What [line] says; null for a line that is no record this reads.
-  static _Record? _parse(String line) {
+  static _Parsed? _parse(String line) {
     if (!line.startsWith('{')) return null;
     final Object? json;
     try {
@@ -100,19 +166,25 @@ class ClaudeTranscript {
   }
 
   void _apply(_Record record) {
-    if (record.uuid case final uuid? when !_seen.add(uuid)) return;
-    for (final event in record.events) {
+    final uuid = record.uuid;
+    if (uuid != null && !_seen.add(uuid)) return;
+    for (final (at, event) in record.events.indexed) {
       switch (event) {
         case _Item(:final item):
           _items.add(item);
+          _keys.add(uuid != null ? (uuid, at) : (_id, record.number, at));
         case _Tool(:final tool):
           if (_toolAt.containsKey(tool.id)) continue;
           _toolAt[tool.id] = _items.length;
           _items.add(tool);
+          _keys.add(('tool', tool.id));
         case _Result(:final id, :final result):
           final at = _toolAt[id];
           // The call was before the part of the transcript that was read.
-          if (at == null) continue;
+          if (at == null) {
+            _waiting[id] = result;
+            continue;
+          }
           _items[at] = (_items[at] as ChatTool).withResult(result);
       }
     }
@@ -239,7 +311,10 @@ class ClaudeTranscript {
 
 /// What one line of a transcript says: its uuid, and what it adds to the
 /// chat, in order.
-typedef _Record = ({String? uuid, List<_Event> events});
+typedef _Parsed = ({String? uuid, List<_Event> events});
+
+/// A line read, with its number among the lines read.
+typedef _Record = ({String? uuid, int number, List<_Event> events});
 
 sealed class _Event {
   const _Event();

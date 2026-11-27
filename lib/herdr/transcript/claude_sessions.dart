@@ -37,7 +37,7 @@ String claudeSessionsCommand(List<int> pids) {
     throw ArgumentError.value(pids, 'pids', 'not process ids');
   }
   final inner = [
-    'd="\${CLAUDE_CONFIG_DIR:-\$HOME/.claude}/sessions"',
+    'd="$claudeConfigDir/sessions"',
     'for p in ${pids.join(' ')}; do',
     '  f="\$d/\$p.json"',
     '  [ -r "\$f" ] || continue',
