@@ -405,24 +405,38 @@ void main() {
     /// whose ids repeat across the file, records seen twice, records it
     /// drops, and lines that are no record.
     var serial = 0;
-    String randomLine(Random r, {bool unique = false}) {
+    final calls = <String>[];
+
+    /// With [unique], each record has its own uuid; with [fresh] also each
+    /// call its own id, and a result is of a call made before.
+    String randomLine(Random r, {bool unique = false, bool fresh = false}) {
+      unique |= fresh;
       String? uuid() => r.nextInt(5) == 0
           ? null
           : unique
           ? 'v${serial++}'
           : 'u${r.nextInt(40)}';
       String toolId() => 't${r.nextInt(12)}';
+      String callId() {
+        if (!fresh) return toolId();
+        final id = 'c${serial++}';
+        calls.add(id);
+        return id;
+      }
+
+      String resultId() =>
+          fresh && calls.isNotEmpty ? calls[r.nextInt(calls.length)] : toolId();
       return switch (r.nextInt(10)) {
         0 => claudeUser('prompt ${r.nextInt(100)}', uuid: uuid()),
         1 => claudeAssistant([
           claudeText('reply ${r.nextInt(100)}'),
         ], uuid: uuid()),
         2 || 3 => claudeAssistant([
-          claudeToolUse(toolId(), 'Bash', {'command': 'c${r.nextInt(9)}'}),
+          claudeToolUse(callId(), 'Bash', {'command': 'c${r.nextInt(9)}'}),
         ], uuid: uuid()),
         4 || 5 => claudeUser([
           claudeToolResult(
-            toolId(),
+            resultId(),
             'out ${r.nextInt(100)}',
             isError: r.nextBool(),
           ),
@@ -435,16 +449,21 @@ void main() {
         7 => claudeUser('side', uuid: uuid(), extra: {'isSidechain': true}),
         8 => claudeAssistant([
           {'type': 'thinking', 'thinking': 'hm ${r.nextInt(9)}'},
-          claudeToolUse(toolId(), 'Read', {'file_path': '/f'}),
+          claudeToolUse(callId(), 'Read', {'file_path': '/f'}),
         ], uuid: uuid()),
         _ => r.nextBool() ? '' : 'not json {',
       };
     }
 
     test('earlier lines put in front give what one read of all gives', () {
-      for (var seed = 0; seed < 500; seed++) {
+      for (var seed = 0; seed < 1000; seed++) {
         final r = Random(seed);
-        final lines = [for (var i = r.nextInt(60); i > 0; i--) randomLine(r)];
+        // Half of them share no record and no call across their pieces.
+        final fresh = seed.isOdd;
+        calls.clear();
+        final lines = [
+          for (var i = r.nextInt(60); i > 0; i--) randomLine(r, fresh: fresh),
+        ];
         // Read from a random line, then the lines before it in random
         // pieces, the nearest first, as the stream loads them.
         final cuts = {

@@ -21,7 +21,11 @@ class ClaudeTranscript {
   /// Keeps what each line read says for [prepend] with [keepRecords],
   /// until [dropRecords].
   ClaudeTranscript({bool keepRecords = true})
-    : _records = keepRecords ? [] : null;
+    : _records = keepRecords ? [] : null,
+      _id = _transcripts++;
+
+  /// The items of lines in front of those of [_id], on their own.
+  ClaudeTranscript._front(this._id) : _records = null;
 
   /// What each line read said, oldest first; null once nothing goes in
   /// front.
@@ -38,12 +42,16 @@ class ClaudeTranscript {
   /// another transcript.
   var _next = 0;
   var _first = 0;
-  final _id = _transcripts++;
+  final int _id;
   static var _transcripts = 0;
 
   /// Where each tool call stands in [_items], by its id.
   final _toolAt = <String, int>{};
   final _seen = <String>{};
+
+  /// The last result of each call not read, by its id: a call that comes
+  /// in front gets it.
+  final _waiting = <String, ToolResult>{};
 
   /// The items so far, oldest first.
   List<ChatItem> get items => List.unmodifiable(_items);
@@ -65,6 +73,9 @@ class ClaudeTranscript {
   /// oldest first. The items are then the same as if [lines] had been read
   /// first. Returns how many items come before those of the lines read
   /// before. Throws [StateError] without the records kept.
+  ///
+  /// Lines that share no record and no tool call with those read go in
+  /// front as they are; others read all the records again.
   int prepend(Iterable<String> lines) {
     final records = _records;
     if (records == null) throw StateError('no records kept to prepend to');
@@ -76,15 +87,49 @@ class ClaudeTranscript {
         (uuid: p.uuid, number: _first + i, events: p.events),
     ];
     records.insertAll(0, earlier);
+    final front = ClaudeTranscript._front(_id);
+    earlier.forEach(front._apply);
+    if (front._seen.any(_seen.contains) ||
+        front._toolAt.keys.any(_toolAt.containsKey)) {
+      return _replay(records, earlier.length);
+    }
+    for (final MapEntry(key: id, value: result) in [..._waiting.entries]) {
+      final at = front._toolAt[id];
+      if (at == null) continue;
+      front._items[at] = (front._items[at] as ChatTool).withResult(result);
+      _waiting.remove(id);
+    }
+    final before = front._items.length;
+    _items.insertAll(0, front._items);
+    _keys.insertAll(0, front._keys);
+    final later = {
+      for (final MapEntry(:key, :value) in _toolAt.entries) key: value + before,
+    };
+    _toolAt
+      ..clear()
+      ..addAll(front._toolAt)
+      ..addAll(later);
+    _seen.addAll(front._seen);
+    // A result read later is the last of its call.
+    for (final MapEntry(:key, :value) in front._waiting.entries) {
+      _waiting.putIfAbsent(key, () => value);
+    }
+    return before;
+  }
+
+  /// Reads all of [records] again, of which the first [front] are new;
+  /// returns how many items those give.
+  int _replay(List<_Record> records, int front) {
     _items.clear();
     _keys.clear();
     _toolAt.clear();
     _seen.clear();
-    for (final record in earlier) {
+    _waiting.clear();
+    for (final record in records.take(front)) {
       _apply(record);
     }
     final before = _items.length;
-    for (final record in records.skip(earlier.length)) {
+    for (final record in records.skip(front)) {
       _apply(record);
     }
     return before;
@@ -136,7 +181,10 @@ class ClaudeTranscript {
         case _Result(:final id, :final result):
           final at = _toolAt[id];
           // The call was before the part of the transcript that was read.
-          if (at == null) continue;
+          if (at == null) {
+            _waiting[id] = result;
+            continue;
+          }
           _items[at] = (_items[at] as ChatTool).withResult(result);
       }
     }
